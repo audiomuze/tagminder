@@ -87,6 +87,7 @@ def create_config():
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("live")')
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("lyricist")')
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("lyrics")')
+	dbcursor.execute('insert into permitted_tags ( tagname ) values ("movement")')
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("mixer")')
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("mood")')
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_albumartistid")')
@@ -134,8 +135,8 @@ def create_config():
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("year")')
 
 	''' ensure trigger is in place to record incremental changes until such time as tracks are written back '''
-	# dbcursor.execute('DROP TRIGGER IF EXISTS sqlmods;')
-	dbcursor.execute('CREATE TRIGGER IF NOT EXISTS sqlmods AFTER UPDATE ON alib FOR EACH ROW BEGIN UPDATE alib SET sqlmodded = (CAST(sqlmodded as INTEGER) + 1) WHERE rowid = NEW.rowid; END;')
+	dbcursor.execute('DROP TRIGGER IF EXISTS sqlmods;')
+	dbcursor.execute('CREATE TRIGGER sqlmods AFTER UPDATE ON alib FOR EACH ROW BEGIN UPDATE alib SET sqlmodded = (CAST(sqlmodded as INTEGER) + 1) WHERE rowid = NEW.rowid; END;')
 
 	''' if a rollback table already exists we are applying further changes or imports, so leave it intact '''
 	dbcursor.execute('CREATE TABLE IF NOT EXISTS alib_rollback AS SELECT * FROM alib order by __path;')	
@@ -143,6 +144,12 @@ def create_config():
 	''' consider adding an update query to add any new records from alib to alib_rollback.  This implies always leaving alib untouched ... in which case why ever create alib_rollback '''
 
 	conn.commit()
+
+
+def dedupe_and_sort(list_element, delimiter):
+	''' get a list item that contains a delimited string, dedupe and sort it and pass it back '''
+	distinct_elements = set(x.strip() for x in list_element.split(delimiter))
+	return (delimiter.join(sorted(distinct_elements)))
 
 def get_columns(table_name):
 
@@ -220,19 +227,31 @@ def kill_badtags(badtags):
 def update_tags():
     
     start_tally = tally_mods()
-    text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", "engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", "musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", "remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
+    text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", "engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "movement", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", "musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", "remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
     
     ''' here you add whatever update and enrichment queries you want to run against the table '''
     for text_tag in text_tags:
         
-        print(f"Trimming and removing spurious CRs, LFs and spaces from {text_tag}")
+        print(f"Trimming and removing spurious CRs, LFs and SPACES from {text_tag}")
         dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(10), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(10), ''));")
         dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(13), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(13), ''));")
+        dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, ' \\','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, ' \\','\\');")
+        dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, '\\ ','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, '\\ ','\\');")
 
+    '''Handle (feat. ) & (Feat. ) '''
+    print(f"Stripping (feat. performer) & (Feat. performer) from titles and appending performer names to artist tag")
+    dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, '(feat. ') - 1) ), artist = artist || '\\' || [REPLACE]([replace](substr(title, instr(title, '(feat. ') ), '(feat. ', ''), ')', '') WHERE title LIKE '%(feat. %' AND (trim(substr(title, 1, instr(title, '(feat. ') - 1) ) != '');")
+    dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Feat. ') - 1) ), artist = artist || '\\' || [REPLACE]([replace](substr(title, instr(title, '(Feat. ') ), '(Feat. ', ''), ')', '') WHERE title LIKE '%(Feat. %' AND (trim(substr(title, 1, instr(title, '(Feat. ') - 1) ) != '');") 
 
-        ''' merge album name and version fields into album name '''
-        # select distinct __dirpath, album, version, album|| ' ' || version as concat, replace(album|| ' ' || version, ' ' || version, '') as reconstituted from alib where version is not null order by __dirpath;
-        
+    ''' merge album name and version fields into album name '''
+    print("Merging album name and version fields into album name")
+    dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
+
+    ''' strip extranious info from track title and write it to subtitle or other most appropriate tag '''
+    print("Stripping Live info from track title and writing it to subtitle tag, and whilst at it setting the live flag to 1")
+    dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live)') - 1) ), live = 1 WHERE title LIKE '% (Live)%';")
+
+    ''' remove performer names where they match artist names '''
     print("Removing performer names where they match artist names")
     dbcursor.execute('UPDATE alib SET performer = NULL WHERE performer = artist;')
     
@@ -322,11 +341,10 @@ if __name__ == '__main__':
 	dbcursor = conn.cursor()
 	create_config()
 	killed_tags = 0
+	updated_tags = update_tags()
 	badtags = get_badtags()
 	if badtags:
 		killed_tags = kill_badtags(badtags)
-	
-	updated_tags = update_tags()
 	print(f"\nModified {updated_tags} tags")
 	show_stats(killed_tags)
 
