@@ -269,22 +269,71 @@ def update_tags():
 	''' strip extranious info from track title and write it to subtitle or other most appropriate tag '''
 
 	''' this transforms uppercase '(Live in...)' without affecting 'live' appearing elsewhere in the string being assessed '''
+	print("Stripping '(Live in' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live') - 1) ), subtitle = substr(title, instr(title, '(Live') ) WHERE (title LIKE '%(Live in%' AND title NOT LIKE '%(live in%' AND subtitle IS NULL);")
 
 	''' this transforms lowercase '(live in...)' without affecting 'Live' appearing elsewhere in the string being assessed '''
+	print("Stripping '(live in' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(live') - 1) ), subtitle = substr(title, instr(title, '(live') ) WHERE (title LIKE '%(live in%' AND title NOT LIKE '%(Live in%' AND subtitle IS NULL);")
 
+	''' this transforms uppercase '[Live in...]' without affecting 'live' appearing elsewhere in the string being assessed '''
+	print("Stripping '[Live in' from track titles")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live') - 1) ), subtitle = substr(title, instr(title, '[Live') ) WHERE (title LIKE '%[Live in%' AND title NOT LIKE '%[live in%' AND subtitle IS NULL);")
+
+	''' this transforms lowercase '[live in...]' without affecting 'Live' appearing elsewhere in the string being assessed '''
+	print("Stripping '[live in' from track titles")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[live') - 1) ), subtitle = substr(title, instr(title, '[live') ) WHERE (title LIKE '%[live in%' AND title NOT LIKE '%[Live in%' AND subtitle IS NULL);")
+
+
+	''' this transforms uppercase '(Live at...)' without affecting 'live' appearing elsewhere in the string being assessed '''
+	print("Stripping '(Live at' from track titles")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live') - 1) ), subtitle = substr(title, instr(title, '(Live') ) WHERE (title LIKE '%(Live at%' AND title NOT LIKE '%(live at%' AND subtitle IS NULL);")
+
+	''' this transforms lowercase '(live at...)' without affecting 'Live' appearing elsewhere in the string being assessed '''
+	print("Stripping '(live at' from track titles")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(live') - 1) ), subtitle = substr(title, instr(title, '(live') ) WHERE (title LIKE '%(live at%' AND title NOT LIKE '%(Live at%' AND subtitle IS NULL);")
+
+	''' this transforms uppercase '[Live at...]' without affecting 'live' appearing elsewhere in the string being assessed '''
+	print("Stripping '[Live at' from track titles")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live') - 1) ), subtitle = substr(title, instr(title, '[Live') ) WHERE (title LIKE '%[Live at%' AND title NOT LIKE '%[live at%' AND subtitle IS NULL);")
+
+	''' this transforms lowercase '[live at...]' without affecting 'Live' appearing elsewhere in the string being assessed '''
+	print("Stripping '[live at' from track titles")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[live') - 1) ), subtitle = substr(title, instr(title, '[live') ) WHERE (title LIKE '%[live at%' AND title NOT LIKE '%[Live at%' AND subtitle IS NULL);")
+
+
 	''' convert all instances of %(Feat. '''
+	print("Stripping '(Feat. ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(Feat. ') ), '(Feat. ', ''), ')', '')  WHERE title LIKE '%(Feat. %' AND  (trim(substr(title, 1, instr(title, '(Feat. ') - 1) ) != '') AND  title NOT LIKE '%(feat. %';")
 
 	''' convert all instances of %(feat. '''
+	print("Stripping '(feat. ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(feat. ') ), '(feat. ', ''), ')', '') WHERE title LIKE '%(feat. %' AND (trim(substr(title, 1, instr(title, '(feat. ') - 1) ) != '') AND title NOT LIKE '%(Feat. %';")
 
 	''' convert all instances of %(Feat '''
+	print("Stripping '(Feat ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(Feat ') ), '(Feat ', ''), ')', '') WHERE title LIKE '%(Feat %' AND (trim(substr(title, 1, instr(title, '(Feat ') - 1) ) != '') AND title NOT LIKE '%(feat  %';")
 
 	''' convert all instances of %(feat '''
+	print("Stripping '(feat ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(feat ') ), '(feat ', ''), ')', '') WHERE title LIKE '%(feat %' AND (trim(substr(title, 1, instr(title, '(feat ') - 1) ) != '') AND title NOT LIKE '%(Feat  %';")
+
+	''' convert all instances of %[Feat. '''
+	print("Stripping '[Feat. ' from track titles and appending performer names to artist field")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[Feat. ') ), '[Feat. ', ''), ')', '')  WHERE title LIKE '%(Feat. %' AND  (trim(substr(title, 1, instr(title, '[Feat. ') - 1) ) != '') AND  title NOT LIKE '%[feat. %';")
+
+	''' convert all instances of %[feat. '''
+	print("Stripping '[feat. ' from track titles and appending performer names to artist field")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat. ') ), '[feat. ', ''), ')', '') WHERE title LIKE '%(feat. %' AND (trim(substr(title, 1, instr(title, '[feat. ') - 1) ) != '') AND title NOT LIKE '%[Feat. %';")
+
+	''' convert all instances of %[Feat '''
+	print("Stripping '[Feat ' from track titles and appending performer names to artist field")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[Feat ') ), '[Feat ', ''), ')', '') WHERE title LIKE '%(Feat %' AND (trim(substr(title, 1, instr(title, '[Feat ') - 1) ) != '') AND title NOT LIKE '%[feat  %';")
+
+	''' convert all instances of %[feat '''
+	print("Stripping '[Feat ' from track titles and appending performer names to artist field")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat ') ), '[feat ', ''), ')', '') WHERE title LIKE '%(feat %' AND (trim(substr(title, 1, instr(title, '[feat ') - 1) ) != '') AND title NOT LIKE '%[Feat  %';")
+
 
 	''' remove performer names where they match artist names '''
 	print("Removing performer names where they match artist names")
