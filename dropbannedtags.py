@@ -2,9 +2,59 @@ from os.path import exists
 import sqlite3
 import sys
 
+
+
+def table_exists(table_name):
+	''' test whether table exists in a database'''
+	dbcursor.execute(f"SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+	#if the count is 1, then table exists
+	return (dbcursor.fetchone()[0] == 1)
+
+
+def get_columns(table_name):
+	''' return the list of columns in a table '''
+	dbcursor.execute(f"SELECT name FROM PRAGMA_TABLE_INFO('{table_name}');")
+	return(dbcursor.fetchall())
+
+
+def dedupe_and_sort(list_item, delimiter):
+	''' get a list item that contains a delimited string, dedupe and sort it and pass it back '''
+	distinct_items = set(x.strip() for x in list_item.split(delimiter))
+	return (delimiter.join(sorted(distinct_items)))
+
+
+def tally_mods():
+	''' start and stop counter that returns how many changes have been triggered at the point of call - will be >= 0 '''
+	dbcursor.execute('SELECT sum(CAST (sqlmodded AS INTEGER) ) FROM alib WHERE sqlmodded IS NOT NULL;')
+	matches = dbcursor.fetchone()
+	if matches == None:
+		''' sqlite returns null from a sum operation if the field values are null, so test for it, because if the script is run iteratively that'll be the case where alib has been readied for export '''
+		return(0)
+	return(matches[0])
+
+
+def changed_records():
+	''' returns how many records have been changed at the point of call - will be >= 0 '''
+	dbcursor.execute('SELECT count(sqlmodded) FROM alib;')
+	matches = dbcursor.fetchone()
+	return (matches[0])
+
+def affected_dirpaths():
+	''' get list of all affected __dirpaths '''
+	dbcursor.execute('SELECT DISTINCT __dirpath FROM alib where sqlmodded IS NOT NULL;')
+	matches = dbcursor.fetchall()
+	return(matches)
+	
+def affected_dircount():
+	# ''' sum number of distinct __dirpaths with changed content '''	
+	# dbcursor.execute('SELECT count(DISTINCT __dirpath) FROM alib where sqlmodded IS NOT NULL;')
+	# matches = dbcursor.fetchone()
+	# return(matches[0])
+	return(len(affected_dirpaths()))
+
+
 def create_config():
 	''' define tables and fields required for the script to do its work '''
-
 	dbcursor.execute('drop table if exists permitted_tags;')
 	dbcursor.execute('create table permitted_tags (tagname text);')
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__accessed")')
@@ -135,81 +185,51 @@ def create_config():
 	dbcursor.execute('insert into permitted_tags ( tagname ) values ("year")')
 
 	''' ensure trigger is in place to record incremental changes until such time as tracks are written back '''
-	dbcursor.execute('DROP TRIGGER IF EXISTS sqlmods;')
-	dbcursor.execute('CREATE TRIGGER sqlmods AFTER UPDATE ON alib FOR EACH ROW BEGIN UPDATE alib SET sqlmodded = (CAST(sqlmodded as INTEGER) + 1) WHERE rowid = NEW.rowid; END;')
+	dbcursor.execute("CREATE TRIGGER IF NOT EXISTS sqlmods AFTER UPDATE ON alib FOR EACH ROW WHEN old.sqlmodded IS NULL BEGIN UPDATE alib SET sqlmodded = iif(sqlmodded IS NULL, '1', (CAST (sqlmodded AS INTEGER) + 1) )  WHERE rowid = NEW.rowid; END;")
 
-	''' if a rollback table already exists we are applying further changes or imports, so leave it intact '''
-	dbcursor.execute('CREATE TABLE IF NOT EXISTS alib_rollback AS SELECT * FROM alib order by __path;')	
-
-	''' consider adding an update query to add any new records from alib to alib_rollback.  This implies always leaving alib untouched ... in which case why ever create alib_rollback '''
+	''' alib_rollback is a master copy of alib table untainted by any changes made by this script.  if a rollback table already exists we are applying further changes or imports, so leave it intact '''
+	dbcursor.execute("CREATE TABLE IF NOT EXISTS alib_rollback AS SELECT * FROM alib order by __path;")
 
 	conn.commit()
 
 
-def dedupe_and_sort(list_element, delimiter):
-	''' get a list item that contains a delimited string, dedupe and sort it and pass it back '''
-	distinct_elements = set(x.strip() for x in list_element.split(delimiter))
-	return (delimiter.join(sorted(distinct_elements)))
+# def show_table_differences():
 
-def get_columns(table_name):
+# 	''' pick up the columns present in the table '''
+# 	columns = get_columns('alib')
 
-	dbcursor.execute(f"SELECT name FROM PRAGMA_TABLE_INFO('{table_name}');")
-	return(dbcursor.fetchall())
+# 	if table_exists('alib_rollback'):
+# 		for column in columns:
 
-def show_table_differences():
-
-	''' pick up the columns present in the table '''
-	columns = get_columns('alib')
-
-	if table_exists('alib_rollback'):
-		for column in columns:
-
-			field_to_compare = column[0]
-			# print(f"Changes in {column[0]}:")
-			# query = f"select alib.*, alib_rollback.* from alib inner join alib_rollback on alib.__path = alib_rollback.__path where 'alib.{column[0]}' != 'alib_rollback.{column[0]}'"
-			dbcursor.execute(f"select alib.__path, 'alib.{field_to_compare}', 'alib_rollback.{field_to_compare}' from alib inner join alib_rollback on alib.__path = alib_rollback.__path where ('alib.{field_to_compare}' != 'alib_rollback.{field_to_compare}');")
-			differences = dbcursor.fetchall()
-			diffcount = len(differences)
-			print(diffcount)
-			input()
-			for difference in differences:
-			 	print(difference[0], difference[1], difference[2])
+# 			field_to_compare = column[0]
+# 			# print(f"Changes in {column[0]}:")
+# 			# query = f"select alib.*, alib_rollback.* from alib inner join alib_rollback on alib.__path = alib_rollback.__path where 'alib.{column[0]}' != 'alib_rollback.{column[0]}'"
+# 			dbcursor.execute(f"select alib.__path, 'alib.{field_to_compare}', 'alib_rollback.{field_to_compare}' from alib inner join alib_rollback on alib.__path = alib_rollback.__path where ('alib.{field_to_compare}' != 'alib_rollback.{field_to_compare}');")
+# 			differences = dbcursor.fetchall()
+# 			diffcount = len(differences)
+# 			print(diffcount)
+# 			input()
+# 			for difference in differences:
+# 			 	print(difference[0], difference[1], difference[2])
 	
 
-
-def tally_mods():
-	''' start and stop counter that returns how many changes have been triggered at the point of call - will be >= 0 '''
-
-	dbcursor.execute('SELECT COUNT(*) from alib where CAST(sqlmodded AS INTEGER) > 0')
-	matches = dbcursor.fetchone()
-	
-	return (matches[0])
-
-def table_exists(table_name):
-	''' test whether table exists '''
-	dbcursor.execute(f"SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{table_name}';")
-	#if the count is 1, then table exists
-	return (dbcursor.fetchone()[0] == 1)
-	
 def get_badtags():
-
 	''' compare existing tags in alib table against permitted tags and return list of illicit tags '''
 	dbcursor.execute("SELECT name FROM PRAGMA_TABLE_INFO('alib') t1 left join permitted_tags t2 on t2.tagname = t1.name WHERE t2.tagname IS NULL;")
 	badtags = dbcursor.fetchall()
 	if len(badtags) > 0:
 		badtags.sort()
-
 	return(badtags)
 
+
 def kill_badtags(badtags):
+	''' iterate over unwanted tags and set any non NULL values to NULL '''
 
 	start_tally = tally_mods()
-
-	''' Nullify all instances of badtags '''
 	for tagname in badtags:
 
 		if tagname[0] != "__albumgain":
-			''' we make an exception for this tag as it's ever present in mp3 and always null, so bypass it '''
+			''' make an exception for __albumgain as it's ever present in mp3 and always null, so bypass it as it'd waste a cycle '''
 
 			tag = '"' + tagname[0] + '"'
 			dbcursor.execute(f"create index if not exists {tag} on alib({tag})")
@@ -218,56 +238,53 @@ def kill_badtags(badtags):
 			print(f"Wiping {tag}, {tally}")
 			dbcursor.execute(f"UPDATE alib set {tag} = NULL WHERE {tag} IS NOT NULL")
 			dbcursor.execute(f"drop index if exists {tag}")
-
-	conn.commit()	
-	
+			conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
 
 	return(tally_mods() - start_tally)
 
+
 def update_tags():
-    
-    start_tally = tally_mods()
-    text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", "engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "movement", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", "musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", "remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
-    
-    ''' here you add whatever update and enrichment queries you want to run against the table '''
-    for text_tag in text_tags:
-        
-        print(f"Trimming and removing spurious CRs, LFs and SPACES from {text_tag}")
-        dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(10), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(10), ''));")
-        dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(13), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(13), ''));")
-        dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, ' \\','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, ' \\','\\');")
-        dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, '\\ ','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, '\\ ','\\');")
+	''' function call to run mass tagging updates.  Consider whether it'd be better to break this lot into discrete functions '''
 
-    '''Handle (feat. ) & (Feat. ) '''
-    print(f"Stripping (feat. performer) & (Feat. performer) from titles and appending performer names to artist tag")
-    dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, '(feat. ') - 1) ), artist = artist || '\\' || [REPLACE]([replace](substr(title, instr(title, '(feat. ') ), '(feat. ', ''), ')', '') WHERE title LIKE '%(feat. %' AND (trim(substr(title, 1, instr(title, '(feat. ') - 1) ) != '');")
-    dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Feat. ') - 1) ), artist = artist || '\\' || [REPLACE]([replace](substr(title, instr(title, '(Feat. ') ), '(Feat. ', ''), ')', '') WHERE title LIKE '%(Feat. %' AND (trim(substr(title, 1, instr(title, '(Feat. ') - 1) ) != '');") 
+	''' here you add whatever update and enrichment queries you want to run against the table '''
+	start_tally = tally_mods()
+	text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", "engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "movement", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", "musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", "remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
+	for text_tag in text_tags:
+		print(f"Trimming and removing spurious CRs, LFs and SPACES from {text_tag}")
+		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(10), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(10), ''));")
+		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(13), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(13), ''));")
+		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, ' \\','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, ' \\','\\');")
+		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, '\\ ','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, '\\ ','\\');")
 
-    ''' merge album name and version fields into album name '''
-    print("Merging album name and version fields into album name")
-    dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
+	# ''' merge album name and version fields into album name '''
+	# print("Merging album name and version fields into album name")
+	# dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
 
-    ''' strip extranious info from track title and write it to subtitle or other most appropriate tag '''
-    print("Stripping Live info from track title and writing it to subtitle tag, and whilst at it setting the live flag to 1")
-    dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live)') - 1) ), live = 1 WHERE title LIKE '% (Live)%';")
+	# ''' strip extranious info from track title and write it to subtitle or other most appropriate tag '''
+	# ''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
+	# dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
+	# ''' this transforms uppercase '(Live in...)' without affecting 'live' appearing elsewhere in the string being assessed '''
+	# dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live') - 1) ), subtitle = substr(title, instr(title, '(Live')) WHERE (title LIKE '%(Live in%' AND title NOT LIKE '%(live in%' AND subtitle IS NULL);")
+	# ''' this transforms lowercase '(live in...)' without affecting 'Live' appearing elsewhere in the string being assessed '''
+	# dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, '(live') - 1) ), subtitle = substr(title, instr(title, '(live')) WHERE (title LIKE '%(live in%' AND title NOT LIKE '%(Live in%' AND subtitle IS NULL);")    
+	# dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
 
-    ''' remove performer names where they match artist names '''
-    print("Removing performer names where they match artist names")
-    dbcursor.execute('UPDATE alib SET performer = NULL WHERE performer = artist;')
-    
-    ''' add any other update queries you want to run above this line '''
-    conn.commit()
-    return(tally_mods() - start_tally)    
+	''' remove performer names where they match artist names '''
+	print("Removing performer names where they match artist names")
+	dbcursor.execute('UPDATE alib SET performer = NULL WHERE lower(performer) = lower(artist);')
 
-
+	''' add any other update queries you want to run above this line '''
+	conn.commit()
+	return(tally_mods() - start_tally)    
 
 def log_changes():
 	''' write changed records to changed_tags table '''
 	print(f"\nGenerating changed_tags table...")
 	dbcursor.execute('DROP TABLE IF EXISTS changed_tags;')
-	dbcursor.execute('CREATE TABLE changed_tags AS SELECT * FROM alib WHERE CAST(sqlmodded AS INTEGER) > 0 ORDER BY __path;')
+	dbcursor.execute('CREATE TABLE changed_tags AS SELECT * FROM alib WHERE sqlmodded IS NOT NULL ORDER BY __path;')
 	dbcursor.execute('DROP TABLE IF EXISTS changed_records;')
 	dbcursor.execute('CREATE TABLE IF NOT EXISTS changed_records AS SELECT * FROM changed_tags;')
+	''' Export changed records for writing back to tags '''
 	dbcursor.execute('UPDATE changed_tags SET sqlmodded = NULL;')
 	conn.commit()
 
@@ -275,21 +292,14 @@ def log_changes():
 def show_stats(killed_tags):
 
 	''' count number of records changed '''
-	dbcursor.execute('SELECT COUNT(*) from alib where CAST(sqlmodded AS INTEGER) > 0')
-	records_changed = dbcursor.fetchone()[0]
+	records_changed = changed_records()
 	
-	''' sum number of changes processed '''
-	dbcursor.execute('SELECT SUM(CAST(sqlmodded AS INTEGER)) from alib')
-	fields_changed = dbcursor.fetchone()[0]
-	
-	''' sqlite returns null from a sum operation if the field values are null, so test for it, because if the script is run iteratively that'll be the case where alib has been readied for export '''
-	if fields_changed == None:
-		fields_changed = 0
-	
-	''' sum number of __dirpaths with changed content '''	
-	dbcursor.execute('SELECT DISTINCT __dirpath FROM alib where CAST(sqlmodded AS INTEGER) > 0')
-	affected_dirpaths = dbcursor.fetchall()
-	affected_dircount = len(affected_dirpaths)
+	''' sum number of changes processed '''	
+	fields_changed = tally_mods()
+
+	''' get list of all affected __dirpaths '''
+	changed_dirpaths = affected_dirpaths()
+	changed_dircount = affected_dircount()
 
 	print(f"\n{records_changed} files have been modified")
 	print(f"{killed_tags} bad tags have been removed from files")
@@ -300,35 +310,33 @@ def show_stats(killed_tags):
 	else:
 		print(f"No additional tags were modified")
 
-	print(f"\n{affected_dircount} albums will be affected by writeback")
+	print(f"\n{changed_dircount} albums will be affected by writeback")
 
 	
 	''' write out affected __dirpaths to enable updating of time signature or further processing outside of this script '''
-	if affected_dirpaths:
+	if changed_dirpaths:
 
-		affected_dirpaths.sort()
+		changed_dirpaths.sort()
 		dbcursor.execute('CREATE TABLE IF NOT EXISTS dirs_to_process (__dirpath BLOB PRIMARY KEY);')
 
-		for dirpath in affected_dirpaths:
+		for dirpath in changed_dirpaths:
 
 			dbcursor.execute(f"REPLACE INTO dirs_to_process (__dirpath) VALUES (?)", dirpath)
 
 
-def prepare_writeback():
+# def prepare_writeback():
 
-	''' test whether table exists '''
-	# dbcursor.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='alib';")
-	# #if the count is 1, then table exists
-	# if dbcursor.fetchone()[0] == 1:
-	if table_exists('alib'):
+# 	''' test whether table exists '''
+# 	dbcursor.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='alib';")
+# 	#if the count is 1, then table exists
+# 	if dbcursor.fetchone()[0] == 1:
+# 	if table_exists('alib'):
 
-		if table_exists('changed_tags'):
+# 		if table_exists('changed_tags'):
 
-			dbcursor.execute('drop table alib;')
-			dbcursor.execute('alter table changed_tags rename to alib;')
-			print(f"Changed tags have been written to a new table and it has replaced alib - you can now directly export from existing database\nIf you need to rollback you can reinstate tags from table 'alib_rollback'")
-
-
+# 			dbcursor.execute('drop table alib;')
+# 			dbcursor.execute('alter table changed_tags rename to alib;')
+# 			print(f"Changed tags have been written to a new table and it has replaced alib - you can now directly export from existing database\nIf you need to rollback you can reinstate tags from table 'alib_rollback'")
 
 if __name__ == '__main__':
 
@@ -353,7 +361,7 @@ if __name__ == '__main__':
 	# show_table_differences()
 
 	conn.commit()
-	prepare_writeback()
+	# prepare_writeback()
 	dbcursor.execute("VACUUM")
 	dbcursor.close()
 	conn.close()
