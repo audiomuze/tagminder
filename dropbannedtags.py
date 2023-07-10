@@ -226,6 +226,8 @@ def kill_badtags(badtags):
 	''' iterate over unwanted tags and set any non NULL values to NULL '''
 
 	start_tally = tally_mods()
+	print("Wiping spurious tags:")
+
 	for tagname in badtags:
 
 		if tagname[0] != "__albumgain":
@@ -235,7 +237,7 @@ def kill_badtags(badtags):
 			dbcursor.execute(f"create index if not exists {tag} on alib({tag})")
 			dbcursor.execute(f"select count({tag}) from alib")
 			tally = dbcursor.fetchone()[0]
-			print(f"Wiping {tag}, {tally}")
+			print(f"- {tag}, {tally}")
 			dbcursor.execute(f"UPDATE alib set {tag} = NULL WHERE {tag} IS NOT NULL")
 			dbcursor.execute(f"drop index if exists {tag}")
 			conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
@@ -256,9 +258,9 @@ def update_tags():
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, ' \\','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, ' \\','\\');")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, '\\ ','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, '\\ ','\\');")
 
-	# ''' merge album name and version fields into album name '''
-	# print("Merging album name and version fields into album name")
-	# dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
+	''' merge album name and version fields into album name '''
+	print("Merging album name and version fields into album name")
+	dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
 
 	# ''' strip extranious info from track title and write it to subtitle or other most appropriate tag '''
 	# ''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
