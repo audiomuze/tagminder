@@ -1,4 +1,6 @@
-# **tags2sqlite**:  is a collection of Python scripts to import audio metadata from underlying audio files into a dynamically created SQLite database, allowing you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files.  It leverages the puddletag codebase so you need to install pudletag to be able to access its code, specifically audioinfo().  Tags are read/written using the Mutagen library as used in Puddletag. Requires Python 3.x
+**tags2sqlite**:  is a collection of Python scripts to import audio metadata from underlying audio files into a dynamically created SQLite database, allowing you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files.  It leverages the puddletag codebase so you need to install pudletag to be able to access its code, specifically audioinfo().  Tags are read/written using the Mutagen library as used in Puddletag. Requires Python 3.x
+
+
 
 **tagfromdb3.py** handles the import and export from/to the underlying files and SQLite database.  Basically it is the means of getting your tags in and out of your underlying audio files.  This is where the puddletag depedency originates.  Currently all I've done here is modded the Python 2.x code to run under Python 3.
 
