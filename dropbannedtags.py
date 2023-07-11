@@ -1,4 +1,5 @@
 from os.path import exists
+import csv
 import sqlite3
 import sys
 
@@ -55,134 +56,141 @@ def affected_dircount():
 
 def create_config():
 	''' define tables and fields required for the script to do its work '''
+
+	good_tags = [
+	"__accessed",
+	"__app",
+	"__bitrate",
+	"__bitrate_num",
+	"__bitspersample",
+	"__channels",
+	"__created",
+	"__dirname",
+	"__dirpath",
+	"__ext",
+	"__file_access_date",
+	"__file_access_datetime",
+	"__file_access_datetime_raw",
+	"__file_create_date",
+	"__file_create_datetime",
+	"__file_create_datetime_raw",
+	"__file_mod_date",
+	"__file_mod_datetime",
+	"__file_mod_datetime_raw",
+	"__file_size",
+	"__file_size_bytes",
+	"__file_size_kb",
+	"__file_size_mb",
+	"__filename",
+	"__filename_no_ext",
+	"__filetype",
+	"__frequency",
+	"__frequency_num",
+	"__image_mimetype",
+	"__image_type",
+	"__layer",
+	"__length",
+	"__length_seconds",
+	"__md5sig",
+	"__mode",
+	"__modified",
+	"__num_images",
+	"__parent_dir",
+	"__path",
+	"__size",
+	"__tag",
+	"__tag_read",
+	"__vendorstring",
+	"__version",
+	"_releasecomment",
+	"acousticbrainz_mood",
+	"acoustid_fingerprint",
+	"acoustid_id",
+	"album",
+	"albumartist",
+	"amg_album_id",
+	"amg_boxset_url",
+	"amg_url",
+	"amgtagged",
+	"analysis",
+	"arranger",
+	"artist",
+	"asin",
+	"barcode",
+	"bootleg",
+	"catalog",
+	"catalognumber",
+	"compilation",
+	"composer",
+	"conductor",
+	"country",
+	"date",
+	"discnumber",
+	"discogs_artist_url",
+	"discogs_release_url",
+	"discsubtitle",
+	"engineer",
+	"ensemble",
+	"fingerprint",
+	"genre",
+	"isrc",
+	"label",
+	"live",
+	"lyricist",
+	"lyrics",
+	"movement",
+	"mixer",
+	"mood",
+	"musicbrainz_albumartistid",
+	"musicbrainz_albumid",
+	"musicbrainz_artistid",
+	"musicbrainz_discid",
+	"musicbrainz_releasegroupid",
+	"musicbrainz_releasetrackid",
+	"musicbrainz_trackid",
+	"musicbrainz_workid",
+	"originaldate",
+	"originalreleasedate",
+	"originalyear",
+	"part",
+	"performancedate",
+	"performer",
+	"personnel",
+	"producer",
+	"rating",
+	"recordinglocation",
+	"recordingstartdate",
+	"reflac",
+	"releasetype",
+	"remixer",
+	"replaygain_album_gain",
+	"replaygain_album_peak",
+	"replaygain_track_gain",
+	"replaygain_track_peak",
+	"review",
+	"roonalbumtag",
+	"roonradioban",
+	"roontracktag",
+	"roonid",
+	"sqlmodded",
+	"style",
+	"subtitle",
+	"theme",
+	"title",
+	"track",
+	"tracknumber",
+	"upc",
+	"version",
+	"work",
+	"writer",
+	"year"]
+
 	dbcursor.execute('drop table if exists permitted_tags;')
 	dbcursor.execute('create table permitted_tags (tagname text);')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__accessed")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__app")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__bitrate")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__bitrate_num")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__bitspersample")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__channels")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__created")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__dirname")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__dirpath")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__ext")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_access_date")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_access_datetime")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_access_datetime_raw")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_create_date")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_create_datetime")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_create_datetime_raw")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_mod_date")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_mod_datetime")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_mod_datetime_raw")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_size")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_size_bytes")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_size_kb")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__file_size_mb")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__filename")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__filename_no_ext")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__filetype")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__frequency")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__frequency_num")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__image_mimetype")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__image_type")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__layer")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__length")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__length_seconds")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__md5sig")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__mode")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__modified")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__num_images")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__parent_dir")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__path")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__size")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__tag")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__tag_read")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__vendorstring")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("__version")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("_releasecomment")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("acousticbrainz_mood")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("acoustid_fingerprint")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("acoustid_id")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("album")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("albumartist")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("amg_album_id")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("amg_boxset_url")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("amg_url")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("amgtagged")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("analysis")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("arranger")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("artist")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("asin")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("barcode")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("bootleg")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("catalog")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("catalognumber")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("compilation")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("composer")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("conductor")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("country")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("date")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("discnumber")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("discogs_artist_url")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("discogs_release_url")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("discsubtitle")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("engineer")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("ensemble")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("fingerprint")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("genre")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("isrc")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("label")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("live")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("lyricist")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("lyrics")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("movement")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("mixer")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("mood")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_albumartistid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_albumid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_artistid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_discid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_releasegroupid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_releasetrackid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_trackid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("musicbrainz_workid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("originaldate")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("originalreleasedate")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("originalyear")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("part")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("performancedate")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("performer")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("personnel")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("producer")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("rating")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("recordinglocation")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("recordingstartdate")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("reflac")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("releasetype")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("remixer")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("replaygain_album_gain")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("replaygain_album_peak")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("replaygain_track_gain")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("replaygain_track_peak")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("review")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("roonalbumtag")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("roonradioban")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("roontracktag")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("roonid")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("sqlmodded")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("style")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("subtitle")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("theme")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("title")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("track")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("tracknumber")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("upc")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("version")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("work")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("writer")')
-	dbcursor.execute('insert into permitted_tags ( tagname ) values ("year")')
+
+	for tag in good_tags:
+
+		dbcursor.execute(f"INSERT INTO permitted_tags ('tagname') VALUES ('{tag}')")
 
 	''' ensure trigger is in place to record incremental changes until such time as tracks are written back '''
 	dbcursor.execute("CREATE TRIGGER IF NOT EXISTS sqlmods AFTER UPDATE ON alib FOR EACH ROW WHEN old.sqlmodded IS NULL BEGIN UPDATE alib SET sqlmodded = iif(sqlmodded IS NULL, '1', (CAST (sqlmodded AS INTEGER) + 1) )  WHERE rowid = NEW.rowid; END;")
@@ -254,105 +262,99 @@ def update_tags():
 
 	''' here you add whatever update and enrichment queries you want to run against the table '''
 	start_tally = tally_mods()
+
 	text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", "engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "movement", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", "musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", "remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
+	print(f"Trimming and removing spurious CRs, LFs and SPACES:")
 	for text_tag in text_tags:
-		print(f"Trimming and removing spurious CRs, LFs and SPACES from {text_tag}")
+		print(f"- {text_tag}")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(10), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(10), ''));")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(13), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(13), ''));")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, ' \\','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, ' \\','\\');")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, '\\ ','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, '\\ ','\\');")
 
-	''' merge album name and version fields into album name '''
-	print("Merging album name and version fields into album name")
-	dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
 
 	''' strip extranious info from track title and write it to subtitle or other most appropriate tag '''
 
+	print("Stripping from track titles:")
 	''' this transforms uppercase '(Live in...)' without affecting 'live' appearing elsewhere in the string being assessed '''
-	print("Stripping '(Live in' from track titles")
+	print("- '(Live in' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live') - 1) ), subtitle = substr(title, instr(title, '(Live') ) WHERE (title LIKE '%(Live in%' AND title NOT LIKE '%(live in%' AND subtitle IS NULL);")
 
 	''' this transforms lowercase '(live in...)' without affecting 'Live' appearing elsewhere in the string being assessed '''
-	print("Stripping '(live in' from track titles")
+	print("- '(live in' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(live') - 1) ), subtitle = substr(title, instr(title, '(live') ) WHERE (title LIKE '%(live in%' AND title NOT LIKE '%(Live in%' AND subtitle IS NULL);")
 
 	''' this transforms uppercase '[Live in...]' without affecting 'live' appearing elsewhere in the string being assessed '''
-	print("Stripping '[Live in' from track titles")
+	print("- '[Live in' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live') - 1) ), subtitle = substr(title, instr(title, '[Live') ) WHERE (title LIKE '%[Live in%' AND title NOT LIKE '%[live in%' AND subtitle IS NULL);")
 
 	''' this transforms lowercase '[live in...]' without affecting 'Live' appearing elsewhere in the string being assessed '''
-	print("Stripping '[live in' from track titles")
+	print("- '[live in' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[live') - 1) ), subtitle = substr(title, instr(title, '[live') ) WHERE (title LIKE '%[live in%' AND title NOT LIKE '%[Live in%' AND subtitle IS NULL);")
 
 
 	''' this transforms uppercase '(Live at...)' without affecting 'live' appearing elsewhere in the string being assessed '''
-	print("Stripping '(Live at' from track titles")
+	print("- '(Live at' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live') - 1) ), subtitle = substr(title, instr(title, '(Live') ) WHERE (title LIKE '%(Live at%' AND title NOT LIKE '%(live at%' AND subtitle IS NULL);")
 
 	''' this transforms lowercase '(live at...)' without affecting 'Live' appearing elsewhere in the string being assessed '''
-	print("Stripping '(live at' from track titles")
+	print("- '(live at' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(live') - 1) ), subtitle = substr(title, instr(title, '(live') ) WHERE (title LIKE '%(live at%' AND title NOT LIKE '%(Live at%' AND subtitle IS NULL);")
 
 	''' this transforms uppercase '[Live at...]' without affecting 'live' appearing elsewhere in the string being assessed '''
-	print("Stripping '[Live at' from track titles")
+	print("- '[Live at' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live') - 1) ), subtitle = substr(title, instr(title, '[Live') ) WHERE (title LIKE '%[Live at%' AND title NOT LIKE '%[live at%' AND subtitle IS NULL);")
 
 	''' this transforms lowercase '[live at...]' without affecting 'Live' appearing elsewhere in the string being assessed '''
-	print("Stripping '[live at' from track titles")
+	print("- '[live at' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[live') - 1) ), subtitle = substr(title, instr(title, '[live') ) WHERE (title LIKE '%[live at%' AND title NOT LIKE '%[Live at%' AND subtitle IS NULL);")
 
 
+	print("Stripping from track titles and appending performer names to artist field:")
 	''' convert all instances of %(Feat. '''
-	print("Stripping '(Feat. ' from track titles and appending performer names to artist field")
+	print("- '(Feat. ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(Feat. ') ), '(Feat. ', ''), ')', '')  WHERE title LIKE '%(Feat. %' AND  (trim(substr(title, 1, instr(title, '(Feat. ') - 1) ) != '') AND  title NOT LIKE '%(feat. %';")
 
 	''' convert all instances of %(feat. '''
-	print("Stripping '(feat. ' from track titles and appending performer names to artist field")
+	print("- '(feat. ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(feat. ') ), '(feat. ', ''), ')', '') WHERE title LIKE '%(feat. %' AND (trim(substr(title, 1, instr(title, '(feat. ') - 1) ) != '') AND title NOT LIKE '%(Feat. %';")
 
 	''' convert all instances of %(Feat '''
-	print("Stripping '(Feat ' from track titles and appending performer names to artist field")
+	print("- '(Feat ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(Feat ') ), '(Feat ', ''), ')', '') WHERE title LIKE '%(Feat %' AND (trim(substr(title, 1, instr(title, '(Feat ') - 1) ) != '') AND title NOT LIKE '%(feat  %';")
 
 	''' convert all instances of %(feat '''
-	print("Stripping '(feat ' from track titles and appending performer names to artist field")
+	print("- '(feat ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(feat ') ), '(feat ', ''), ')', '') WHERE title LIKE '%(feat %' AND (trim(substr(title, 1, instr(title, '(feat ') - 1) ) != '') AND title NOT LIKE '%(Feat  %';")
 
 	''' convert all instances of %[Feat. '''
-	print("Stripping '[Feat. ' from track titles and appending performer names to artist field")
+	print("- '[Feat. ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[Feat. ') ), '[Feat. ', ''), ')', '')  WHERE title LIKE '%(Feat. %' AND  (trim(substr(title, 1, instr(title, '[Feat. ') - 1) ) != '') AND  title NOT LIKE '%[feat. %';")
 
 	''' convert all instances of %[feat. '''
-	print("Stripping '[feat. ' from track titles and appending performer names to artist field")
+	print("- '[feat. ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat. ') ), '[feat. ', ''), ')', '') WHERE title LIKE '%(feat. %' AND (trim(substr(title, 1, instr(title, '[feat. ') - 1) ) != '') AND title NOT LIKE '%[Feat. %';")
 
 	''' convert all instances of %[Feat '''
-	print("Stripping '[Feat ' from track titles and appending performer names to artist field")
+	print("- '[Feat ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[Feat ') ), '[Feat ', ''), ')', '') WHERE title LIKE '%(Feat %' AND (trim(substr(title, 1, instr(title, '[Feat ') - 1) ) != '') AND title NOT LIKE '%[feat  %';")
 
 	''' convert all instances of %[feat '''
-	print("Stripping '[Feat ' from track titles and appending performer names to artist field")
+	print("- '[Feat ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat ') ), '[feat ', ''), ')', '') WHERE title LIKE '%(feat %' AND (trim(substr(title, 1, instr(title, '[feat ') - 1) ) != '') AND title NOT LIKE '%[Feat  %';")
 
 
+	''' merge album name and version fields into album name '''
+	print("Merging album name and version fields into album name")
+	dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
+
 	''' remove performer names where they match artist names '''
-	print("Removing performer names where they match artist names")
+	print("\nRemoving performer names where they match artist names")
 	dbcursor.execute('UPDATE alib SET performer = NULL WHERE lower(performer) = lower(artist);')
 
 	''' add any other update queries you want to run above this line '''
 	conn.commit()
-	return(tally_mods() - start_tally)    
-
-def log_changes():
-	''' write changed records to changed_tags table '''
-	print(f"\nGenerating changed_tags table...")
-	dbcursor.execute('DROP TABLE IF EXISTS changed_tags;')
-	dbcursor.execute('CREATE TABLE changed_tags AS SELECT * FROM alib WHERE sqlmodded IS NOT NULL ORDER BY __path;')
-	dbcursor.execute('DROP TABLE IF EXISTS changed_records;')
-	dbcursor.execute('CREATE TABLE IF NOT EXISTS changed_records AS SELECT * FROM changed_tags;')
-	''' Export changed records for writing back to tags '''
-	dbcursor.execute('UPDATE changed_tags SET sqlmodded = NULL;')
-	conn.commit()
+	return(tally_mods() - start_tally)
 
 
 def show_stats(killed_tags):
@@ -389,20 +391,30 @@ def show_stats(killed_tags):
 
 			dbcursor.execute(f"REPLACE INTO dirs_to_process (__dirpath) VALUES (?)", dirpath)
 
+		conn.commit()
 
-# def prepare_writeback():
 
-# 	''' test whether table exists '''
-# 	dbcursor.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='alib';")
-# 	#if the count is 1, then table exists
-# 	if dbcursor.fetchone()[0] == 1:
-# 	if table_exists('alib'):
+def log_changes():
+	''' write changed records to changed_tags table '''
+	print(f"\nGenerating changed_tags table...")
 
-# 		if table_exists('changed_tags'):
+	''' Create an export database and write out alib containing changed records with sqlmodded set to NULL for writing back to underlying file tags '''
+	dbcursor.execute("ATTACH DATABASE '/tmp/export.db' AS alib2")
+	dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib")
+	dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib AS SELECT * FROM alib WHERE sqlmodded IS NOT NULL ORDER BY __path")
+	dbcursor.execute("UPDATE alib2.alib SET sqlmodded = NULL;")
 
-# 			dbcursor.execute('drop table alib;')
-# 			dbcursor.execute('alter table changed_tags rename to alib;')
-# 			print(f"Changed tags have been written to a new table and it has replaced alib - you can now directly export from existing database\nIf you need to rollback you can reinstate tags from table 'alib_rollback'")
+	data = dbcursor.execute("SELECT * FROM dirs_to_process")
+	with open('/tmp/dirs2process', 'w', newline='') as filehandle:
+	    writer = csv.writer(filehandle)
+	    writer.writerows(data)
+
+	print("Affected folders have been written out to text file: /tmp/dirs2process")
+	print(f"Changed tags have been written to a database: /tmp/export.db with table alib.  This alib table contains only changed records with sqlmodded set to NULL for writing back to underlying file tags\n \
+		You can now directly export from database: /tmp/export.dbexisting database\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {dbfile}.")
+
+	conn.commit()
+	
 
 if __name__ == '__main__':
 
@@ -421,7 +433,6 @@ if __name__ == '__main__':
 		killed_tags = kill_badtags(badtags)
 	print(f"\nModified {updated_tags} tags")
 	show_stats(killed_tags)
-
 	log_changes()
 	print(f"\nDone!\n")
 	# show_table_differences()
