@@ -17,3 +17,4 @@ At present must be started in root of tree you intend to import.  I strongly sug
 TODO:
 - incorporate metadata normalisation routines to standardise performer and composer names
 - add Musicbrainz identifiers to all ```ARTIST```, ```PERFORMER```, ```COMPOSER```, ```LYRICIST```, ```WRITER```, LABEL and ```ALBUMARTIST``` tags
+- incorporate metadata enrichment leveraging Musicbrainz
