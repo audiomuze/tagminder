@@ -17,6 +17,15 @@ At present it does the following:
 At present must be started in root of tree you intend to import.  I strongly suggest writing db to /tmp as it's dynamically modified every time a new tag is encounted in a file being imported.
 
 TODO:
-- incorporate metadata normalisation routines to standardise performer and composer names
-- add Musicbrainz identifiers to all ```ARTIST```, ```PERFORMER```, ```COMPOSER```, ```LYRICIST```, ```WRITER```, LABEL and ```ALBUMARTIST``` tags
-- incorporate metadata enrichment leveraging Musicbrainz
+- sort multi-entry tags and eliminate duplicate entries in tags
+- incorporate metadata normalisation routines to standardise tack title, performer, composer & label names
+- leverage cosine similarity to generate potential duplicates requiring manual intervention 
+- add Musicbrainz identifiers to all ```ARTIST```, ```PERFORMER```, ```COMPOSER```, ```LYRICIST```, ```WRITER```, ```LABEL```, ```WORK```, ```PART``` and ```ALBUMARTIST``` tags
+- incorporate metadata enrichment leveraging Musicbrainz and inference based on existing track related metadata in table
+- cleanup and standardise genres to eliminate unsanctioned genre entries
+- merge genre and style tags to genre tag and eliminate duplicates
+- enrich "Pop/Rock" only genre assignments with artist based genre and style entries
+- ensure ```LIVE``` tag is set to 1 for all Live performances
+- remove "Various Artists' as ```ALBUMARTIST```and set ```COMPILATION``` to 1 for VA albums
+- Normalise ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it.
+
