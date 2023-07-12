@@ -272,7 +272,7 @@ def kill_badtags(badtags):
 
 	closing_tally = tally_mods()
 	print(f"|\n{closing_tally - opening_tally} tags were removed")
-	return(closing_tally - start_tally)
+	return(closing_tally - opening_tally)
 
 
 def update_tags():
