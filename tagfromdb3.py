@@ -101,34 +101,34 @@ def issubfolder(parent, child, level=1):
 		return True
 	return False
 
-def getfiles(files, subfolders = False):
-	if isinstance(files, str):
-		files = [files]
+# def getfiles(files, subfolders = False):
+# 	if isinstance(files, str):
+# 		files = [files]
 
-	isdir = os.path.isdir
-	join = os.path.join
+# 	isdir = os.path.isdir
+# 	join = os.path.join
 
-	temp = []
+# 	temp = []
 
-	if not subfolders:
-		for f in files:
-			if not isdir(f):
-				yield f
-			else:
-				dirname, subs, fnames = os.walk(f).next()
-				for fname in fnames:
-					yield join(dirname, fname)
-	else:
-		for f in files:
-			if not isdir(f):
-				yield f
-			else:                
-				for dirname, subs, fnames in os.walk(f):
-					for fname in fnames:
-						yield join(dirname, fname)
-					for sub in subs:
-						for fname in getfiles(join(dirname, sub), subfolders):
-							pass
+# 	if not subfolders:
+# 		for f in files:
+# 			if not isdir(f):
+# 				yield f
+# 			else:
+# 				dirname, subs, fnames = os.walk(f).next()
+# 				for fname in fnames:
+# 					yield join(dirname, fname)
+# 	else:
+# 		for f in files:
+# 			if not isdir(f):
+# 				yield f
+# 			else:                
+# 				for dirname, subs, fnames in os.walk(f):
+# 					for fname in fnames:
+# 						yield join(dirname, fname)
+# 					for sub in subs:
+# 						for fname in getfiles(join(dirname, sub), subfolders):
+# 							pass
 
 #
 # /OWN CODE BLOCK
@@ -208,6 +208,7 @@ def initdb(dbpath):
 	__tag text,
 	__tag_read text,
 	__version text,
+	__vendorstring text,
 	_releasecomment text,
 	acousticbrainz_mood text,
 	acoustid_fingerprint text,
@@ -283,13 +284,15 @@ def initdb(dbpath):
 	title text,
 	track text,
 	tracknumber text,
+	unsyncedlyrics text,
 	upc text,
 	version text,
 	work text,
 	writer text,
 	year text,
 	__albumgain text,
-	sqlmodded text)''')
+	sqlmodded text DEFAULT '0')''')
+
 	conn.commit()
 	return conn
 

@@ -18,6 +18,16 @@ def get_columns(table_name):
 	return(dbcursor.fetchall())
 
 
+def tag_in_table(tag, table_name):
+    ''' check if tag exists in table '''
+    dbcursor.execute(f"SELECT name FROM PRAGMA_TABLE_INFO('{table_name}');")
+    dbtags = dbcursor.fetchall()
+    ''' generate a list of the first element of each tuple in the list of tuples that is dbtags '''
+    dblist = list(zip(*dbtags))[0]
+    ''' build list of matching tagnames in dblist '''
+    return([tag in dblist])
+
+
 def dedupe_and_sort(list_item, delimiter):
 	''' get a list item that contains a delimited string, dedupe and sort it and pass it back '''
 	distinct_items = set(x.strip() for x in list_item.split(delimiter))
@@ -219,6 +229,15 @@ def create_config():
 # 			input()
 # 			for difference in differences:
 # 			 	print(difference[0], difference[1], difference[2])
+
+def texttags_in_alib(taglist):
+    ''' compare existing tags in alib table against list of text tags and eliminate those that are not present in alib '''
+    dbcursor.execute("SELECT name FROM PRAGMA_TABLE_INFO('alib');")
+    dbtags = dbcursor.fetchall()
+    ''' generate a list of the first element of each tuple in the list of tuples that is dbtags '''
+    dblist = list(zip(*dbtags))[0]
+    ''' build list of matching tagnames in dblist '''
+    return([tag for tag in taglist if tag in dblist])
 	
 
 def get_badtags():
@@ -234,13 +253,14 @@ def kill_badtags(badtags):
 	''' iterate over unwanted tags and set any non NULL values to NULL '''
 
 	start_tally = tally_mods()
-	print("Wiping spurious tags:")
+	print(f"\nWiping spurious tags:")
 
 	for tagname in badtags:
 
 		if tagname[0] != "__albumgain":
 			''' make an exception for __albumgain as it's ever present in mp3 and always null, so bypass it as it'd waste a cycle '''
 
+			''' append quotes to tag names in case any have a space in the field name '''
 			tag = '"' + tagname[0] + '"'
 			dbcursor.execute(f"create index if not exists {tag} on alib({tag})")
 			dbcursor.execute(f"select count({tag}) from alib")
@@ -254,7 +274,8 @@ def kill_badtags(badtags):
 
 
 def update_tags():
-	''' function call to run mass tagging updates.  Consider whether it'd be better to break this lot into discrete functions '''
+	''' function call to run mass tagging updates.  It is preferable to running update_tags prior to killing bad_tags so that data can be moved to good tags where present in non-standard tags such as 'recording location'
+	Consider whether it'd be better to break this lot into discrete functions '''
 
 	''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
 	dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
@@ -263,19 +284,29 @@ def update_tags():
 	''' here you add whatever update and enrichment queries you want to run against the table '''
 	start_tally = tally_mods()
 
-	text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", "engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "movement", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", "musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", "remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
-	print(f"Trimming and removing spurious CRs, LFs and SPACES:")
+	''' list all known text tags you might want to process against '''
+	all_text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", 
+	"engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "movement", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", 
+	"musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", 
+	"remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
+
+	''' narrow it down to the list that's actually present in alib table. based on what's been imported '''
+	text_tags = texttags_in_alib(all_text_tags)
+
+	print(f"Identifying and removing spurious CRs, LFs and SPACES in:")
 	for text_tag in text_tags:
+		dbcursor.execute(f"create index if not exists {text_tag} on alib({text_tag})")
 		print(f"- {text_tag}")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(10), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(10), ''));")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(13), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(13), ''));")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, ' \\','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, ' \\','\\');")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, '\\ ','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, '\\ ','\\');")
+		dbcursor.execute(f"drop index if exists {text_tag}")
 
 
 	''' strip extranious info from track title and write it to subtitle or other most appropriate tag '''
 
-	print("Stripping from track titles:")
+	print(f"\nStripping from track titles:")
 	''' this transforms uppercase '(Live in...)' without affecting 'live' appearing elsewhere in the string being assessed '''
 	print("- '(Live in' from track titles")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live') - 1) ), subtitle = substr(title, instr(title, '(Live') ) WHERE (title LIKE '%(Live in%' AND title NOT LIKE '%(live in%' AND subtitle IS NULL);")
@@ -310,7 +341,7 @@ def update_tags():
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[live') - 1) ), subtitle = substr(title, instr(title, '[live') ) WHERE (title LIKE '%[live at%' AND title NOT LIKE '%[Live at%' AND subtitle IS NULL);")
 
 
-	print("Stripping from track titles and appending performer names to artist field:")
+	print(f"\nStripping from track titles and appending performer names to artist field:")
 	''' convert all instances of %(Feat. '''
 	print("- '(Feat. ' from track titles and appending performer names to artist field")
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '(Feat. ') ), '(Feat. ', ''), ')', '')  WHERE title LIKE '%(Feat. %' AND  (trim(substr(title, 1, instr(title, '(Feat. ') - 1) ) != '') AND  title NOT LIKE '%(feat. %';")
@@ -329,27 +360,35 @@ def update_tags():
 
 	''' convert all instances of %[Feat. '''
 	print("- '[Feat. ' from track titles and appending performer names to artist field")
-	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[Feat. ') ), '[Feat. ', ''), ')', '')  WHERE title LIKE '%(Feat. %' AND  (trim(substr(title, 1, instr(title, '[Feat. ') - 1) ) != '') AND  title NOT LIKE '%[feat. %';")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[Feat. ') ), '[Feat. ', ''), ')', '')  WHERE title LIKE '%[Feat. %' AND  (trim(substr(title, 1, instr(title, '[Feat. ') - 1) ) != '') AND  title NOT LIKE '%[feat. %';")
 
 	''' convert all instances of %[feat. '''
 	print("- '[feat. ' from track titles and appending performer names to artist field")
-	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat. ') ), '[feat. ', ''), ')', '') WHERE title LIKE '%(feat. %' AND (trim(substr(title, 1, instr(title, '[feat. ') - 1) ) != '') AND title NOT LIKE '%[Feat. %';")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat. ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat. ') ), '[feat. ', ''), ')', '') WHERE title LIKE '%[feat. %' AND (trim(substr(title, 1, instr(title, '[feat. ') - 1) ) != '') AND title NOT LIKE '%[Feat. %';")
 
 	''' convert all instances of %[Feat '''
 	print("- '[Feat ' from track titles and appending performer names to artist field")
-	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[Feat ') ), '[Feat ', ''), ')', '') WHERE title LIKE '%(Feat %' AND (trim(substr(title, 1, instr(title, '[Feat ') - 1) ) != '') AND title NOT LIKE '%[feat  %';")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[Feat ') ), '[Feat ', ''), ')', '') WHERE title LIKE '%[Feat %' AND (trim(substr(title, 1, instr(title, '[Feat ') - 1) ) != '') AND title NOT LIKE '%[feat  %';")
 
 	''' convert all instances of %[feat '''
 	print("- '[Feat ' from track titles and appending performer names to artist field")
-	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat ') ), '[feat ', ''), ')', '') WHERE title LIKE '%(feat %' AND (trim(substr(title, 1, instr(title, '[feat ') - 1) ) != '') AND title NOT LIKE '%[Feat  %';")
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat ') ), '[feat ', ''), ')', '') WHERE title LIKE '%([eat %' AND (trim(substr(title, 1, instr(title, '[feat ') - 1) ) != '') AND title NOT LIKE '%[Feat  %';")
 
 
 	''' merge album name and version fields into album name '''
-	print("Merging album name and version fields into album name")
+	print(f"\nMerging album name and version fields into album name")
 	dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
 
+
+	''' append "recording location" to recordinglocation if recordinglocation is empty '''
+	if tag_in_table('recording location', 'alib'):
+		print(f"\nAppending recording location to recordinglocation where recordinglocation is empty")
+		x = 'alib."recording location"'
+		dbcursor.execute(f"UPDATE alib SET recordinglocation = {x} WHERE (recordinglocation IS NULL AND {x} IS NOT NULL) OR (recordinglocation IS NOT NULL AND {x} IS NOT NULL AND NOT INSTR(recordinglocation, {x}) AND NOT INSTR({x}, recordinglocation));")
+
+
 	''' remove performer names where they match artist names '''
-	print("\nRemoving performer names where they match artist names")
+	print(f"\nRemoving performer names where they match artist names")
 	dbcursor.execute('UPDATE alib SET performer = NULL WHERE lower(performer) = lower(artist);')
 
 	''' add any other update queries you want to run above this line '''
@@ -406,12 +445,14 @@ def log_changes():
 
 	data = dbcursor.execute("SELECT * FROM dirs_to_process")
 	with open('/tmp/dirs2process', 'w', newline='') as filehandle:
-	    writer = csv.writer(filehandle)
+	    writer = csv.writer(filehandle, delimiter = '|', quoting=csv.QUOTE_NONE)
 	    writer.writerows(data)
 
 	print("Affected folders have been written out to text file: /tmp/dirs2process")
-	print(f"Changed tags have been written to a database: /tmp/export.db with table alib.  This alib table contains only changed records with sqlmodded set to NULL for writing back to underlying file tags\n \
-		You can now directly export from database: /tmp/export.dbexisting database\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {dbfile}.")
+	print(f"Changed tags have been written to a database: /tmp/export.db with table alib.\n \
+		This alib table contains only changed records with sqlmodded set to NULL for writing back to underlying file tags\n \
+		You can now directly export from database: /tmp/export.dbexisting database\n \
+		If you need to rollback changes you can reinstate tags from table 'alib_rollback' in {dbfile}.")
 
 	conn.commit()
 	
@@ -438,7 +479,13 @@ if __name__ == '__main__':
 	# show_table_differences()
 
 	conn.commit()
-	# prepare_writeback()
 	dbcursor.execute("VACUUM")
 	dbcursor.close()
 	conn.close()
+
+''' todo: ref https://github.com/audiomuze/tags2sqlite
+add:
+- write out test files: all __dirpath's missing genres, composers, year/date, mbalbumartistid
+
+
+ '''
