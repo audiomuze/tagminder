@@ -18,14 +18,16 @@ At present must be started in root of tree you intend to import.  I strongly sug
 
 TODO:
 - sort multi-entry tags and eliminate duplicate entries in tags
-- incorporate metadata normalisation routines to standardise tack title, performer, composer & label names
-- leverage cosine similarity to generate potential duplicates requiring manual intervention 
+- incorporate metadata normalisation routines to standardise track ```TITLE```, ```PERFORMER```, ```COMPOSER``` & ```LABEL``` metadata
+- leverage cosine similarity to generate potential duplicate in contributor metadata requiring manual intervention 
 - add Musicbrainz identifiers to all ```ARTIST```, ```PERFORMER```, ```COMPOSER```, ```LYRICIST```, ```WRITER```, ```LABEL```, ```WORK```, ```PART``` and ```ALBUMARTIST``` tags
-- incorporate metadata enrichment leveraging Musicbrainz and inference based on existing track related metadata in table
-- cleanup and standardise genres to eliminate unsanctioned genre entries
-- merge genre and style tags to genre tag and eliminate duplicates
-- enrich "Pop/Rock" only genre assignments with artist based genre and style entries
+- incorporate metadata enrichment leveraging Musicbrainz and inferences based on existing track related metadata in table
+- cleanup and standardise genres to eliminate unsanctioned ```GENRE``` entries
+- ensure standardisation of various tags across all tracks in a folder/album e.g. all tracks have ```DATE``` and ```GENRE``` assignments
+- merge ```GENRE`` and ```STYLE``` tags to ```GENRE`` tag and and dedupe both
+- enrich "Pop/Rock" only genre assignments with artist based ```GENRE`` and ```STYLE``` entries
 - ensure ```LIVE``` tag is set to 1 for all Live performances
 - remove "Various Artists' as ```ALBUMARTIST```and set ```COMPILATION``` to 1 for VA albums
-- Normalise ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it.
+- Normalise ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it
+- write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
 
