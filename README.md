@@ -24,8 +24,8 @@ TODO:
 - incorporate metadata enrichment leveraging Musicbrainz and inferences based on existing track related metadata in table
 - cleanup and standardise genres to eliminate unsanctioned ```GENRE``` entries
 - ensure standardisation of various tags across all tracks in a folder/album e.g. all tracks have ```DATE``` and ```GENRE``` assignments
-- merge ```GENRE`` and ```STYLE``` tags to ```GENRE``` tag and dedupe both
-- enrich "Pop/Rock" only genre assignments with artist based ```GENRE`` and ```STYLE``` entries
+- merge ```GENRE``` and ```STYLE``` tags to ```GENRE``` tag and dedupe both
+- enrich "Pop/Rock" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
 - ensure ```LIVE``` tag is set to 1 for all Live performances
 - remove "Various Artists' as ```ALBUMARTIST```and set ```COMPILATION``` to 1 for VA albums
 - Normalise ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it
