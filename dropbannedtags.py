@@ -25,7 +25,8 @@ def tag_in_table(tag, table_name):
     ''' generate a list of the first element of each tuple in the list of tuples that is dbtags '''
     dblist = list(zip(*dbtags))[0]
     ''' build list of matching tagnames in dblist '''
-    return([tag in dblist])
+
+    return(tag in dblist)
 
 
 def dedupe_and_sort(list_item, delimiter):
@@ -38,7 +39,8 @@ def tally_mods():
 	''' start and stop counter that returns how many changes have been triggered at the point of call - will be >= 0 '''
 	dbcursor.execute('SELECT sum(CAST (sqlmodded AS INTEGER) ) FROM alib WHERE sqlmodded IS NOT NULL;')
 	matches = dbcursor.fetchone()
-	if matches == None:
+
+	if matches[0] == None:
 		''' sqlite returns null from a sum operation if the field values are null, so test for it, because if the script is run iteratively that'll be the case where alib has been readied for export '''
 		return(0)
 	return(matches[0])
@@ -134,7 +136,6 @@ def create_config():
 	"composer",
 	"conductor",
 	"country",
-	"date",
 	"discnumber",
 	"discogs_artist_url",
 	"discogs_release_url",
@@ -188,7 +189,6 @@ def create_config():
 	"theme",
 	"title",
 	"track",
-	"tracknumber",
 	"upc",
 	"version",
 	"work",
@@ -253,7 +253,7 @@ def kill_badtags(badtags):
 	''' iterate over unwanted tags and set any non NULL values to NULL '''
 
 	opening_tally = tally_mods()
-	print(f"\nWiping spurious tags:")
+	print(f"\nRemoving spurious tags:")
 
 	for tagname in badtags:
 
@@ -276,7 +276,7 @@ def kill_badtags(badtags):
 
 
 def update_tags():
-	''' function call to run mass tagging updates.  It is preferable to running update_tags prior to killing bad_tags so that data can be moved to good tags where present in non-standard tags such as 'recording location'
+	''' function call to run mass tagging updates.  It is preferable to run update_tags prior to killing bad_tags so that data can be moved to good tags where present in non-standard tags such as 'recording location' & unsyncedlyrics
 	Consider whether it'd be better to break this lot into discrete functions '''
 
 	''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
@@ -297,6 +297,7 @@ def update_tags():
 
 	print(f"Identifying and removing spurious CRs, LFs and SPACES in:")
 	opening_tally = start_tally
+
 	for text_tag in text_tags:
 		dbcursor.execute(f"create index if not exists {text_tag} on alib({text_tag})")
 		print(f"- {text_tag}")
@@ -330,7 +331,7 @@ def update_tags():
 	for live_instance in live_instances:
 
 		print(f"Stripping {live_instance} from track titles...")
-		dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), subtitle = substr(title, instr(title, ?)), live = IIF(live != '1', '1', live) WHERE (title LIKE ? AND subtitle IS NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
+		dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), subtitle = substr(title, instr(title, ?)), live = IIF(live IS NULL, '1', live) WHERE (title LIKE ? AND subtitle IS NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
 
 	dbcursor.execute(f"drop index if exists titles_subtitles")
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
@@ -401,8 +402,8 @@ def update_tags():
 	opening_tally = tally_mods()
 	for feat_instance in feat_instances:
 
-		print(f"Stripping {feat_instance} from track titles and appending performers to ARTIST tag...")
-		dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, ?) ), ?, ''), ')', '')  WHERE title LIKE ? AND (trim(substr(title, 1, instr(title, ?) - 1) ) != '');",  (feat_instance, feat_instance, feat_instance, '%'+feat_instance+'%', feat_instance))
+		print(f"Stripping {feat_instance} from track TITLE and appending performers to ARTIST tag...")
+		dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), artist = artist || '\\\\' || REPLACE(replace(substr(title, instr(title, ?) ), ?, ''), ')', '')  WHERE title LIKE ? AND (trim(substr(title, 1, instr(title, ?) - 1) ) != '');",  (feat_instance, feat_instance, feat_instance, '%'+feat_instance+'%', feat_instance))
 
 	dbcursor.execute(f"drop index if exists titles_artists")
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")	
@@ -441,25 +442,90 @@ def update_tags():
 	# dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[feat ') - 1) ), artist = artist || '\\' || REPLACE(replace(substr(title, instr(title, '[feat ') ), '[feat ', ''), ')', '') WHERE title LIKE '%([eat %' AND (trim(substr(title, 1, instr(title, '[feat ') - 1) ) != '') AND title NOT LIKE '%[Feat  %';")
 
 
+	''' move text in TITLE enclosed by [] to SUBTITLE '''
+	print("moving text in 'TITLE' tag enclosed by [] to 'SUBTITLE' tag...")
+
+	opening_tally = tally_mods()
+	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[') - 1), length(title) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '['), length(title) ) ), subtitle || '\\\\' || trim(substr(title, instr(title, '['), length(title) ) ) ) WHERE title LIKE '%[%';")
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+	
+
+	# ''' append "recording location" to recordinglocation if recordinglocation is empty sql2 is likely redundant because of killbadtags'''
+	column_name = "recording location"
+	tag_in_table(column_name, 'alib')
+
+	if tag_in_table(column_name, 'alib'):
+		opening_tally = tally_mods()
+		print(f"\nIncorporating recording location into recordinglocation")
+
+		sql1 = '''
+		UPDATE alib SET recordinglocation = alib."recording location", "recording location" = NULL WHERE alib.recordinglocation IS NULL and alib."recording location" IS NOT NULL;
+		'''
+		sql2 = '''
+		UPDATE alib SET recordinglocation = recordinglocation || "\\" || alib."recording location", "recording location" = NULL WHERE alib.recordinglocation IS NOT NULL and alib."recording location" IS NOT NULL;
+		'''
+		dbcursor.execute(sql1)
+		dbcursor.execute(sql2)		
+		print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+		''' now there may be a few '%[Live ' and '%(Live ' still hanging around, process them also '''
+		opening_tally = tally_mods()
+		print(f"\nStripping '[Live ' and '(Live ' from end of track TITLE, marking track as Live track")
+		dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '[Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '[Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' [Live '+'%',))
+		dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '(Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '(Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' (Live '+'%',))
+		print(f"|\n{tally_mods() - opening_tally} tags were modified")	
+
+
+	# ''' append "release" to version if version is empty. sql2 is likely redundant because of killbadtags'''
+	column_name = "release"
+	tag_in_table(column_name, 'alib')
+
+	if tag_in_table(column_name, 'alib'):
+		opening_tally = tally_mods()
+		print(f"\nIncorporating 'release' into 'version' and removing 'release' metadata")
+
+		sql1 = '''
+		UPDATE alib SET version = alib.release, release = NULL WHERE alib.version IS NULL and alib.release IS NOT NULL;
+		'''
+		sql2 = '''
+		UPDATE alib SET version = version || "\\" || alib.release, release = NULL WHERE alib.version IS NOT NULL AND alib.release IS NOT NULL AND NOT INSTR(alib.version, alib.release);
+		'''
+		dbcursor.execute(sql1)
+		dbcursor.execute(sql2)		
+		print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+	''' append "unsyncedlyrics" to lyrics if lyrics is empty '''
+	if tag_in_table('unsyncedlyrics', 'alib'):
+		opening_tally = tally_mods()
+		print(f"\nCopying unsyncedlyrics to lyrics where lyrics tag is empty")
+		dbcursor.execute("UPDATE alib SET lyrics = unsyncedlyrics WHERE lyrics IS NULL AND unsyncedlyrics IS NOT NULL;")
+		print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
 	''' merge album name and version fields into album name '''
 	print(f"\nMerging album name and version fields into album name")
 	opening_tally = tally_mods()
 	dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
-	''' append "recording location" to recordinglocation if recordinglocation is empty '''
-	
-	if tag_in_table('recording location', 'alib'):
-		opening_tally = tally_mods()
-		print(f"\nAppending recording location to recordinglocation where recordinglocation is empty")
-		x = 'alib."recording location"'
-		dbcursor.execute(f"UPDATE alib SET recordinglocation = {x} WHERE (recordinglocation IS NULL AND {x} IS NOT NULL) OR (recordinglocation IS NOT NULL AND {x} IS NOT NULL AND NOT INSTR(recordinglocation, {x}) AND NOT INSTR({x}, recordinglocation));")
-		print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 	''' remove performer names where they match artist names '''
 	opening_tally = tally_mods()
 	print(f"\nRemoving performer names where they match artist names")
 	dbcursor.execute('UPDATE alib SET performer = NULL WHERE lower(performer) = lower(artist);')
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+	''' get rid of discnumber when all tracks in __dirpath have discnumber = 1.  I'm doing this the lazy way because I've not spent enough time figuring out the CTE update query in SQL.  This is a temporary workaround to be replaced with a CTE update query '''
+	opening_tally = tally_mods()	
+	dbcursor.execute('''WITH GET_SINGLE_DISCS AS ( SELECT __dirpath AS cte_value FROM ( SELECT DISTINCT __dirpath, discnumber FROM alib WHERE discnumber IS NOT NULL) GROUP BY __dirpath HAVING count( * ) = 1 ORDER BY __dirpath ) SELECT cte_value FROM GET_SINGLE_DISCS;''')
+	queryresults  = dbcursor.fetchall()
+	for query in queryresults:
+		var = query[0]
+		print(f"Removing discnumber from {var}.")
+		dbcursor.execute("UPDATE alib SET discnumber = NULL where __dirpath = ?", (var,))
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 	''' add any other update queries you want to run above this line '''
@@ -510,19 +576,22 @@ def log_changes():
 	print(f"\nGenerating changed_tags table...")
 
 	''' Create an export database and write out alib containing changed records with sqlmodded set to NULL for writing back to underlying file tags '''
-	dbcursor.execute("ATTACH DATABASE '/tmp/export.db' AS alib2")
+	dbcursor.execute("ATTACH DATABASE '/tmp/flacs/export.db' AS alib2")
 	dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib")
 	dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib AS SELECT * FROM alib WHERE sqlmodded IS NOT NULL ORDER BY __path")
 	dbcursor.execute("UPDATE alib2.alib SET sqlmodded = NULL;")
+	dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib_rollback")
+	dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib_rollback AS SELECT * FROM alib_rollback ORDER BY __path")	
+
 
 	data = dbcursor.execute("SELECT * FROM dirs_to_process")
-	with open('/tmp/dirs2process', 'w', newline='') as filehandle:
+	with open('/tmp/flacs/dirs2process', 'w', newline='') as filehandle:
 	    writer = csv.writer(filehandle, delimiter = '|', quoting=csv.QUOTE_NONE)
 	    writer.writerows(data)
 
-	print("Affected folders have been written out to text file:\n/tmp/dirs2process\n")
-	print(f"Changed tags have been written to a database:\n/tmp/export.db with table alib.\n^^^ this alib table contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.\n")
-	print(f"You can now directly export from database:\n/tmp/export.db\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in:\n{dbfile}\n")
+	print("Affected folders have been written out to text file:\n/tmp/flacs/dirs2process\n")
+	print(f"Changed tags have been written to a database:\n/tmp/flacs/export.db with table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.\n")
+	print(f"You can now directly export from this database to the underlying files\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in:\n{dbfile}\n")
 
 	conn.commit()
 	
