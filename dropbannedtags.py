@@ -443,7 +443,7 @@ def update_tags():
 
 
 	''' move text in TITLE enclosed by [] to SUBTITLE '''
-	print("moving text in 'TITLE' tag enclosed by [] to 'SUBTITLE' tag...")
+	print("\nMoving text in 'TITLE' tag enclosed by [] to 'SUBTITLE' tag...")
 
 	opening_tally = tally_mods()
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[') - 1), length(title) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '['), length(title) ) ), subtitle || '\\\\' || trim(substr(title, instr(title, '['), length(title) ) ) ) WHERE title LIKE '%[%';")
@@ -590,7 +590,7 @@ def log_changes():
 	    writer.writerows(data)
 
 	print("Affected folders have been written out to text file:\n/tmp/flacs/dirs2process\n")
-	print(f"Changed tags have been written to a database:\n/tmp/flacs/export.db with table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.\n")
+	print(f"Changed tags have been written to a database:\n/tmp/flacs/export.db with table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
 	print(f"You can now directly export from this database to the underlying files\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in:\n{dbfile}\n")
 
 	conn.commit()
