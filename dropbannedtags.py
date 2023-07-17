@@ -504,11 +504,11 @@ def update_tags():
 		print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
-	''' merge album name and version fields into album name '''
-	print(f"\nMerging album name and version fields into album name")
-	opening_tally = tally_mods()
-	dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
-	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+	# ''' merge album name and version fields into album name '''
+	# print(f"\nMerging album name and version fields into album name")
+	# opening_tally = tally_mods()
+	# dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
+	# print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 	''' remove performer names where they match artist names '''
@@ -518,20 +518,20 @@ def update_tags():
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
-	''' get rid of discnumber when all tracks in __dirpath have discnumber = 1.  I'm doing this the lazy way because I've not spent enough time figuring out the CTE update query in SQL.  This is a temporary workaround to be replaced with a CTE update query '''
-	opening_tally = tally_mods()	
-	dbcursor.execute('''WITH GET_SINGLE_DISCS AS ( SELECT __dirpath AS cte_value FROM ( SELECT DISTINCT __dirpath, discnumber FROM alib WHERE discnumber IS NOT NULL) GROUP BY __dirpath HAVING count( * ) = 1 ORDER BY __dirpath ) SELECT cte_value FROM GET_SINGLE_DISCS;''')
-	queryresults  = dbcursor.fetchall()
-	for query in queryresults:
-		var = query[0]
-		print(f"Removing discnumber from {var}.")
-		dbcursor.execute("UPDATE alib SET discnumber = NULL where __dirpath = ?", (var,))
-	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+	# ''' get rid of discnumber when all tracks in __dirpath have discnumber = 1.  I'm doing this the lazy way because I've not spent enough time figuring out the CTE update query in SQL.  This is a temporary workaround to be replaced with a CTE update query '''
+	# opening_tally = tally_mods()	
+	# dbcursor.execute('''WITH GET_SINGLE_DISCS AS ( SELECT __dirpath AS cte_value FROM ( SELECT DISTINCT __dirpath, discnumber FROM alib WHERE discnumber IS NOT NULL AND lower(__dirname) NOT LIKE '%cd%') GROUP BY __dirpath HAVING count( * ) = 1 ORDER BY __dirpath ) SELECT cte_value FROM GET_SINGLE_DISCS;''')
+	# queryresults  = dbcursor.fetchall()
+	# for query in queryresults:
+	# 	var = query[0]
+	# 	print(f"Removing discnumber from {var}.")
+	# 	dbcursor.execute("UPDATE alib SET discnumber = NULL where __dirpath = ?", (var,))
+	# print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
-	''' add any other update queries you want to run above this line '''
-	conn.commit()
-	dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
-	return(tally_mods() - start_tally)
+	# ''' add any other update queries you want to run above this line '''
+	# conn.commit()
+	# dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
+	# return(tally_mods() - start_tally)
 
 
 def show_stats(killed_tags):
@@ -584,14 +584,19 @@ def log_changes():
 	dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib_rollback AS SELECT * FROM alib_rollback ORDER BY __path")	
 
 
-	data = dbcursor.execute("SELECT * FROM dirs_to_process")
-	with open('/tmp/flacs/dirs2process', 'w', newline='') as filehandle:
-	    writer = csv.writer(filehandle, delimiter = '|', quoting=csv.QUOTE_NONE)
-	    writer.writerows(data)
+	if table_exists('dirs_to_process'):
 
-	print("Affected folders have been written out to text file:\n/tmp/flacs/dirs2process\n")
-	print(f"Changed tags have been written to a database:\n/tmp/flacs/export.db with table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
-	print(f"You can now directly export from this database to the underlying files\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in:\n{dbfile}\n")
+		data = dbcursor.execute("SELECT * FROM dirs_to_process")
+		with open('/tmp/flacs/dirs2process', 'w', newline='') as filehandle:
+		    writer = csv.writer(filehandle, delimiter = '|', quoting=csv.QUOTE_NONE)
+		    writer.writerows(data)
+
+		print("Affected folders have been written out to text file:\n/tmp/flacs/dirs2process\n")
+		print(f"Changed tags have been written to a database:\n/tmp/flacs/export.db with table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
+		print(f"You can now directly export from this database to the underlying files\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in:\n{dbfile}\n")
+
+	else:
+				print("No changes were processed\n")
 
 	conn.commit()
 	
