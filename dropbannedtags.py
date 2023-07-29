@@ -12,10 +12,12 @@ def table_exists(table_name):
 	return (dbcursor.fetchone()[0] == 1)
 
 
+
 def get_columns(table_name):
 	''' return the list of columns in a table '''
 	dbcursor.execute(f"SELECT name FROM PRAGMA_TABLE_INFO('{table_name}');")
 	return(dbcursor.fetchall())
+
 
 
 def tag_in_table(tag, table_name):
@@ -25,14 +27,15 @@ def tag_in_table(tag, table_name):
     ''' generate a list of the first element of each tuple in the list of tuples that is dbtags '''
     dblist = list(zip(*dbtags))[0]
     ''' build list of matching tagnames in dblist '''
-
     return(tag in dblist)
+
 
 
 def dedupe_and_sort(list_item, delimiter):
 	''' get a list item that contains a delimited string, dedupe and sort it and pass it back '''
 	distinct_items = set(x.strip() for x in list_item.split(delimiter))
 	return (delimiter.join(sorted(distinct_items)))
+
 
 
 def tally_mods():
@@ -46,17 +49,22 @@ def tally_mods():
 	return(matches[0])
 
 
+
 def changed_records():
 	''' returns how many records have been changed at the point of call - will be >= 0 '''
 	dbcursor.execute('SELECT count(sqlmodded) FROM alib;')
 	matches = dbcursor.fetchone()
 	return (matches[0])
 
+
+
 def affected_dirpaths():
 	''' get list of all affected __dirpaths '''
 	dbcursor.execute('SELECT DISTINCT __dirpath FROM alib where sqlmodded IS NOT NULL;')
 	matches = dbcursor.fetchall()
 	return(matches)
+
+
 	
 def affected_dircount():
 	# ''' sum number of distinct __dirpaths with changed content '''	
@@ -64,6 +72,7 @@ def affected_dircount():
 	# matches = dbcursor.fetchone()
 	# return(matches[0])
 	return(len(affected_dirpaths()))
+
 
 
 def create_config():
@@ -211,6 +220,7 @@ def create_config():
 	conn.commit()
 
 
+
 # def show_table_differences():
 
 # 	''' pick up the columns present in the table '''
@@ -230,6 +240,8 @@ def create_config():
 # 			for difference in differences:
 # 			 	print(difference[0], difference[1], difference[2])
 
+
+
 def texttags_in_alib(taglist):
     ''' compare existing tags in alib table against list of text tags and eliminate those that are not present in alib '''
     dbcursor.execute("SELECT name FROM PRAGMA_TABLE_INFO('alib');")
@@ -238,6 +250,7 @@ def texttags_in_alib(taglist):
     dblist = list(zip(*dbtags))[0]
     ''' build list of matching tagnames in dblist '''
     return([tag for tag in taglist if tag in dblist])
+
 	
 
 def get_badtags():
@@ -247,6 +260,7 @@ def get_badtags():
 	if len(badtags) > 0:
 		badtags.sort()
 	return(badtags)
+
 
 
 def kill_badtags(badtags):
@@ -275,28 +289,45 @@ def kill_badtags(badtags):
 	return(closing_tally - opening_tally)
 
 
+
 def update_tags():
 	''' function call to run mass tagging updates.  It is preferable to run update_tags prior to killing bad_tags so that data can be moved to good tags where present in non-standard tags such as 'recording location' & unsyncedlyrics
 	Consider whether it'd be better to break this lot into discrete functions '''
+
+	''' set up initialisation counter '''
+	start_tally = tally_mods()
 
 	''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
 	dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
 
 
 	''' here you add whatever update and enrichment queries you want to run against the table '''
-	start_tally = tally_mods()
 
+
+	
+	''' set all fields to NULL where they are otherwise empty but not NULL '''
+	opening_tally = tally_mods()
+	columns = get_columns('alib')
+	print("Setting all fields to NULL where they are otherwise empty but not NULL")
+	for column in columns:
+		field_to_check = '[' + column[0] + ']'
+		print(f"Checking: {field_to_check}")
+		dbcursor.execute(f"UPDATE alib SET {field_to_check} = NULL WHERE TRIM({field_to_check}) = '';")
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+
+	''' Identify and remove spurious CRs, LFs and SPACES in all known text fields '''
 	''' list all known text tags you might want to process against '''
 	all_text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", 
 	"engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "movement", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", 
 	"musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", 
 	"remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
 
-	''' narrow it down to the list that's actually present in alib table. based on what's been imported '''
+	''' narrow it down to the list that's actually present in alib table - based on what's been imported '''
 	text_tags = texttags_in_alib(all_text_tags)
-
-	print(f"Identifying and removing spurious CRs, LFs and SPACES in:")
-	opening_tally = start_tally
+	print(f"\nIdentifying and removing spurious CRs, LFs and SPACES in:")
+	opening_tally = tally_mods()
 
 	for text_tag in text_tags:
 		dbcursor.execute(f"create index if not exists {text_tag} on alib({text_tag})")
@@ -309,32 +340,40 @@ def update_tags():
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
-	''' strip extranious info from track title and write it to subtitle or other most appropriate tag '''
 
-	live_instances = [
-	'(Live In',
-	'[Live In',
-	'(Live in',
-	'[Live in',
-	'(live in',
-	'[live in',
-	'(Live At',
-	'[Live At',
-	'(Live at',
-	'[Live at',
-	'(live at',
-	'[live at']
-
-	print('\n')
-	dbcursor.execute(f"create index if not exists titles_subtitles on alib(title, subtitle)")
+	'''  select all records with '[' in title, split-off text everying folowing '[' and write it out to subtitle '''
 	opening_tally = tally_mods()
-	for live_instance in live_instances:
-
-		print(f"Stripping {live_instance} from track titles...")
-		dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), subtitle = substr(title, instr(title, ?)), live = IIF(live IS NULL, '1', live) WHERE (title LIKE ? AND subtitle IS NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
-
-	dbcursor.execute(f"drop index if exists titles_subtitles")
+	print(f"\nUpdating titles to remove any text enclosed in square brackets from TITLE and appending same to SUBTITLE tag")
+	# dbcursor.execute("UPDATE alib SET title = IIF(TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)) = '', title, TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1))), subtitle = IIF(subtitle IS NULL OR TRIM(subtitle) = '', SUBSTR(title, INSTR(title, '[')), subtitle || ' ' || SUBSTR(title, INSTR(title, '['))) WHERE title LIKE '%[%';")
+	dbcursor.execute("UPDATE alib SET title = TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)), subtitle = IIF(subtitle IS NULL OR TRIM(subtitle) = '', SUBSTR(title, INSTR(title, '[')), subtitle || ' ' || SUBSTR(title, INSTR(title, '['))) WHERE title LIKE '%[%' AND TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)) != '';")
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+
+	# live_instances = [
+	# '(Live In',
+	# '[Live In',
+	# '(Live in',
+	# '[Live in',
+	# '(live in',
+	# '[live in',
+	# '(Live At',
+	# '[Live At',
+	# '(Live at',
+	# '[Live at',
+	# '(live at',
+	# '[live at']
+
+	# print('\n')
+	# dbcursor.execute(f"create index if not exists titles_subtitles on alib(title, subtitle)")
+	# opening_tally = tally_mods()
+	# for live_instance in live_instances:
+
+	# 	print(f"Stripping {live_instance} from track titles...")
+	# 	dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), subtitle = substr(title, instr(title, ?)), live = IIF(live IS NULL, '1', live) WHERE (title LIKE ? AND subtitle IS NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
+
+	# dbcursor.execute(f"drop index if exists titles_subtitles")
+	# print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 	# print(f"\nStripping from track titles:")
@@ -448,7 +487,31 @@ def update_tags():
 	opening_tally = tally_mods()
 	dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[') - 1), length(title) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '['), length(title) ) ), subtitle || '\\\\' || trim(substr(title, instr(title, '['), length(title) ) ) ) WHERE title LIKE '%[%';")
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
-	
+
+
+	''' strip (Remastered) and [Remastered...) and write it to subtitle tag '''
+
+	# remasters = [
+	# '%(Remastered %',
+	# '%[Remastered %',
+	# '%(remastered %',
+	# '%[remastered %',
+	# '%(Single Version)%',
+	# '%(Album Version)%']
+
+	# print('\n')
+	# dbcursor.execute(f"create index if not exists titles_subtitles on alib(title, subtitle)")
+	# # opening_tally = tally_mods()
+	# # for remaster in remasters:
+
+	# # 	print(f"Stripping {remaster} from track titles...")
+	# # 	dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), subtitle = substr(title, instr(title, ?)) WHERE (title LIKE ?) AND subtitle is NULL;", (remaster, remaster, '%'+remaster+'%'))
+
+	# 	# dbcursor.execute(f"UPDATE alib SET subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, ?))), subtitle || '\\\\' || trim(substr(title, instr(title, ?)))), title = trim(substr(title, 1, instr(title, ?) - 1));", (remaster, remaster, '%'+remaster+'%'))
+
+	# dbcursor.execute(f"drop index if exists titles_subtitles")
+	# print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
 
 	# ''' append "recording location" to recordinglocation if recordinglocation is empty sql2 is likely redundant because of killbadtags'''
 	column_name = "recording location"
@@ -469,12 +532,12 @@ def update_tags():
 		print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
-		''' now there may be a few '%[Live ' and '%(Live ' still hanging around, process them also '''
-		opening_tally = tally_mods()
-		print(f"\nStripping '[Live ' and '(Live ' from end of track TITLE, marking track as Live track")
-		dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '[Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '[Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' [Live '+'%',))
-		dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '(Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '(Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' (Live '+'%',))
-		print(f"|\n{tally_mods() - opening_tally} tags were modified")	
+		# ''' now there may be a few '%[Live ' and '%(Live ' still hanging around, process them also '''
+		# opening_tally = tally_mods()
+		# print(f"\nStripping '[Live ' and '(Live ' from end of track TITLE, marking track as Live track")
+		# dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '[Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '[Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' [Live '+'%',))
+		# dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '(Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '(Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' (Live '+'%',))
+		# print(f"|\n{tally_mods() - opening_tally} tags were modified")	
 
 
 	# ''' append "release" to version if version is empty. sql2 is likely redundant because of killbadtags'''
@@ -518,20 +581,40 @@ def update_tags():
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
-	# ''' get rid of discnumber when all tracks in __dirpath have discnumber = 1.  I'm doing this the lazy way because I've not spent enough time figuring out the CTE update query in SQL.  This is a temporary workaround to be replaced with a CTE update query '''
-	# opening_tally = tally_mods()	
-	# dbcursor.execute('''WITH GET_SINGLE_DISCS AS ( SELECT __dirpath AS cte_value FROM ( SELECT DISTINCT __dirpath, discnumber FROM alib WHERE discnumber IS NOT NULL AND lower(__dirname) NOT LIKE '%cd%') GROUP BY __dirpath HAVING count( * ) = 1 ORDER BY __dirpath ) SELECT cte_value FROM GET_SINGLE_DISCS;''')
-	# queryresults  = dbcursor.fetchall()
-	# for query in queryresults:
-	# 	var = query[0]
-	# 	print(f"Removing discnumber from {var}.")
-	# 	dbcursor.execute("UPDATE alib SET discnumber = NULL where __dirpath = ?", (var,))
-	# print(f"|\n{tally_mods() - opening_tally} tags were modified")
+	''' get rid of discnumber when all tracks in __dirpath have discnumber = 1.  I'm doing this the lazy way because I've not spent enough time figuring out the CTE update query in SQL.  This is a temporary workaround to be replaced with a CTE update query '''
+	opening_tally = tally_mods()	
+	dbcursor.execute('''WITH GET_SINGLE_DISCS AS ( SELECT __dirpath AS cte_value FROM ( SELECT DISTINCT __dirpath, discnumber FROM alib WHERE discnumber IS NOT NULL AND lower(__dirname) NOT LIKE '%cd%') GROUP BY __dirpath HAVING count( * ) = 1 ORDER BY __dirpath ) SELECT cte_value FROM GET_SINGLE_DISCS;''')
+	queryresults  = dbcursor.fetchall()
+	for query in queryresults:
+		var = query[0]
+		print(f"Removing discnumber from {var}.")
+		dbcursor.execute("UPDATE alib SET discnumber = NULL where __dirpath = ?", (var,))
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
-	# ''' add any other update queries you want to run above this line '''
-	# conn.commit()
-	# dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
-	# return(tally_mods() - start_tally)
+
+
+	''' Ensure that any tracks that have Live in the SUBTITLE tag are designated LIVE = 1 '''
+	opening_tally = tally_mods()
+	print("\nEnsuring any tracks that have Live in the SUBTITLE tag are designated LIVE = 1")
+	dbcursor.execute("UPDATE alib SET live = '1' WHERE LOWER(subtitle) LIKE '%live%' AND live != '1';")
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+
+	''' Ensure any tracks that have LIVE = 1 also have [Live] in the SUBTITLE '''
+	print("\nEnsuring any tracks that have LIVE = 1 also have [Live] in the SUBTITLE")
+	opening_tally = tally_mods()
+	dbcursor.execute("UPDATE alib SET subtitle = '[Live]' WHERE live = '1' AND subtitle IS NULL OR TRIM(subtitle) = '';")
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+
+
+	''' add any other update queries you want to run above this line '''
+
+	conn.commit()
+	dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
+	return(tally_mods() - start_tally)
 
 
 def show_stats(killed_tags):
