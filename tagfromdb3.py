@@ -166,7 +166,6 @@ def initdb(dbpath):
 	cursor = conn.cursor()
 	execute(conn, '''CREATE TABLE IF NOT EXISTS alib (
 	__path blob unique,
-	__md5sig text,
 	__filename blob,
 	__dirpath blob,
 	__filename_no_ext blob,
@@ -209,44 +208,51 @@ def initdb(dbpath):
 	__tag_read text,
 	__version text,
 	__vendorstring text,
-	_releasecomment text,
-	acousticbrainz_mood text,
-	acoustid_fingerprint text,
-	acoustid_id text,
-	album text,
+	__md5sig text,
+	sqlmodded text,
+	reflac text,
+	discnumber text,
+	track text,
+	title text,	
+	subtitle text,
+	work text,
+	part text,
+	live text,
+	composer text,
+	arranger text,
+	lyricist text,
+	writer text,
+	artist text,
+	ensemble text,
+	performer text,
+	personnel text,
+	conductor text,
+	engineer text,
+	producer text,
+	mixer text,
+	remixer text,	
 	albumartist text,
+	discsubtitle text,
+	album text,
+	version text,
+	_releasecomment text,	
+	releasetype text,
+	year text,
+	originaldate text,
+	originalreleasedate text,
+	originalyear text,
+	genre text,
+	style text,
+	mood text,
+	theme text,
+	rating text,
+	compilation text,
+	bootleg text,
+	label text,
+	amgtagged text,
 	amg_album_id text,
 	amg_boxset_url text,
 	amg_url text,
-	amgtagged text,
-	analysis text,
-	arranger text,
-	artist text,
-	asin text,
-	barcode text,
-	bootleg text,
-	catalog text,
-	catalognumber text,
-	compilation text,
-	composer text,
-	conductor text,
-	country text,
-	date text,
-	discnumber text,
-	discogs_artist_url text,
-	discogs_release_url text,
-	discsubtitle text,
-	engineer text,
-	ensemble text,
-	fingerprint text,
-	genre text,
-	isrc text,
-	label text,
-	live text,
-	lyricist text,
-	lyrics text,
-	mixer text,
-	mood text,
 	musicbrainz_albumartistid text,
 	musicbrainz_albumid text,
 	musicbrainz_artistid text,
@@ -255,20 +261,24 @@ def initdb(dbpath):
 	musicbrainz_releasetrackid text,
 	musicbrainz_trackid text,
 	musicbrainz_workid text,
-	originaldate text,
-	originalreleasedate text,
-	originalyear text,
-	part text,
+	lyrics text,
+	unsyncedlyrics text,
 	performancedate text,
-	performer text,
-	personnel text,
-	producer text,
-	rating text,
+	acousticbrainz_mood text,
+	acoustid_fingerprint text,
+	acoustid_id text,
+	analysis text,
+	asin text,
+	barcode text,
+	catalog text,
+	catalognumber text,
+	country text,
+	discogs_artist_url text,
+	discogs_release_url text,
+	fingerprint text,
+	isrc text,
 	recordinglocation text,
 	recordingstartdate text,
-	reflac text,
-	releasetype text,
-	remixer text,
 	replaygain_album_gain text,
 	replaygain_album_peak text,
 	replaygain_track_gain text,
@@ -278,20 +288,8 @@ def initdb(dbpath):
 	roonid text,
 	roonradioban text,
 	roontracktag text,
-	style text,
-	subtitle text,
-	theme text,
-	title text,
-	track text,
-	tracknumber text,
-	unsyncedlyrics text,
 	upc text,
-	version text,
-	work text,
-	writer text,
-	year text,
-	__albumgain text,
-	sqlmodded text DEFAULT '0')''')
+	__albumgain text)''')
 
 	conn.commit()
 	return conn
@@ -375,17 +373,30 @@ def import_dir(dbpath, dirpath):
 
 	logging.info('Import completed')
 
+# def clean_value_for_export(value):
+# 	if not value:
+# 		return value
+# 	if isinstance(value, memoryview):
+# 		return str(value)
+# 	elif isinstance(value, str):
+# 		return value
+# 	elif u'\\\\' in value:
+# 		return sort_field(remove_dupes(filter(None, value.split(u'\\\\'))))
+# 	else:
+# 		return value
+
 def clean_value_for_export(value):
-	if not value:
-		return value
-	if isinstance(value, memoryview):
-		return str(value)
-	elif isinstance(value, str):
-		return value
-	elif u'\\\\' in value:
-		return sort_field(remove_dupes(filter(None, value.split(u'\\\\'))))
-	else:
-		return value
+    if not value:
+        return value
+    if isinstance(value, memoryview):
+        return str(value)
+    elif '\\' in value:
+        return sort_field(remove_dupes(filter(None, value.split('\\'))))
+    elif isinstance(value, str):
+        return value
+    else:
+        return value
+
 
 def export_db(dbpath, dirpath):
 	conn = sqlite3.connect(dbpath)
