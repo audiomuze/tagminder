@@ -341,13 +341,29 @@ def trim_and_remove_crlf():
 	opening_tally = tally_mods()
 
 	for text_tag in text_tags:
-		dbcursor.execute(f"CREATE INDEX IF NOT EXISTS crlf ON alib ({text_tag}) WHERE ({text_tag} IS NOT NULL AND (INSTR({text_tag}, char(10) ) > 0 OR INSTR({text_tag}, char(13) ) > 0));")
+		dbcursor.execute(f"CREATE INDEX IF NOT EXISTS crlf ON alib (replace(replace({text_tag}, char(10), ''), char(13), '') ) WHERE {text_tag} IS NOT NULL;")
+		dbcursor.execute(f"CREATE INDEX IF NOT EXISTS crlf1 ON alib (trim({text_tag})) WHERE {text_tag} IS NOT NULL;")
+
 		print(f"- {text_tag}")
-		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(10), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(10), ''));")
-		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(13), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(13), ''));")
+
+		''' trim crlf '''
+		# dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(10), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(10), ''));")
+		# dbcursor.execute(f"UPDATE alib SET {text_tag} = trim([REPLACE]({text_tag}, char(13), '')) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim([REPLACE]({text_tag}, char(13), ''));")
+		# dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, char(10), '') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, char(10), '');")
+		# dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, char(13), '') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, char(13), '');")
+		dbcursor.execute(f"UPDATE alib SET {text_tag} = replace(replace({text_tag}, char(10), ''), char(13), '') WHERE {text_tag} IS NOT NULL AND {text_tag} != replace(replace({text_tag}, char(10), ''), char(13), '');")
+
+
+		''' trim spaces between delimiters '''
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, ' \\','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, ' \\','\\');")
 		dbcursor.execute(f"UPDATE alib SET {text_tag} = [REPLACE]({text_tag}, '\\ ','\\') WHERE {text_tag} IS NOT NULL AND {text_tag} != [REPLACE]({text_tag}, '\\ ','\\');")
+
+		''' finally trim the end result '''
+		dbcursor.execute(f"UPDATE alib SET {text_tag} = trim({text_tag}) WHERE {text_tag} IS NOT NULL AND {text_tag} != trim({text_tag});")
+
 		dbcursor.execute(f"drop index if exists crlf")
+		dbcursor.execute(f"drop index if exists crlf1")
+
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
@@ -461,16 +477,16 @@ def title_keywords_to_subtitle():
 	''' strip subtitle keywords from track titles and write them to subtitle tag '''
 
 	keywords = [
-	'%(Remastered %)%',
-	'%[Remastered %]%',
-	'%(remastered %)%',
-	'%[remastered %]%',
-	'%(Acoustic %)%',
-	'%[Acoustic %]%',
-	'%(acoustic %)%',
-	'%[acoustic %]%',	
-	'%(Single Version)%',
-	'%(Album Version)%']
+	'(Remastered %)%',
+	'[Remastered %]%',
+	'(remastered %)%',
+	'[remastered %]%',
+	'(Acoustic %)%',
+	'[Acoustic %]%',
+	'(acoustic %)%',
+	'[acoustic %]%',	
+	'(Single Version)%',
+	'(Album Version)%']
 
 	''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
 	dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
@@ -588,7 +604,7 @@ def kill_singular_discnumber():
 										)
 										SELECT cte_value
 										  FROM GET_SINGLE_DISCS
-										 WHERE discnumber = '1';''')
+										 WHERE discnumber = '1' OR discnumber = '01';''')
 
 	queryresults  = dbcursor.fetchall()
 	print(f"\n")
@@ -620,6 +636,25 @@ def split_album_version():
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
+def set_compilation_flag():
+	''' set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise' '''
+	opening_tally = tally_mods()
+	dbcursor.execute('''
+						UPDATE alib
+						   SET compilation = '1'
+						 WHERE (compilation IS NULL AND 
+						        substring(__dirname, 1, 4) = 'VA -' AND 
+						        albumartist IS NULL);''')
+
+
+	dbcursor.execute('''
+						UPDATE alib
+						   SET compilation = '0'
+						 WHERE (compilation IS NULL AND 
+						        substring(__dirname, 1, 4) != 'VA -' AND 
+						        albumartist IS NOT NULL);''')
+
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 def update_tags():
@@ -644,12 +679,13 @@ def update_tags():
 	release_to_version()
 	nullify_performers_matching_artists()
 	tag_live_tracks()
-	title_keywords_to_subtitle()
+	# title_keywords_to_subtitle()
 	square_brackets_to_subtitle()
 	live_in_subtitle_means_live()
 	live_means_live_in_subtitle()
-	# kill_singular_discnumber()
+	kill_singular_discnumber()
 	merge_album_version()
+	set_compilation_flag()
 
 	''' return case sensitivity for LIKE to SQLite default '''
 	dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
