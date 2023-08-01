@@ -1,18 +1,21 @@
+import csv
 import os
 from os.path import exists, dirname
-import csv
+import re
 import sqlite3
 import sys
-
 
 
 ''' function to clear screen '''
 cls = lambda: os.system('clear')
 
+def firstlettercaps(s):
+	''' returns first letter caps for each word but respects apostrophes '''
+	return re.sub(r"[A-Za-z]+('[A-Za-z]+)?", lambda mo: mo.group(0)[0].upper() + mo.group(0)[1:].lower(), s)
 
 
 def table_exists(table_name):
-	''' test whether table exists in a database'''
+	''' test whether table exists in a database '''
 	dbcursor.execute(f"SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{table_name}';")
 	#if the count is 1, then table exists
 	return (dbcursor.fetchone()[0] == 1)
@@ -617,6 +620,10 @@ def kill_singular_discnumber():
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
+def strip_live_from_album_name():
+	return("Not yet coded")
+
+
 def merge_album_version():
 	''' merge album name and version fields into album name '''
 	print(f"\nMerging album name and version fields into album name")
@@ -637,7 +644,8 @@ def split_album_version():
 
 
 def set_compilation_flag():
-	''' set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise' '''
+	''' set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise '''
+	print(f"\nSetting COMPILATION = '1' / '0' depending on whether __dirname starts with 'VA -'")
 	opening_tally = tally_mods()
 	dbcursor.execute('''
 						UPDATE alib
@@ -645,7 +653,6 @@ def set_compilation_flag():
 						 WHERE (compilation IS NULL AND 
 						        substring(__dirname, 1, 4) = 'VA -' AND 
 						        albumartist IS NULL);''')
-
 
 	dbcursor.execute('''
 						UPDATE alib
@@ -655,6 +662,39 @@ def set_compilation_flag():
 						        albumartist IS NOT NULL);''')
 
 	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+
+def nullify_va ():
+	''' remove 'Various Artists' value from ALBUMARTIST tag '''
+	print(f"\nRemoving 'Various Artists' from ALBUMARTIST and ENSEMBLE tags")
+	opening_tally = tally_mods()
+	dbcursor.execute('''
+						UPDATE alib
+						   SET albumartist = NULL
+						 WHERE lower(albumartist) = 'various artists';''')
+
+	dbcursor.execute('''
+						UPDATE alib
+						   SET ensemble = NULL
+						 WHERE lower(ensemble) = 'various artists';''')
+
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+
+def normalise_releasetype():
+	print(f"\nSetting 'First Letter Caps' for all instances of releasetype")
+	opening_tally = tally_mods()
+	dbcursor.execute('''SELECT DISTINCT releasetype FROM alib WHERE releasetype IS NOT NULL;''')
+	releasetypes = dbcursor.fetchall()
+	for release in releasetypes:
+		print(release[0])
+		flc = firstlettercaps(release[0])
+		print(release[0], flc)
+		dbcursor.execute('''UPDATE alib SET releasetype = (?) WHERE releasetype = (?) AND releasetype != (?);''', (flc, release[0], flc))
+	print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
 
 
 def update_tags():
@@ -670,22 +710,25 @@ def update_tags():
 
 	''' here you add whatever update and enrichment queries you want to run against the table '''
 
-	unsyncedlyrics_to_lyrics()
-	kill_badtags()
-	nullify_empty_tags()
-	trim_and_remove_crlf()
-	feat_to_artist()
-	merge_recording_locations()
-	release_to_version()
-	nullify_performers_matching_artists()
-	tag_live_tracks()
+	# unsyncedlyrics_to_lyrics()
+	# kill_badtags()
+	# nullify_empty_tags()
+	# trim_and_remove_crlf()
+	# feat_to_artist()
+	# merge_recording_locations()
+	# release_to_version()
+	# nullify_performers_matching_artists()
+	# tag_live_tracks()
 	# title_keywords_to_subtitle()
-	square_brackets_to_subtitle()
-	live_in_subtitle_means_live()
-	live_means_live_in_subtitle()
-	kill_singular_discnumber()
-	merge_album_version()
-	set_compilation_flag()
+	# square_brackets_to_subtitle()
+	# live_in_subtitle_means_live()
+	# live_means_live_in_subtitle()
+	# kill_singular_discnumber()
+	# merge_album_version()
+	# set_compilation_flag()
+	# nullify_va()
+	normalise_releasetype()
+	# strip_live_from_album_name()
 
 	''' return case sensitivity for LIKE to SQLite default '''
 	dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
