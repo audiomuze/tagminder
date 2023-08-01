@@ -17,7 +17,7 @@ At present it does the following:
 - ensures ```LIVE``` tag is set to 1 for all Live performances
 - removes "Various Artists' as ```ALBUMARTIST```
 - writes out multiple ```TAGNAME=value``` rather than ```TAGNAME=value1\\value2 ``` delimited tag entries
-- Normalises ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it
+- Normalises ```RELEASETYPE``` entries for using First Letter Caps for better presentation in music server front-ends that leverage it
 
 At present must be started in root of tree you intend to import.
 I strongly suggest writing the db to ```/tmp``` as it's dynamically modified every time a new tag is encounted in a file being imported.  It'll work on physical disk, but it'll take longer.  It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags
