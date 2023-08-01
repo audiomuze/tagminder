@@ -14,7 +14,9 @@ At present it does the following:
 - merges ```ALBUM``` and ```VERSION``` tags into ```ALBUM``` tag to get around LMS and Navidrome merging different versions of an album into a single album.  ```VERSION``` is left intact making it simle to reverse with an UPDATE query
 - removes ```PERFORMER``` tags where they match the ARTIST tag
 - sets ```COMPILATION``` = '1' for all Various Artists albums and to '0' for all others.  Tests for presence or otherwise of ```ALBUMARTIST``` and whether ```__dirname``` of album begings with 'VA - ' to make its deterimation
-- ensurea ```LIVE``` tag is set to 1 for all Live performances
+- ensures ```LIVE``` tag is set to 1 for all Live performances
+- removes "Various Artists' as ```ALBUMARTIST```
+- writes out multiple ```TAGNAME=value``` rather than ```TAGNAME=value1\\value2 ``` delimited tag entries
 
 At present must be started in root of tree you intend to import.
 I strongly suggest writing the db to ```/tmp``` as it's dynamically modified every time a new tag is encounted in a file being imported.  It'll work on physical disk, but it'll take longer.  It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags
@@ -30,9 +32,9 @@ TODO:
 - merge ```GENRE``` and ```STYLE``` tags to ```GENRE``` tag and dedupe both
 - enrich "Pop/Rock" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
 
-- ~~remove "Various Artists' as ```ALBUMARTIST```~~
+- 
 - Normalise ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it
 - write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
 - remove (live) from end of all album names, set ```LIVE``` = '1'
-- ~~write out multiple tags rather than delimited tag entries~~
+- 
 
