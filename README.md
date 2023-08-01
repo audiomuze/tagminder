@@ -17,6 +17,7 @@ At present it does the following:
 - ensures ```LIVE``` tag is set to 1 for all Live performances
 - removes "Various Artists' as ```ALBUMARTIST```
 - writes out multiple ```TAGNAME=value``` rather than ```TAGNAME=value1\\value2 ``` delimited tag entries
+- Normalises ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it
 
 At present must be started in root of tree you intend to import.
 I strongly suggest writing the db to ```/tmp``` as it's dynamically modified every time a new tag is encounted in a file being imported.  It'll work on physical disk, but it'll take longer.  It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags
@@ -31,8 +32,7 @@ TODO:
 - ensure standardisation of various tags across all tracks in a folder/album e.g. all tracks have ```DATE``` and ```GENRE``` assignments
 - merge ```GENRE``` and ```STYLE``` tags to ```GENRE``` tag and dedupe both
 - enrich "Pop/Rock" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
-- Normalise ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it
 - write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
 - remove (live) from end of all album names, set ```LIVE``` = '1'
-- 
+
 
