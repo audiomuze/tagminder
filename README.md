@@ -31,8 +31,6 @@ TODO:
 - ensure standardisation of various tags across all tracks in a folder/album e.g. all tracks have ```DATE``` and ```GENRE``` assignments
 - merge ```GENRE``` and ```STYLE``` tags to ```GENRE``` tag and dedupe both
 - enrich "Pop/Rock" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
-
-- 
 - Normalise ```RELEASETYPE``` entries for better presentation in music server front-ends that leverage it
 - write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
 - remove (live) from end of all album names, set ```LIVE``` = '1'
