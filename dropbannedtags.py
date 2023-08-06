@@ -568,6 +568,7 @@ def tag_live_tracks():
 
 def strip_subtitles_from_titles():
 
+    opening_tally = tally_mods()
     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
     dbcursor.execute('''CREATE INDEX IF NOT EXISTS titles on alib(title)''')
 
@@ -631,6 +632,9 @@ def strip_subtitles_from_titles():
             dbcursor.execute('''UPDATE alib set title = (?), subtitle = (?) WHERE rowid = (?);''', (base, row_subtitle, row_to_process))
             if (row_islive is None or row_islive == '0') and islive is not None:
                 dbcursor.execute('''UPDATE alib set live = (?) WHERE rowid = (?);''', (islive, row_to_process))
+
+    dbcursor.execute(f"drop index if exists titles")
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 # def mopup_live_stragglers():
 
