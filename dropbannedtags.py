@@ -521,15 +521,27 @@ def live_in_subtitle_means_live():
     ''' Ensure that any tracks that have Live in the SUBTITLE tag are designated LIVE = 1 '''
     opening_tally = tally_mods()
     print("\nEnsuring any tracks that have Live in the SUBTITLE tag are designated LIVE = 1")
-    dbcursor.execute("UPDATE alib SET live = '1' WHERE LOWER(subtitle) LIKE '%live%' AND live != '1';")
+    dbcursor.execute('''UPDATE alib
+                           SET live = '1'
+                         WHERE LOWER(subtitle) LIKE '%[live%' OR 
+                               LOWER(subtitle) LIKE '%(live%' OR 
+                               LOWER(subtitle) LIKE '% live %' AND 
+                               live != '1';''')
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 def live_means_live_in_subtitle():
-    ''' Ensure any tracks that have LIVE = 1 also have [Live] in the SUBTITLE '''
+    ''' Ensure any tracks that have LIVE = 1 also have [Live] in the SUBTITLE'''
     print("\nEnsuring any tracks that have LIVE = 1 also have [Live] in the SUBTITLE")
     opening_tally = tally_mods()
-    dbcursor.execute("UPDATE alib SET subtitle = '[Live]' WHERE live = '1' AND subtitle IS NULL OR TRIM(subtitle) = '';")
+    dbcursor.execute('''UPDATE alib
+                           SET subtitle = IIF(subtitle IS NULL OR 
+                                              TRIM(subtitle) = '', '[Live]', subtitle || '\\\\[Live]') 
+                         WHERE live = '1' AND 
+                               NOT (instr(lower(subtitle), ' live ') ) AND 
+                               NOT (instr(lower(subtitle), '[live') ) AND 
+                               NOT (instr(lower(subtitle), '(live') );''')
+
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
@@ -566,7 +578,7 @@ def tag_live_tracks():
 
 
 
-def strip_subtitles_from_titles():
+def strip_live_from_titles():
 
     opening_tally = tally_mods()
     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
@@ -780,7 +792,7 @@ def set_compilation_flag():
 
 
 
-def nullify_va ():
+def nullify_albumartist_in_va():
     ''' remove 'Various Artists' value from ALBUMARTIST tag '''
     print(f"\nRemoving 'Various Artists' from ALBUMARTIST and ENSEMBLE tags")
     opening_tally = tally_mods()
@@ -807,6 +819,7 @@ def capitalise_releasetype():
         print(release[0])
         flc = firstlettercaps(release[0])
         print(release[0], flc)
+        # SQLite WHERE clause is case sensistive so this should not repeatedly upddate records every time it is run
         dbcursor.execute('''UPDATE alib SET releasetype = (?) WHERE releasetype = (?) AND releasetype != (?);''', (flc, release[0], flc))
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
@@ -924,27 +937,67 @@ def update_tags():
 
     ''' here you add whatever update and enrichment queries you want to run against the table '''
 
+    # transfer any unsynced lyrics to LYRICS tag
     unsyncedlyrics_to_lyrics()
+
+    # get rid of tags we don't want to store
     kill_badtags()
+
+    # set all empty tags ('') to NULL
     nullify_empty_tags()
+
+    # remove CR & LF from text tags (excluding lyrics & review tags)
     trim_and_remove_crlf()
+
+    # strip Feat in its various forms from track title and append to ARTIST tag
     feat_to_artist()
+
+    # merge [recording location] with RECORDINGLOCATION
     merge_recording_locations()
+
+    # merge release tag to VERSION tag
     release_to_version()
+
+    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
     nullify_performers_matching_artists()
-    tag_live_tracks()
-    strip_subtitles_from_titles()
+
+    # mark live performances as LIVE=1 if not already tagged accordingly NEEDS REVISITING - might be superceded by strip_live_from_titles().
+    # tag_live_tracks()
+
+    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    strip_live_from_titles()
+
+    # moves known keywords in brackets to subtitle
     title_keywords_to_subtitle()
+
+    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
     square_brackets_to_subtitle()
+
+    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
     live_in_subtitle_means_live()
+
+    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
     live_means_live_in_subtitle()
+
+    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
     kill_singular_discnumber()
+
+    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
     merge_album_version()
+
+    # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
     set_compilation_flag()
-    nullify_va()
+
+    # set albumartist to NULL for all compilation albums where they are not NULL
+    nullify_albumartist_in_va()
+
+    # Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
     capitalise_releasetype()
+
+    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
     # find_duplicate_flac_albums()
 
+    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
     # strip_live_from_album_name()
 
     ''' return case sensitivity for LIKE to SQLite default '''
@@ -972,20 +1025,18 @@ def show_stats_and_log_changes():
     ''' count number of records changed '''
     records_changed = changed_records()
     
-    ''' sum number of changes processed ''' 
-    updates_made = tally_mods()
-
     ''' sum the number of __dirpaths changed '''
     dir_count = affected_dircount()
 
 
-    ''' get list of all affected __dirpaths '''
-    changed_dirpaths = affected_dirpaths()
-
     print(f"\n")
     print('─' * 120)
-    print(f"{updates_made} updates have been processed against {records_changed} files, affecting {dir_count} albums")
+    print(f"Updates have been processed against {records_changed} files, affecting {dir_count} albums")
     print('─' * 120)
+
+
+    ''' get list of all affected __dirpaths '''
+    changed_dirpaths = affected_dirpaths()
 
     ''' write out affected __dirpaths to enable updating of time signature or further processing outside of this script '''
     if changed_dirpaths:
