@@ -372,7 +372,7 @@ def trim_and_remove_crlf():
 
 
 def square_brackets_to_subtitle():
-    '''  select all records with '[' in title, split-off text everying folowing '[' and write it out to subtitle '''
+    '''  select all records with '[' in title, split-off text everything folowing '[' and write it out to subtitle '''
     opening_tally = tally_mods()
     print(f"\nUpdating titles to remove any text enclosed in square brackets from TITLE and appending same to SUBTITLE tag")
     # dbcursor.execute("UPDATE alib SET title = IIF(TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)) = '', title, TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1))), subtitle = IIF(subtitle IS NULL OR TRIM(subtitle) = '', SUBSTR(title, INSTR(title, '[')), subtitle || ' ' || SUBSTR(title, INSTR(title, '['))) WHERE title LIKE '%[%';")
@@ -589,8 +589,9 @@ def strip_live_from_titles():
     iterator = 0
     exhausted_queries = 0
 
-    while records_to_process and not exhausted_queries: # PEP 8 recommended method for testing whether or not a list is empty
+    while records_to_process and not exhausted_queries: # PEP 8 recommended method for testing whether or not a list is empty.  exhausted_queries is a trigger that's activated when it's time to exit the while loop
 
+        ''' Select all records with (live and/or [live in title '''
         dbcursor.execute('''SELECT title,
                                    subtitle,
                                    live,
@@ -603,50 +604,137 @@ def strip_live_from_titles():
         record_count = len(records_to_process)
         mismatched_brackets = 0
 
+        ''' now process each in sequece '''
         for record in records_to_process:
 
             ''' loop through records to test whether they're all mismatched brackets'''
             row_title = record[0]
-            if not ('[' in row_title and ']' in row_title) or ('(' in row_title and ')' in row_title):
-                mismatched_brackets += 1
 
-            if mismatched_brackets == record_count:
+            ''' if the entry containa matching opening and closing brackets process it, otherwise skip over itas it isn't a record that shoul be processed '''
+            if ('[' in row_title and ']' in row_title) or ('(' in row_title and ')' in row_title):
 
-                ''' we've hit that point where the query keeps returning the same records with mismatching brackets, exit the while loop '''
+                ''' we've not exhausted query results, so continue processing '''
+                row_subtitle = record[1]  # record'a subtitle field
+                row_islive = record[2] # record's live field
+                row_to_process = record[3] # rowid of record being processed
 
-                exhausted_queries = 1
+                ''' test for matching bracket pairs and set up the bracket variables '''
+                if '[' in row_title and ']' in row_title:
 
+                    opening_bracket = row_title.index('[')
+                    closing_bracket =  row_title.index(']') + 1
 
-            ''' we've not exhausted query results, so continue processing '''
-            row_subtitle = record[1]
-            row_islive = record[2]
-            row_to_process = record[3]
+                elif '(' in row_title and ')' in row_title:
 
-            ''' test for matching bracket pairs and exit the for loop if none are present in current record '''
-            if '[' in row_title and ']' in row_title:
+                        opening_bracket = row_title.index('(')
+                        closing_bracket =  row_title.index(')') + 1
 
-                opening_bracket = row_title.index('[')
-                closing_bracket =  row_title.index(']') + 1
+                ''' generate substring and title values from the existing title'''
+                sub = row_title[opening_bracket:closing_bracket]
+                base = row_title.replace(sub, '').strip()
 
-            elif '(' in row_title and ')' in row_title:
+                ''' set live value '''
+                islive = '1' if 'live' in sub.lower() else None
 
-                    opening_bracket = row_title.index('(')
-                    closing_bracket =  row_title.index(')') + 1
+                ''' concatenate row subtitle if there's a pre-existing subtitle '''
+                row_subtitle = sub if row_subtitle is None else (row_subtitle + ' ' + sub).strip()
+
+                ''' write out the changed title, subtitle and live fields based on the values just derived '''
+                dbcursor.execute('''UPDATE alib set title = (?), subtitle = (?) WHERE rowid = (?);''', (base, row_subtitle, row_to_process))
+                if (row_islive is None or row_islive == '0') and islive is not None:
+                    dbcursor.execute('''UPDATE alib set live = (?) WHERE rowid = (?);''', (islive, row_to_process))
 
             else:
 
-                exit
+                ''' seeing as the record was a wash increment the number of mismatches.  when this number equals the record_count of records matching the select statement it's time to trigger exhausted_queries to break the while loop '''
+                mismatched_brackets += 1
 
-            sub = row_title[opening_bracket:closing_bracket]
-            base = row_title.replace(sub, '').strip()
-            islive = '1' if 'live' in sub.lower() else None
-            row_subtitle = sub if row_subtitle is None else (row_subtitle + ' ' + sub).strip()
-            dbcursor.execute('''UPDATE alib set title = (?), subtitle = (?) WHERE rowid = (?);''', (base, row_subtitle, row_to_process))
-            if (row_islive is None or row_islive == '0') and islive is not None:
-                dbcursor.execute('''UPDATE alib set live = (?) WHERE rowid = (?);''', (islive, row_to_process))
+
+        ''' test whether we've hit that point where the query keeps returning the same records with mismatching brackets, in which case it's time to exit the while loop '''
+        if mismatched_brackets == record_count:
+
+            exhausted_queries = 1
 
     dbcursor.execute(f"drop index if exists titles")
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+# def strip_live_from_titles():
+
+#     opening_tally = tally_mods()
+#     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
+#     dbcursor.execute('''CREATE INDEX IF NOT EXISTS titles on alib(title)''')
+
+
+#     records_to_process = [''] # initiate a list of one item to satisfy a while list is not empty
+#     iterator = 0
+#     exhausted_queries = 0
+
+#     while records_to_process and not exhausted_queries: # PEP 8 recommended method for testing whether or not a list is empty
+
+#         dbcursor.execute('''SELECT title,
+#                                    subtitle,
+#                                    live,
+#                                    rowid
+#                               FROM alib
+#                              WHERE title LIKE '%(live%' OR 
+#                                    title LIKE '%[live%';''')
+
+#         records_to_process = dbcursor.fetchall()
+#         record_count = len(records_to_process)
+#         mismatched_brackets = 0
+
+#         for record in records_to_process:
+
+#             ''' loop through records to test whether they're all mismatched brackets'''
+#             row_title = record[0]
+
+#             ''' if the entry doesn't contain matching opening and closing brackets exit loop as there isn't a record that shoul be processed '''
+#             if not ('[' in row_title and ']' in row_title) or ('(' in row_title and ')' in row_title):
+#                 mismatched_brackets += 1
+#                 break
+
+#             # if mismatched_brackets == record_count:
+
+#             #     ''' we've hit that point where the query keeps returning the same records with mismatching brackets, exit the while loop '''
+
+#             #     exhausted_queries = 1
+
+
+#             ''' we've not exhausted query results, so continue processing '''
+#             row_subtitle = record[1]
+#             row_islive = record[2]
+#             row_to_process = record[3]
+
+#             ''' test for matching bracket pairs and exit the for loop if none are present in current record '''
+#             if '[' in row_title and ']' in row_title:
+
+#                 opening_bracket = row_title.index('[')
+#                 closing_bracket =  row_title.index(']') + 1
+
+#             elif '(' in row_title and ')' in row_title:
+
+#                     opening_bracket = row_title.index('(')
+#                     closing_bracket =  row_title.index(')') + 1
+
+#             sub = row_title[opening_bracket:closing_bracket]
+#             base = row_title.replace(sub, '').strip()
+#             islive = '1' if 'live' in sub.lower() else None
+#             row_subtitle = sub if row_subtitle is None else (row_subtitle + ' ' + sub).strip()
+#             dbcursor.execute('''UPDATE alib set title = (?), subtitle = (?) WHERE rowid = (?);''', (base, row_subtitle, row_to_process))
+#             if (row_islive is None or row_islive == '0') and islive is not None:
+#                 dbcursor.execute('''UPDATE alib set live = (?) WHERE rowid = (?);''', (islive, row_to_process))
+
+#         ''' test whether we've hit that point where the query keeps returning the same records with mismatching brackets, in which case it's time to exit the while loop '''
+#         if mismatched_brackets == record_count:
+
+#             exhausted_queries = 1
+
+
+#     dbcursor.execute(f"drop index if exists titles")
+#     print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
 
 # def mopup_live_stragglers():
 
@@ -971,7 +1059,7 @@ def update_tags():
     title_keywords_to_subtitle()
 
     # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    square_brackets_to_subtitle()
+    # square_brackets_to_subtitle()
 
     # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
     live_in_subtitle_means_live()
