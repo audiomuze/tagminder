@@ -614,7 +614,7 @@ def strip_live_from_titles():
             if ('[' in row_title and ']' in row_title) or ('(' in row_title and ')' in row_title):
 
                 ''' we've not exhausted query results, so continue processing '''
-                row_subtitle = record[1]  # record'a subtitle field
+                row_subtitle = record[1]  # record's subtitle field
                 row_islive = record[2] # record's live field
                 row_to_process = record[3] # rowid of record being processed
 
@@ -659,80 +659,59 @@ def strip_live_from_titles():
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
-# def strip_live_from_titles():
 
-#     opening_tally = tally_mods()
-#     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
-#     dbcursor.execute('''CREATE INDEX IF NOT EXISTS titles on alib(title)''')
+def tags_to_dedupe():
+    ''' list all known text tags you might want to process against -- this needs to become a function call so there's a common definition throughout the app '''
 
-
-#     records_to_process = [''] # initiate a list of one item to satisfy a while list is not empty
-#     iterator = 0
-#     exhausted_queries = 0
-
-#     while records_to_process and not exhausted_queries: # PEP 8 recommended method for testing whether or not a list is empty
-
-#         dbcursor.execute('''SELECT title,
-#                                    subtitle,
-#                                    live,
-#                                    rowid
-#                               FROM alib
-#                              WHERE title LIKE '%(live%' OR 
-#                                    title LIKE '%[live%';''')
-
-#         records_to_process = dbcursor.fetchall()
-#         record_count = len(records_to_process)
-#         mismatched_brackets = 0
-
-#         for record in records_to_process:
-
-#             ''' loop through records to test whether they're all mismatched brackets'''
-#             row_title = record[0]
-
-#             ''' if the entry doesn't contain matching opening and closing brackets exit loop as there isn't a record that shoul be processed '''
-#             if not ('[' in row_title and ']' in row_title) or ('(' in row_title and ')' in row_title):
-#                 mismatched_brackets += 1
-#                 break
-
-#             # if mismatched_brackets == record_count:
-
-#             #     ''' we've hit that point where the query keeps returning the same records with mismatching brackets, exit the while loop '''
-
-#             #     exhausted_queries = 1
+    return(["_releasecomment", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", 
+        "engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "musicbrainz_albumartistid", "musicbrainz_albumid", "musicbrainz_artistid", "musicbrainz_discid", 
+        "musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid", "musicbrainz_workid", "performer", "personnel", "producer", "recordinglocation", "releasetype", 
+        "remixer", "style", "subtitle", "theme", "upc", "version", "writer"])
 
 
-#             ''' we've not exhausted query results, so continue processing '''
-#             row_subtitle = record[1]
-#             row_islive = record[2]
-#             row_to_process = record[3]
+def dedupe_fields():
+    ''' remove duplicate tag entries in text fields present in alib that may contain duplicate entries '''
 
-#             ''' test for matching bracket pairs and exit the for loop if none are present in current record '''
-#             if '[' in row_title and ']' in row_title:
+    ''' get list of text tags actually present in the alib table, based on what's been imported into alib '''
+    text_tags = texttags_in_alib(tags_to_dedupe())
+    print(f"\nDeduping tags:")
+    #opening_tally = tally_mods()
 
-#                 opening_bracket = row_title.index('[')
-#                 closing_bracket =  row_title.index(']') + 1
+    for text_tag in text_tags:
 
-#             elif '(' in row_title and ')' in row_title:
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS dedupe_tag ON alib (?) WHERE (?) IS NOT NULL;''', (text_tag, text_tag))
+        print(f"- {text_tag}")
 
-#                     opening_bracket = row_title.index('(')
-#                     closing_bracket =  row_title.index(')') + 1
+        ''' get list of matching records '''
+        ''' as you cannot pass variables as field names to a SELECT statement build the query string dynamically then run it '''
+        query = f"SELECT rowid, {text_tag} FROM alib WHERE {text_tag} IS NOT NULL;"
+        dbcursor.execute(query)
 
-#             sub = row_title[opening_bracket:closing_bracket]
-#             base = row_title.replace(sub, '').strip()
-#             islive = '1' if 'live' in sub.lower() else None
-#             row_subtitle = sub if row_subtitle is None else (row_subtitle + ' ' + sub).strip()
-#             dbcursor.execute('''UPDATE alib set title = (?), subtitle = (?) WHERE rowid = (?);''', (base, row_subtitle, row_to_process))
-#             if (row_islive is None or row_islive == '0') and islive is not None:
-#                 dbcursor.execute('''UPDATE alib set live = (?) WHERE rowid = (?);''', (islive, row_to_process))
+        ''' now process each matching record '''
+        records = dbcursor.fetchall()
+        records_returned = len(records) > 0
+        if records_returned:
+              
+            for record in records:
+                
+                stored_value = record[1] # record value for comparison
+                if '\\\\' in stored_value:
+                    ''' first get the stored contents sorted and reconstituted without removing any items '''
+                    split_value = stored_value.split("\\\\")
+                    split_value.sort()
+                    stored_value_sorted =  '\\\\'.join([str(item) for item in split_value])
 
-#         ''' test whether we've hit that point where the query keeps returning the same records with mismatching brackets, in which case it's time to exit the while loop '''
-#         if mismatched_brackets == record_count:
 
-#             exhausted_queries = 1
+                    ''' now depupe the stored value, sort the result and reconstitute the resulting string '''
+                    deduped_value = list(set(stored_value.split("\\\\")))
+                    deduped_value.sort()
+                    final_value = '\\\\'.join([str(item) for item in deduped_value])
+                    
+                    '''now compare the sorted original string against the sorted deduped string and write back only those that are not the same '''
+                    if final_value != stored_value_sorted:
+                        print(f"AsIs: {stored_value_sorted}\nToBe: {final_value}\nSame: {final_value == stored_value_sorted}\n\n")
+                    
 
-
-#     dbcursor.execute(f"drop index if exists titles")
-#     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 
@@ -1059,7 +1038,7 @@ def update_tags():
     title_keywords_to_subtitle()
 
     # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    # square_brackets_to_subtitle()
+    square_brackets_to_subtitle()
 
     # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
     live_in_subtitle_means_live()
@@ -1081,6 +1060,10 @@ def update_tags():
 
     # Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
     capitalise_releasetype()
+
+
+    # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    dedupe_fields()
 
     # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
     # find_duplicate_flac_albums()
