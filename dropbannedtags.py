@@ -675,11 +675,13 @@ def dedupe_fields():
     ''' get list of text tags actually present in the alib table, based on what's been imported into alib '''
     text_tags = texttags_in_alib(tags_to_dedupe())
     print(f"\nDeduping tags:")
-    #opening_tally = tally_mods()
+    opening_tally = tally_mods()
 
     for text_tag in text_tags:
+        
+        query = (f"CREATE INDEX IF NOT EXISTS dedupe_tag ON alib({text_tag}) WHERE {text_tag} IS NOT NULL;")
 
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS dedupe_tag ON alib (?) WHERE (?) IS NOT NULL;''', (text_tag, text_tag))
+        dbcursor.execute(query)
         print(f"- {text_tag}")
 
         ''' get list of matching records '''
@@ -699,7 +701,7 @@ def dedupe_fields():
                     ''' first get the stored contents sorted and reconstituted without removing any items '''
                     split_value = stored_value.split("\\\\")
                     split_value.sort()
-                    stored_value_sorted =  '\\\\'.join([str(item) for item in split_value])
+                    sorted_stored_value =  '\\\\'.join([str(item) for item in split_value])
 
 
                     ''' now depupe the stored value, sort the result and reconstitute the resulting string '''
@@ -708,9 +710,18 @@ def dedupe_fields():
                     final_value = '\\\\'.join([str(item) for item in deduped_value])
                     
                     '''now compare the sorted original string against the sorted deduped string and write back only those that are not the same '''
-                    if final_value != stored_value_sorted:
-                        print(f"AsIs: {stored_value_sorted}\nToBe: {final_value}\nSame: {final_value == stored_value_sorted}\n\n")
-                    
+                    if final_value != sorted_stored_value:
+                        #print(f"AsIs: {stored_value_sorted}\nToBe: {final_value}\nSame: {final_value == stored_value_sorted}\n\n")
+                        #print(type(final_value))
+
+                        ''' write out {final_value} to {text_tag}  '''
+                        row_to_process = record[0]
+                        
+                       
+                        query = f"UPDATE alib SET {text_tag} = (?) WHERE rowid = (?);", (final_value, row_to_process)
+                        print(query)
+                        dbcursor.execute(*query)
+    print(f"|\n{tally_mods() - opening_tally} tags were deduped")
 
 
 
