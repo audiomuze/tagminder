@@ -1,3 +1,5 @@
+**Introduction**
+
 **tags2sqlite**:  is a collection of Python scripts to import audio metadata from underlying audio files into a dynamically created SQLite database, allowing you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files.  It leverages the puddletag codebase so you need to install puddletag to be able to access its code, specifically puddletag/puddlestuff/audioinfo.  Tags are read/written using the Mutagen library as used in Puddletag. Requires Python 3.x
 
 
@@ -37,4 +39,20 @@ TODO:
 - enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
 - write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
 - remove (live) from end of all album names, set ```LIVE``` = '1' where it's not already set to '1'
-- 
+
+USAGE:
+First import tags from your files into a nominated database:
+```cd /root_folder_you_want_to_import_tags_from```
+```python /path.to/puddletag/tagfromdb3.py import /path/to/database_you_want_created_incuding_filename_eg_x.db .```
+
+let that run - it'll take a while to ingest tags from your FLAC library, writing each file's metatada to a table called alib
+run dropbannedtags.py against the same database
+```python ~/dropbannedtags.py /tmp/flacs/x.db```
+
+It'll report its workings and stats as it goes.
+When it's done the results (changes only) are written to export.db, which can be exported back to the underlying files like so:
+```python /path.to/puddletag/tagfromdb3.py export /tmp/flacs/export.db .```
+
+This will overwrite the tags in the associated files, replacing it with the revised tags stored in export.db
+
+
