@@ -20,12 +20,13 @@ At present it does the following:
 - Normalises ```RELEASETYPE``` entries for using First Letter Caps for better presentation in music server front-ends that leverage it
 - identifies all duplicated albums based on records in the alib table.  The code relies on the md5sum embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
     from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders.  If the strings match you have a 100% match of the audio stream and thus duplicate album, irrespective of tags / metadata.  You can condifently remove all but one of the matched folders.
+- eliminates duplicate entries in tags
 
 At present must be started in root of tree you intend to import.
 I strongly suggest writing the SQLite database to ```/tmp``` as it's alib table is dynamically modified every time a new tag is encounted in a file being imported.  It'll work on physical disk, but it'll take longer.  It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags, so you probably want to avoid hammering a SSD by having the database import directly to a SSD drive.
 
 TODO:
-- eliminate duplicate entries in tags
+
 - incorporate metadata normalisation routines to standardise track ```TITLE```, ```PERFORMER```, ```COMPOSER``` & ```LABEL``` metadata
 - leverage cosine similarity to generate potential duplicate in contributor metadata requiring manual intervention 
 - add Musicbrainz identifiers to all ```ARTIST```, ```PERFORMER```, ```COMPOSER```, ```LYRICIST```, ```WRITER```, ```LABEL```, ```WORK```, ```PART``` and ```ALBUMARTIST``` tags
