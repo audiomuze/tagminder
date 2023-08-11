@@ -382,7 +382,7 @@ def square_brackets_to_subtitle():
 
 
 def feat_to_artist():
-    ''' Move all instances of Feat to ARTIST tag '''
+    ''' Move all instances of Feat and With to ARTIST tag '''
 
     opening_tally = tally_mods()
     feat_instances = [
@@ -487,7 +487,9 @@ def title_keywords_to_subtitle():
     '(Acoustic %)%',
     '[Acoustic %]%',
     '(acoustic %)%',
-    '[acoustic %]%',    
+    '[acoustic %]%',
+    '(acoustic)%',
+    '(Acoustic)%',
     '(Single Version)%',
     '(Album Version)%']
 
@@ -580,6 +582,8 @@ def tag_live_tracks():
 
 def strip_live_from_titles():
 
+    ''' iterate each record and remove live from track title, mark the track as live and append [Live] to subtitle '''
+
     opening_tally = tally_mods()
     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
     dbcursor.execute('''CREATE INDEX IF NOT EXISTS titles on alib(title)''')
@@ -588,6 +592,8 @@ def strip_live_from_titles():
     records_to_process = [''] # initiate a list of one item to satisfy a while list is not empty
     iterator = 0
     exhausted_queries = 0
+
+    print(f"Stripping ([Live]) from track titles...")
 
     while records_to_process and not exhausted_queries: # PEP 8 recommended method for testing whether or not a list is empty.  exhausted_queries is a trigger that's activated when it's time to exit the while loop
 
@@ -711,8 +717,6 @@ def dedupe_fields():
                     
                     '''now compare the sorted original string against the sorted deduped string and write back only those that are not the same '''
                     if final_value != sorted_stored_value:
-                        #print(f"AsIs: {stored_value_sorted}\nToBe: {final_value}\nSame: {final_value == stored_value_sorted}\n\n")
-                        #print(type(final_value))
 
                         ''' write out {final_value} to {text_tag}  '''
                         row_to_process = record[0]
@@ -721,6 +725,7 @@ def dedupe_fields():
                         query = f"UPDATE alib SET {text_tag} = (?) WHERE rowid = (?);", (final_value, row_to_process)
                         print(query)
                         dbcursor.execute(*query)
+    dbcursor.execute("DROP INDEX IF EXISTS dedupe_tag")
     print(f"|\n{tally_mods() - opening_tally} tags were deduped")
 
 
@@ -826,7 +831,32 @@ def kill_singular_discnumber():
 
 
 def strip_live_from_album_name():
-    return("Not yet coded")
+    ''' Strip all occurences of '(live)' from end of album name '''
+    print(f"\nStripping all occurences of '(live)' from end of album name, ensuring album is marked live and updating subtitle where required")
+
+    opening_tally = tally_mods()
+    dbcursor.execute('create index if not exists albums on alib(album)')
+
+    ''' set live flag '''
+    dbcursor.execute('''UPDATE alib
+                           SET live = '1'
+                         WHERE lower(substr(album, -6) ) IN ('(live)', '[live]') AND 
+                               live IS NULL OR 
+                               live != '1';''')
+    ''' enrich subtitle '''
+    dbcursor.execute('''UPDATE alib
+                           SET subtitle = iif(subtitle = '' OR 
+                                              subtitle IS NULL, substr(album, -6), subtitle || " " || substr(album, -6) ) 
+                         WHERE lower(substr(album, -6) ) IN ('(live)', '[live]') AND 
+                               subtitle NOT LIKE '%[live]%' AND 
+                               subtitle NOT LIKE '%(live)%';''')
+    ''' strip live from album title '''
+    dbcursor.execute('''UPDATE alib
+                           SET album = trim(substr(album, 1, length(album) - 7) ) 
+                         WHERE lower(substr(album, -6) ) IN ('(live)', '[live]');''')
+
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    
 
 
 def merge_album_version():
@@ -855,14 +885,14 @@ def set_compilation_flag():
     dbcursor.execute('''
                         UPDATE alib
                            SET compilation = '1'
-                         WHERE (compilation IS NULL AND 
+                         WHERE (compilation != '1' AND 
                                 substring(__dirname, 1, 4) = 'VA -' AND 
                                 albumartist IS NULL);''')
 
     dbcursor.execute('''
                         UPDATE alib
                            SET compilation = '0'
-                         WHERE (compilation IS NULL AND 
+                         WHERE (compilation != '0' AND 
                                 substring(__dirname, 1, 4) != 'VA -' AND 
                                 albumartist IS NOT NULL);''')
 
@@ -1002,6 +1032,68 @@ def find_duplicate_flac_albums():
 
 
 
+
+def show_stats_and_log_changes():
+
+    ''' count number of records changed '''
+    records_changed = changed_records()
+    
+    ''' sum the number of __dirpaths changed '''
+    dir_count = affected_dircount()
+
+
+    print(f"\n")
+    print('─' * 120)
+    print(f"Updates have been processed against {records_changed} files, affecting {dir_count} albums")
+    print('─' * 120)
+
+
+    ''' get list of all affected __dirpaths '''
+    changed_dirpaths = affected_dirpaths()
+
+    ''' write out affected __dirpaths to enable updating of time signature or further processing outside of this script '''
+    if changed_dirpaths:
+
+        changed_dirpaths.sort()
+        dbcursor.execute('CREATE TABLE IF NOT EXISTS dirs_to_process (__dirpath BLOB PRIMARY KEY);')
+
+        for dirpath in changed_dirpaths:
+
+            dbcursor.execute(f"REPLACE INTO dirs_to_process (__dirpath) VALUES (?)", dirpath)
+
+        conn.commit()
+
+        data = dbcursor.execute("SELECT * FROM dirs_to_process")
+        dirlist = working_dir + '/dirs2process'
+        with open(dirlist, 'w', newline='') as filehandle:
+            writer = csv.writer(filehandle, delimiter = '|', quoting=csv.QUOTE_NONE)
+            writer.writerows(data)
+
+        ''' write changed records to changed_tags table '''
+        ''' Create an export database and write out alib containing changed records with sqlmodded set to NULL for writing back to underlying file tags '''
+        dbcursor.execute("create index if not exists filepaths on alib(__path)")
+        export_db = working_dir + '/export.db'
+        # print(f"\nGenerating changed_tags table: {export_db}")
+        dbcursor.execute(f"ATTACH DATABASE '{export_db}' AS alib2")
+        dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib")
+        dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib AS SELECT * FROM alib WHERE sqlmodded IS NOT NULL ORDER BY __path")
+        dbcursor.execute("UPDATE alib2.alib SET sqlmodded = NULL;")
+        dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib_rollback")
+        # dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib_rollback AS SELECT * FROM alib_rollback ORDER BY __path") 
+
+        conn.commit()
+        
+        print(f"Affected folders have been written out to text file: {dirlist}")
+        print(f"\nChanged tags have been written to a database: {export_db} in table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
+        print(f"You can now directly export from this database to the underlying files using tagfromdb3.py.\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {dbfile}\n")
+        percent_affected = (records_changed / library_size())*100
+        print(f"{'%.2f' % percent_affected} percent of tracks in library have been modified.")
+
+    else:
+        print("- No changes were processed\n")
+
+
+
 def update_tags():
     ''' function call to run mass tagging updates.  It is preferable to run update_tags prior to killing bad_tags so that data can be moved to good tags where present in non-standard tags such as 'recording location' & unsyncedlyrics
     Consider whether it'd be better to break this lot into discrete functions '''
@@ -1072,7 +1164,6 @@ def update_tags():
     # Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
     capitalise_releasetype()
 
-
     # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
     dedupe_fields()
 
@@ -1080,7 +1171,7 @@ def update_tags():
     # find_duplicate_flac_albums()
 
     # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    # strip_live_from_album_name()
+    strip_live_from_album_name()
 
     ''' return case sensitivity for LIKE to SQLite default '''
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
@@ -1100,66 +1191,6 @@ def update_tags():
     conn.commit()
     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
     return(tally_mods() - start_tally)
-
-
-def show_stats_and_log_changes():
-
-    ''' count number of records changed '''
-    records_changed = changed_records()
-    
-    ''' sum the number of __dirpaths changed '''
-    dir_count = affected_dircount()
-
-
-    print(f"\n")
-    print('─' * 120)
-    print(f"Updates have been processed against {records_changed} files, affecting {dir_count} albums")
-    print('─' * 120)
-
-
-    ''' get list of all affected __dirpaths '''
-    changed_dirpaths = affected_dirpaths()
-
-    ''' write out affected __dirpaths to enable updating of time signature or further processing outside of this script '''
-    if changed_dirpaths:
-
-        changed_dirpaths.sort()
-        dbcursor.execute('CREATE TABLE IF NOT EXISTS dirs_to_process (__dirpath BLOB PRIMARY KEY);')
-
-        for dirpath in changed_dirpaths:
-
-            dbcursor.execute(f"REPLACE INTO dirs_to_process (__dirpath) VALUES (?)", dirpath)
-
-        conn.commit()
-
-        data = dbcursor.execute("SELECT * FROM dirs_to_process")
-        dirlist = working_dir + '/dirs2process'
-        with open(dirlist, 'w', newline='') as filehandle:
-            writer = csv.writer(filehandle, delimiter = '|', quoting=csv.QUOTE_NONE)
-            writer.writerows(data)
-
-        ''' write changed records to changed_tags table '''
-        ''' Create an export database and write out alib containing changed records with sqlmodded set to NULL for writing back to underlying file tags '''
-        dbcursor.execute("create index if not exists filepaths on alib(__path)")
-        export_db = working_dir + '/export.db'
-        # print(f"\nGenerating changed_tags table: {export_db}")
-        dbcursor.execute(f"ATTACH DATABASE '{export_db}' AS alib2")
-        dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib")
-        dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib AS SELECT * FROM alib WHERE sqlmodded IS NOT NULL ORDER BY __path")
-        dbcursor.execute("UPDATE alib2.alib SET sqlmodded = NULL;")
-        dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib_rollback")
-        # dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib_rollback AS SELECT * FROM alib_rollback ORDER BY __path") 
-
-        conn.commit()
-        
-        print(f"Affected folders have been written out to text file: {dirlist}")
-        print(f"\nChanged tags have been written to a database: {export_db} in table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
-        print(f"You can now directly export from this database to the underlying files using tagfromdb3.py.\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {dbfile}\n")
-        percent_affected = (records_changed / library_size())*100
-        print(f"{'%.2f' % percent_affected} percent of tracks in library have been modified.")
-
-    else:
-        print("- No changes were processed\n")
 
 
 
