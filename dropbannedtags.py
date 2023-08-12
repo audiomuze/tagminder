@@ -885,14 +885,16 @@ def set_compilation_flag():
     dbcursor.execute('''
                         UPDATE alib
                            SET compilation = '1'
-                         WHERE (compilation != '1' AND 
+                         WHERE (compilation IS NULL OR 
+                                compilation != '1' AND 
                                 substring(__dirname, 1, 4) = 'VA -' AND 
                                 albumartist IS NULL);''')
 
     dbcursor.execute('''
                         UPDATE alib
                            SET compilation = '0'
-                         WHERE (compilation != '0' AND 
+                         WHERE (compilation IS NULL OR 
+                                compilation != '0' AND 
                                 substring(__dirname, 1, 4) != 'VA -' AND 
                                 albumartist IS NOT NULL);''')
 
