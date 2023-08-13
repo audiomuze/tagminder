@@ -39,6 +39,7 @@ TODO:
 - merge ```GENRE``` and ```STYLE``` tags to ```GENRE``` tag and dedupe both
 - enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
 - write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
+- remember to search for artist and alumartist with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional mbid's are added where appropriate.
 
 
 USAGE:
