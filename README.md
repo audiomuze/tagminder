@@ -24,6 +24,7 @@ At present it does the following:
     from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders.  If the strings match you have a 100% match of the audio stream and thus duplicate album, irrespective of tags / metadata.  You can condifently remove all but one of the matched folders.
 - eliminates duplicate entries in tags
 - removes (live) from end of all album names, sets ```LIVE``` = '1' where it's not already set to '1' and appends (Live) to subtitles when appropriate
+- adds musicbrainz identifiers to artists & albumartists leveragng what already exists in file tags.  Where a performer name is associated with > 1 mbid these are ignored so as not to conflate performers.  Check tables: namesakes_albumartist & namesakes_artist for artists requiring disambiguation
 
 At present must be started in root of tree you intend to import.
 I strongly suggest writing the SQLite database to ```/tmp``` as it's alib table is dynamically modified every time a new tag is encounted in a file being imported.  It'll work on physical disk, but it'll take longer.  It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags, so you probably want to avoid hammering a SSD by having the database import directly to a SSD drive.
@@ -40,6 +41,7 @@ TODO:
 - enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
 - write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
 - remember to search for artist and alumartist with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional mbid's are added where appropriate.
+- consider adding musicbrainz_composerid of our own volition for future app use
 
 
 USAGE:
