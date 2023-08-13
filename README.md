@@ -33,15 +33,15 @@ TODO:
 
 - incorporate metadata normalisation routines to standardise track ```TITLE```, ```PERFORMER```, ```COMPOSER``` & ```LABEL``` metadata
 - leverage cosine similarity to generate potential duplicate in contributor metadata requiring manual intervention 
-- add Musicbrainz identifiers to all ```ARTIST```, ```PERFORMER```, ```COMPOSER```, ```LYRICIST```, ```WRITER```, ```LABEL```, ```WORK```, ```PART``` and ```ALBUMARTIST``` tags
+- add Musicbrainz identifiers to all ```~~ARTIST~~```, ```PERFORMER```, ```COMPOSER```, ```LYRICIST```, ```WRITER```, ```LABEL```, ```WORK```, ```PART``` and ```~~ALBUMARTIST~~``` tags
+- consider adding musicbrainz_composerid of our own volition for future app use
+- remember to search for artist and alumartist with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional mbid's are added where appropriate.
 - incorporate metadata enrichment leveraging Musicbrainz and inferences based on existing track related metadata in table
 - cleanup and standardise genres to eliminate unsanctioned ```GENRE``` entries
+- enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
 - ensure standardisation of various tags across all tracks in a folder/album e.g. all tracks have ```DATE``` and ```GENRE``` assignments and that they're the same
 - merge ```GENRE``` and ```STYLE``` tags to ```GENRE``` tag and dedupe both
-- enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based ```GENRE``` and ```STYLE``` entries
 - write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
-- remember to search for artist and alumartist with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional mbid's are added where appropriate.
-- consider adding musicbrainz_composerid of our own volition for future app use
 
 
 USAGE:
@@ -67,7 +67,4 @@ When it's done the results (changes only) are written to export.db, which can be
 
 ```python /path.to/puddletag/tagfromdb3.py export /tmp/flacs/export.db .```
 
-
 This will overwrite the tags in the associated files, replacing it with the revised tags stored in export.db
-
-
