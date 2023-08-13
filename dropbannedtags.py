@@ -729,52 +729,6 @@ def dedupe_fields():
     print(f"|\n{tally_mods() - opening_tally} tags were deduped")
 
 
-
-
-# def mopup_live_stragglers():
-
-#   ''' now there may be a few '%[Live ' and '%(Live ' still hanging around, process them also '''
-#   opening_tally = tally_mods()
-#   print(f"\nStripping '[Live ' and '(Live ' from end of track TITLE, setting LIVE=1 for matching tracks")
-
-    # dbcursor.execute('''CREATE INDEX IF NOT EXISTS title_subtitle ON alib (
-    #                       title,
-    #                       subtitle
-    #                   );''')
-
-    # dbcursor.execute('''WITH GET_LIVE_TRACKS AS (
-    #                                       SELECT title AS cte_value,
-    #                                              subtitle, live
-    #                                         FROM (
-    #                                                  SELECT title,
-    #                                                          subtitle,
-    #                                                          live
-    #                                                    FROM alib
-    #                                                   WHERE title LIKE ? OR title LIKE ?;",  ('%'+' [Live '+'%',))),  ('%'+' (Live '+'%',)))
-
-
-    #                                              )
-    #                                        GROUP BY __dirpath
-    #                                       HAVING count( * ) = 1
-    #                                        ORDER BY __dirpath
-    #                                   )
-    #                                   SELECT cte_value
-    #                                     FROM GET_SINGLE_DISCS
-    #                                    WHERE discnumber = '1' OR discnumber = '01';''')
-
-
-
-
-
-
-
-#   # dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '[Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '[Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' [Live '+'%',))
-#   # dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '(Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '(Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' (Live '+'%',))
-#   # print(f"|\n{tally_mods() - opening_tally} tags were modified")    
-
-
-
-
 def kill_singular_discnumber():
     ''' get rid of discnumber when all tracks in __dirpath have discnumber = 1.  I'm doing this the lazy way because I've not spent enough time figuring out the CTE update query in SQL.  This is a temporary workaround to be replaced with a CTE update query '''
     opening_tally = tally_mods()    
@@ -932,6 +886,203 @@ def capitalise_releasetype():
         # SQLite WHERE clause is case sensistive so this should not repeatedly upddate records every time it is run
         dbcursor.execute('''UPDATE alib SET releasetype = (?) WHERE releasetype = (?) AND releasetype != (?);''', (flc, release[0], flc))
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+def establish_contributors():
+    ''' build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist fields '''
+
+
+    dbcursor.execute('''DROP TABLE IF EXISTS role_albumartist;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS role_artist;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS namesakes_albumartist;''')
+    dbcursor.execute('''DROP INDEX IF EXISTS role_albumartists;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS contributor_with_mbid;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS namesakes_artist;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS role_composer;''')
+
+    dbcursor.execute('''DROP INDEX IF EXISTS role_albumartists;''')
+    dbcursor.execute('''DROP INDEX IF EXISTS role_artists;''')
+    dbcursor.execute('''DROP INDEX IF EXISTS role_composers;''')
+    dbcursor.execute('''DROP INDEX IF EXISTS contributors_with_mbid;''')
+
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_albumartists on alib(albumartist);''')
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_artists on alib(artist);''')
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_composers on alib(composer);''')
+
+
+    # create contributors table from all albumartists and artist where the abumartist and artist name only appear once alongside an mbid
+    dbcursor.execute('''CREATE TABLE role_albumartist AS SELECT *
+                                                          FROM (
+                                                               WITH GET_PERFORMERS AS (
+                                                                       SELECT albumartist AS contributor,
+                                                                              musicbrainz_albumartistid AS mbid
+                                                                         FROM (
+                                                                                  SELECT DISTINCT albumartist,
+                                                                                                  musicbrainz_albumartistid
+                                                                                    FROM alib
+                                                                                   WHERE albumartist NOT LIKE '%\\%' AND 
+                                                                                         musicbrainz_albumartistid IS NOT NULL AND 
+                                                                                         musicbrainz_albumartistid NOT LIKE '%\\%'
+                                                                              )
+                                                                        GROUP BY contributor
+                                                                       HAVING count( * ) = 1
+                                                                   )
+                                                                   SELECT contributor,
+                                                                          mbid 
+                                                                     FROM GET_PERFORMERS
+                                                                    ORDER BY contributor
+                                                               );'''
+                    )
+
+    dbcursor.execute('''CREATE TABLE role_artist AS SELECT *
+                                                          FROM (
+                                                               WITH GET_PERFORMERS AS (
+                                                                       SELECT artist AS contributor,
+                                                                              musicbrainz_artistid AS mbid
+                                                                         FROM (
+                                                                                  SELECT DISTINCT artist,
+                                                                                                  musicbrainz_artistid
+                                                                                    FROM alib
+                                                                                   WHERE artist NOT LIKE '%\\%' AND 
+                                                                                         musicbrainz_artistid IS NOT NULL AND 
+                                                                                         musicbrainz_artistid NOT LIKE '%\\%'
+                                                                              )
+                                                                        GROUP BY contributor
+                                                                       HAVING count( * ) = 1
+                                                                   )
+                                                                   SELECT contributor,
+                                                                          mbid
+                                                                     FROM GET_PERFORMERS
+                                                                    ORDER BY contributor
+                                                               );'''
+                    )
+
+    # create namesakes table from all albumartists where the abumartist name appears > 1 alongside an mbid
+    dbcursor.execute('''CREATE TABLE namesakes_albumartist AS SELECT *
+                                                          FROM (
+                                                               WITH GET_NAMESAKES AS (
+                                                                       SELECT albumartist AS contributor,
+                                                                              musicbrainz_albumartistid
+                                                                         FROM (
+                                                                                  SELECT DISTINCT albumartist,
+                                                                                                  musicbrainz_albumartistid
+                                                                                    FROM alib
+                                                                                   WHERE albumartist NOT LIKE '%\\%' AND 
+                                                                                         musicbrainz_albumartistid IS NOT NULL AND 
+                                                                                         musicbrainz_albumartistid NOT LIKE '%\\%'
+                                                                              )
+                                                                        GROUP BY contributor
+                                                                       HAVING count( * ) > 1
+                                                                   )
+                                                                   SELECT contributor
+                                                                          
+                                                                     FROM GET_NAMESAKES
+                                                                    ORDER BY contributor
+                                                               );'''
+                    )
+
+    # create namesakes table from all artists where the artist name appears > 1 alongside an mbid
+    dbcursor.execute('''CREATE TABLE namesakes_artist AS SELECT *
+                                                          FROM (
+                                                               WITH GET_NAMESAKES AS (
+                                                                       SELECT artist AS contributor,
+                                                                              musicbrainz_artistid
+                                                                         FROM (
+                                                                                  SELECT DISTINCT artist,
+                                                                                                  musicbrainz_artistid
+                                                                                    FROM alib
+                                                                                   WHERE artist NOT LIKE '%\\%' AND 
+                                                                                         musicbrainz_artistid IS NOT NULL AND 
+                                                                                         musicbrainz_artistid NOT LIKE '%\\%'
+                                                                              )
+                                                                        GROUP BY contributor
+                                                                       HAVING count( * ) > 1
+                                                                   )
+                                                                   SELECT contributor
+                                                                          
+                                                                     FROM GET_NAMESAKES
+                                                                    ORDER BY contributor
+                                                               );'''
+                    )
+                                           
+
+    dbcursor.execute('''CREATE TABLE role_composer AS SELECT DISTINCT composer
+                                                        FROM alib
+                                                       WHERE composer IS NOT NULL AND 
+                                                             composer NOT LIKE '%\\%' AND 
+                                                             composer != ''
+                                                       ORDER BY composer;'''
+                    )
+
+
+    # now bring them together in a single table
+    dbcursor.execute('''CREATE TABLE contributor_with_mbid AS SELECT contributor,
+                                                                     mbid
+                                                                FROM role_albumartist
+                        UNION
+                        SELECT contributor,
+                               mbid
+                          FROM role_artist
+                         ORDER BY contributor;'''
+                    )
+
+
+def add_musicbrainz_identifiers():
+    ''' adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use) '''
+
+    print(f"\nAdding musicbrainz identifiers to artists & albumartists")
+    opening_tally = tally_mods()
+
+    # albumartist updates
+    dbcursor.execute('''UPDATE alib
+                           SET musicbrainz_albumartistid = (
+                                   SELECT contributor_with_mbid.mbid
+                                     FROM contributor_with_mbid
+                                    WHERE contributor_with_mbid.contributor = alib.albumartist
+                               )
+                         WHERE EXISTS (
+                                   SELECT contributor_with_mbid.mbid
+                                     FROM contributor_with_mbid
+                                    WHERE contributor_with_mbid.contributor = alib.albumartist
+                               )
+                        AND 
+                               alib.musicbrainz_albumartistid IS NULL;'''
+                     )       
+           
+       
+    # artist updates
+    dbcursor.execute('''UPDATE alib
+                           SET musicbrainz_artistid = (
+                                   SELECT contributor_with_mbid.mbid
+                                     FROM contributor_with_mbid
+                                    WHERE contributor_with_mbid.contributor = alib.artist
+                               )
+                         WHERE EXISTS (
+                                   SELECT contributor_with_mbid.mbid
+                                     FROM contributor_with_mbid
+                                    WHERE contributor_with_mbid.contributor = alib.artist
+                               )
+                        AND 
+                               alib.musicbrainz_artistid IS NULL;'''
+                    )
+
+    # # composer updates
+    # dbcursor.execute('''UPDATE alib
+    #                        SET musicbrainz_composerid = (
+    #                                SELECT contributor_with_mbid.mbid
+    #                                  FROM contributor_with_mbid
+    #                                 WHERE contributor_with_mbid.contributor = alib.artist
+    #                            )
+    #                      WHERE EXISTS (
+    #                                SELECT contributor_with_mbid.mbid
+    #                                  FROM contributor_with_mbid
+    #                                 WHERE contributor_with_mbid.contributor = alib.artist
+    #                            )
+    #                     AND 
+    #                            alib.musicbrainz_composerid IS NULL;'''
+    #                 )
+
+    print(f"|\n{tally_mods() - opening_tally} musicbrainz identifiers added to artists & albumartists")
 
 
 def find_duplicate_flac_albums():
@@ -1175,16 +1326,11 @@ def update_tags():
     # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
     strip_live_from_album_name()
 
+    # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    add_musicbrainz_identifiers()
+
     ''' return case sensitivity for LIKE to SQLite default '''
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
-
-
-        # ''' now there may be a few '%[Live ' and '%(Live ' still hanging around, process them also '''
-        # opening_tally = tally_mods()
-        # print(f"\nStripping '[Live ' and '(Live ' from end of track TITLE, marking track as Live track")
-        # dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '[Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '[Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '[Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' [Live '+'%',))
-        # dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, '(Live ') - 1) ), subtitle = IIF(subtitle IS NULL, trim(substr(title, instr(title, '(Live '), length(title))),subtitle || '\\\\' || trim(substr(title, instr(title, '(Live '), length(title)))), live = 1 WHERE title LIKE ? ;",  ('%'+' (Live '+'%',))
-        # print(f"|\n{tally_mods() - opening_tally} tags were modified")    
 
 
 
