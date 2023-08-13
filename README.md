@@ -42,6 +42,7 @@ TODO:
 - ensure standardisation of various tags across all tracks in a folder/album e.g. all tracks have ```DATE``` and ```GENRE``` assignments and that they're the same
 - merge ```GENRE``` and ```STYLE``` tags to ```GENRE``` tag and dedupe both
 - write out __dirpaths for various queries to additonal tables users can use to focus on manual adjustments e.g. adding ```DATE``` tag to albums without dates
+- implement argv to enable passing of switches determining which metadata enhancement routines are run
 
 
 USAGE:
