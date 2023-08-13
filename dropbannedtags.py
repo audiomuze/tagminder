@@ -593,7 +593,7 @@ def strip_live_from_titles():
     iterator = 0
     exhausted_queries = 0
 
-    print(f"Stripping ([Live]) from track titles...")
+    print(f"\nStripping ([Live]) from track titles...")
 
     while records_to_process and not exhausted_queries: # PEP 8 recommended method for testing whether or not a list is empty.  exhausted_queries is a trigger that's activated when it's time to exit the while loop
 
@@ -1197,7 +1197,7 @@ def show_stats_and_log_changes():
 
     print(f"\n")
     print('─' * 120)
-    print(f"Updates have been processed against {records_changed} files, affecting {dir_count} albums")
+    print(f"Updates have been processed against {records_changed} records, affecting {dir_count} albums")
     print('─' * 120)
 
 
@@ -1232,7 +1232,9 @@ def show_stats_and_log_changes():
         dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib AS SELECT * FROM alib WHERE sqlmodded IS NOT NULL ORDER BY __path")
         dbcursor.execute("UPDATE alib2.alib SET sqlmodded = NULL;")
         dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib_rollback")
-        # dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib_rollback AS SELECT * FROM alib_rollback ORDER BY __path") 
+        dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib_rollback AS SELECT * FROM alib_rollback ORDER BY __path")
+        dbcursor.execute("DROP TABLE IF EXISTS alib_rollback")
+        dbcursor.execute("VACUUM")
 
         conn.commit()
         
@@ -1240,7 +1242,7 @@ def show_stats_and_log_changes():
         print(f"\nChanged tags have been written to a database: {export_db} in table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
         print(f"You can now directly export from this database to the underlying files using tagfromdb3.py.\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {dbfile}\n")
         percent_affected = (records_changed / library_size())*100
-        print(f"{'%.2f' % percent_affected} percent of tracks in library have been modified.")
+        print(f"{'%.2f' % percent_affected} percent of records in table (corresponding to tracks in library) have been modified.")
 
     else:
         print("- No changes were processed\n")
@@ -1325,6 +1327,9 @@ def update_tags():
 
     # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
     strip_live_from_album_name()
+
+    # build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist fields
+    establish_contributors()
 
     # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
     add_musicbrainz_identifiers()
