@@ -1195,10 +1195,11 @@ def show_stats_and_log_changes():
     dir_count = affected_dircount()
 
 
+    messagelen = len(f"Updates have been processed against {records_changed} records, affecting {dir_count} albums")
     print(f"\n")
-    print('─' * 120)
+    print('─' * messagelen)
     print(f"Updates have been processed against {records_changed} records, affecting {dir_count} albums")
-    print('─' * 120)
+    print('─' * messagelen)
 
 
     ''' get list of all affected __dirpaths '''
@@ -1239,10 +1240,10 @@ def show_stats_and_log_changes():
         conn.commit()
         
         print(f"Affected folders have been written out to text file: {dirlist}")
-        print(f"\nChanged tags have been written to a database: {export_db} in table alib.\nIt contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
-        print(f"You can now directly export from this database to the underlying files using tagfromdb3.py.\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {dbfile}\n")
+        print(f"\nChanged tags have been written to a database: {export_db} in table alib.\nalib contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
+        print(f"You can now directly export from this database to the underlying files using tagfromdb3.py.\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {export_db}\n")
         percent_affected = (records_changed / library_size())*100
-        print(f"{'%.2f' % percent_affected} percent of records in table (corresponding to tracks in library) have been modified.")
+        print(f"{'%.2f' % percent_affected}% of records in table (corresponding to tracks in library) have been modified.")
 
     else:
         print("- No changes were processed\n")
