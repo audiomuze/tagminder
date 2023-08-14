@@ -140,7 +140,7 @@ def scantree(path):
         if entry.is_dir(follow_symlinks=False):
             yield from scantree(entry.path)
         else:
-            if entry.name.endswith('.flac') or entry.name.endswith('.ape')  or entry.name.endswith('.wv') or entry.name.endswith('.mp3'):
+            if entry.name.endswith('.flac') or entry.name.endswith('.ape')  or entry.name.endswith('.wv'): 
                 """or entry.name.endswith('.ape')  or entry.name.endswith('.wv') or entry.name.endswith('.dsf') or entry.name.endswith('.mp3')"""
                 yield entry
 #
@@ -256,6 +256,7 @@ def initdb(dbpath):
 	musicbrainz_albumartistid text,
 	musicbrainz_albumid text,
 	musicbrainz_artistid text,
+    musicbrainz_composerid text,
 	musicbrainz_discid text,
 	musicbrainz_releasegroupid text,
 	musicbrainz_releasetrackid text,
