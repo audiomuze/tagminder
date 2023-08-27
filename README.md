@@ -11,7 +11,7 @@ If your library is static in terms of file location one could also use the metad
 Understanding the scripts:
 **tagfromdb3.py** handles the import and export from/to the underlying files and SQLite database.  Basically it is the means of getting your tags in and out of your underlying audio files.  This is where the puddletag depedency originates.  I've modded Keith's Python 2.x code to run under Python 3.  To get it to work all that's required is that you pull a copy of puddletag source from github: https://github.com/puddletag/puddletag, then copy tagfromdb3.py into the puddletag root folder.  You do not need a functioning puddletag to be able to use tagfromdb3.py, albeit in time you might find puddletag handy for some cleansing/ editing that's best left to human intervention.
 
-**tagminder** (previously dropbannedtags.py) does the heavy lifting handling the cleanup of tags in the SQL table "alib".  A trigger is used to be able to isolate and write back tags only to files who's tag record has been modified (the trigger field sqlmodded is incremented every time the record is updated)
+**tagminder.py** (previously dropbannedtags.py) does the heavy lifting handling the cleanup of tags in the SQL table "alib".  A trigger is used to be able to isolate and write back tags only to files who's tag record has been modified (the trigger field sqlmodded is incremented every time the record is updated)
 At present it does the following:
 
 General tag cleanup:
