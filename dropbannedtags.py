@@ -382,38 +382,125 @@ def square_brackets_to_subtitle():
 
 
 
+# def title_feat_to_artist():
+#     ''' Move all instances of Feat and With to ARTIST tag '''
+
+#     opening_tally = tally_mods()
+#     feat_instances = [
+#     '(Feat. %',
+#     '[Feat. ',
+#     '(feat. ',
+#     '[feat. ',
+#     '(Feat ',
+#     '[Feat ',
+#     '(feat ',
+#     '[feat ']
+
+#     print('\n')
+#     dbcursor.execute(f"create index if not exists titles_artists on alib(title, artist)")
+
+#     for feat_instance in feat_instances:
+
+#         print(f"Stripping {feat_instance} from track TITLE and appending performers to ARTIST tag...")
+#         # dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), artist = artist || '\\\\' || REPLACE(replace(substr(title, instr(title, ?) ), ?, ''), ')', '')  WHERE title LIKE ? AND (trim(substr(title, 1, instr(title, ?) - 1) ) != '');",  (feat_instance, feat_instance, feat_instance, '%'+feat_instance+'%', feat_instance))
+#         dbcursor.execute('''UPDATE alib
+#                                SET title = trim(substr(title, 1, instr(title, ?) - 1) ),
+#                                    artist = artist || '\\\\' || REPLACE(replace(substr(title, instr(title, ?) ), ?, ''), ')', '') 
+#                              WHERE title LIKE ? AND 
+#                                    (trim(substr(title, 1, instr(title, ?) - 1) ) != '');''', (feat_instance, feat_instance, feat_instance, '%'+feat_instance+'%', feat_instance))
+
+
+
+#     dbcursor.execute(f"drop index if exists titles_artists")
+#     print(f"|\n{tally_mods() - opening_tally} tags were modified")  
+
 def title_feat_to_artist():
-    ''' Move all instances of Feat and With to ARTIST tag '''
+    ''' Move all instances of Feat and With in track TITLE to ARTIST tag '''
 
     opening_tally = tally_mods()
-    feat_instances = [
-    '(Feat. %',
-    '[Feat. ',
-    '(feat. ',
-    '[feat. ',
-    '(Feat ',
-    '[Feat ',
-    '(feat ',
-    '[feat ']
+    dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS titlea on alib(title)''')
 
-    print('\n')
-    dbcursor.execute(f"create index if not exists titles_artists on alib(title, artist)")
+    print("\nStripping feat. from TITLE tag and incorporating into delimited ARTIST string...\n")
 
-    for feat_instance in feat_instances:
+    ''' Select all records that have another undelimited performer name in the TITLE field '''
+    dbcursor.execute('''SELECT title,
+                               artist,
+                               rowid
+                          FROM alib
+                         WHERE title LIKE '%(Feat. %)%' OR 
+                               title LIKE '%[Feat. %]%' OR 
+                               title LIKE '%(Feat: %)%' OR 
+                               title LIKE '%[Feat: %]%' OR 
+                               title LIKE '%(Feat %)%' OR 
+                               title LIKE '%[Feat %]%' OR 
+                               title LIKE '%(Featuring. %)%' OR 
+                               title LIKE '%[Featuring. %]%' OR 
+                               title LIKE '%(Featuring: %)%' OR 
+                               title LIKE '%[Featuring: %]%' OR 
+                               title LIKE '%(Featuring %)%' OR 
+                               title LIKE '%[Featuring %]%' OR 
+                               title LIKE '% Featuring. %' OR 
+                               title LIKE '% Featuring: %' OR 
+                               title LIKE '% Featuring %' OR 
+                               title LIKE '% Feat. %' OR 
+                               title LIKE '% Feat: %' OR 
+                               title LIKE '% Feat %' OR 
+                               title LIKE '% With: %';''')
 
-        print(f"Stripping {feat_instance} from track TITLE and appending performers to ARTIST tag...")
-        # dbcursor.execute("UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), artist = artist || '\\\\' || REPLACE(replace(substr(title, instr(title, ?) ), ?, ''), ')', '')  WHERE title LIKE ? AND (trim(substr(title, 1, instr(title, ?) - 1) ) != '');",  (feat_instance, feat_instance, feat_instance, '%'+feat_instance+'%', feat_instance))
-        dbcursor.execute('''UPDATE alib
-                               SET title = trim(substr(title, 1, instr(title, ?) - 1) ),
-                                   artist = artist || '\\\\' || REPLACE(replace(substr(title, instr(title, ?) ), ?, ''), ')', '') 
-                             WHERE title LIKE ? AND 
-                                   (trim(substr(title, 1, instr(title, ?) - 1) ) != '');''', (feat_instance, feat_instance, feat_instance, '%'+feat_instance+'%', feat_instance))
+
+    records_to_process = dbcursor.fetchall()
+    
+    feats = ['Feat ', 'Feat:', 'Feat.', 'Feat-', 'Feat -', 'Featuring ', 'Featuring:', 'Featuring.', 'Featuring-',  'Featuring -', 'With:' ]
+
+    ''' now process each in sequence '''
+    for record in records_to_process:
+
+        ''' loop through records  and process each string '''
+        row_title = record[0] # get title field contents
+        row_artist = record[1] # get artist field contents
+        table_record = record[2] # get rowid
+
+        ''' test for bracket enclosed contents, strip brackets'''
+        if '[' in row_title or ']' in row_title or '(' in row_title or ')' or '{' in row_title or '}' in row_title:
 
 
+            ''' strip bracket components from base'''
+            brackets = ['[', ']', '(', ')', '{', '}']
+            for bracket in brackets:
+                row_title = row_title.replace(bracket, '')
+                
 
-    dbcursor.execute(f"drop index if exists titles_artists")
+        ''' now break down string into base and substring, testing for each instance of feat '''
+        for feat in feats:
+    
+            print(f"'{feat}'")            
+            
+            try:
+                '''check if  this instance of feat is in the string '''
+                split_point = row_title.lower().index(feat.lower())
+                feat_len = len(feat)
+
+                ''' if it is, split the string into base and substring, removing this instance of feat and trimming both to get rid of extranous whitespace '''
+                base = row_title[0:split_point -1 ].strip()
+                sub = row_title[split_point + feat_len:].strip()
+
+                ''' finally derive the new artist entry by concatenate the string in a way that puddletag knows how to handle the delimiter '''
+                new_artist = row_artist + '\\\\' + sub
+
+                print(f"{format(table_record,'07d')}, String: '{row_title}' Base: '{base}' Sub: '{sub}' New artist: '{new_artist}'")
+                dbcursor.execute('''UPDATE alib set title = (?), artist = (?) WHERE rowid = (?);''', (base, new_artist, table_record))
+
+            except ValueError:
+
+                ''' if no match exit the loop and continue to next match ... this iimplementation is just to stop code crashing when feat is not present in row_title '''
+                exit
+
+        print('\n')        
+                    
+
+    dbcursor.execute('''drop index if exists artists''')
     print(f"|\n{tally_mods() - opening_tally} tags were modified")  
-
 
 
 
@@ -636,36 +723,42 @@ def live_means_live_in_subtitle():
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
-def tag_live_tracks():
+# def tag_live_tracks():
 
-    live_instances = [
-    '(Live In',
-    '[Live In',
-    '(Live in',
-    '[Live in',
-    '(live in',
-    '[live in',
-    '(Live At',
-    '[Live At',
-    '(Live at',
-    '[Live at',
-    '(live at',
-    '[live at']
+#     ''' Removing variations of 'Live ' from track TITLE, ensure [Live] in the SUBTITLE and Live=1'''
+#     print("\nEnsuring any tracks that have LIVE = 1 also have [Live] in the SUBTITLE")
+#     opening_tally = tally_mods()
 
-    ''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
-    dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
 
-    print('\n')
-    dbcursor.execute(f"create index if not exists titles_subtitles on alib(title, subtitle)")
-    opening_tally = tally_mods()
-    for live_instance in live_instances:
 
-        print(f"Stripping {live_instance} from track titles...")
-        dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), subtitle = substr(title, instr(title, ?)) WHERE (title LIKE ? AND subtitle IS NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
-        dbcursor.execute(f"UPDATE alib SET subtitle = subtitle || '\\\\' || trim(substr(title, instr(title, ?))), title = trim(substr(title, 1, instr(title, ?) - 1) ) WHERE (title LIKE ? AND subtitle IS NOT NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
+#     live_instances = [
+#     '(Live In',
+#     '[Live In',
+#     '(Live in',
+#     '[Live in',
+#     '(live in',
+#     '[live in',
+#     '(Live At',
+#     '[Live At',
+#     '(Live at',
+#     '[Live at',
+#     '(live at',
+#     '[live at']
 
-    dbcursor.execute(f"drop index if exists titles_subtitles")
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+#     ''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
+#     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
+
+#     print('\n')
+#     dbcursor.execute(f"create index if not exists titles_subtitles on alib(title, subtitle)")
+#     opening_tally = tally_mods()
+#     for live_instance in live_instances:
+
+#         print(f"Stripping {live_instance} from track titles...")
+#         dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), subtitle = substr(title, instr(title, ?)) WHERE (title LIKE ? AND subtitle IS NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
+#         dbcursor.execute(f"UPDATE alib SET subtitle = subtitle || '\\\\' || trim(substr(title, instr(title, ?))), title = trim(substr(title, 1, instr(title, ?) - 1) ) WHERE (title LIKE ? AND subtitle IS NOT NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
+
+#     dbcursor.execute(f"drop index if exists titles_subtitles")
+#     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 
@@ -980,7 +1073,7 @@ def capitalise_releasetype():
 def establish_contributors():
     ''' build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist fields '''
 
-    print("Building a list of unique contibutors (composers, artists & albumartists) that have a single MBID in alib by gathering all mbid's found in alib and checking against artist and albumartist fields\nCheck all namesakes_* tables in database to manually investigate namesakes")
+    print("\nBuilding a list of unique contibutors (composers, artists & albumartists) that have a single MBID in alib by gathering all mbid's found in alib and checking against artist and albumartist fields\nCheck all namesakes_* tables in database to manually investigate namesakes")
 
 
     dbcursor.execute('''DROP TABLE IF EXISTS role_albumartist;''')
@@ -1355,6 +1448,12 @@ def update_tags():
     # transfer any unsynced lyrics to LYRICS tag
     unsyncedlyrics_to_lyrics()
 
+    # merge [recording location] with RECORDINGLOCATION
+    merge_recording_locations()
+
+    # merge release tag to VERSION tag
+    release_to_version()
+
     # get rid of tags we don't want to store
     kill_badtags()
 
@@ -1369,12 +1468,6 @@ def update_tags():
 
     # remove all instances of artist entries that fontain feat or with and replace with a delimited string incorporating all performers
     feat_artist_to_artist()
-
-    # merge [recording location] with RECORDINGLOCATION
-    merge_recording_locations()
-
-    # merge release tag to VERSION tag
-    release_to_version()
 
     # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
     nullify_performers_matching_artists()
