@@ -596,9 +596,9 @@ def merge_recording_locations():
     column_name = "recording location"
     tag_in_table(column_name, 'alib')
     print(f"\nIncorporating recording location into recordinglocation")
+    opening_tally = tally_mods()
 
     if tag_in_table(column_name, 'alib'):
-        opening_tally = tally_mods()
 
         sql1 = '''
         UPDATE alib SET recordinglocation = alib."recording location", "recording location" = NULL WHERE alib.recordinglocation IS NULL AND alib."recording location" IS NOT NULL;
@@ -617,9 +617,9 @@ def release_to_version():
     column_name = "release"
     tag_in_table(column_name, 'alib')
     print(f"\nIncorporating 'release' into 'version' and removing 'release' metadata")
+    opening_tally = tally_mods()
 
     if tag_in_table(column_name, 'alib'):
-        opening_tally = tally_mods()
 
         sql1 = '''
         UPDATE alib SET version = alib.release, release = NULL WHERE alib.version IS NULL and alib.release IS NOT NULL;
@@ -636,8 +636,8 @@ def release_to_version():
 def unsyncedlyrics_to_lyrics():
     ''' append "unsyncedlyrics" to lyrics if lyrics is empty '''
     print(f"\nCopying unsyncedlyrics to lyrics where lyrics tag is empty")
+    opening_tally = tally_mods()
     if tag_in_table('unsyncedlyrics', 'alib'):
-        opening_tally = tally_mods()
         dbcursor.execute("UPDATE alib SET lyrics = unsyncedlyrics WHERE lyrics IS NULL AND unsyncedlyrics IS NOT NULL;")
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
@@ -1518,7 +1518,7 @@ def update_tags():
     establish_contributors()
 
     # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    #add_musicbrainz_identifiers()
+    add_musicbrainz_identifiers()
 
     ''' return case sensitivity for LIKE to SQLite default '''
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
