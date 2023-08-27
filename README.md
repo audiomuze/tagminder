@@ -13,6 +13,7 @@ At present it does the following:
 - removes all spurious CR/LF occurences in text tags.  It does not process the ```LYRICS``` or ```REVIEW``` tags
 - removes all upper and lowercase (Live in...), (Live at...), [Live in...], [Live at...] entries from track titles and moves or appends that to the ```SUBTITLE``` tag as appropriate
 - splits all instances of upper and lowercase (Feat , (Feat. , [Feat , [Feat. entries from track titles and appends the performer names to the ```ARTIST``` tag
+- converts all instances of upper and lowercase (Feat , (Feat. , [Feat , [Feat. entries from ```ARTIST``` tag and appends the delimited performer names to the ```ARTIST``` tag
 - merges ```ALBUM``` and ```VERSION``` tags into ```ALBUM``` tag to get around Logitechmediaserver (LMS), Navidrome and other music servers merging different versions of an album into a single album.  ```VERSION``` is left intact making it simple to reverse with an UPDATE query
 - removes ```PERFORMER``` tags where they match the ARTIST tag
 - sets ```COMPILATION``` = '1' for all Various Artists albums and to '0' for all others.  Tests for presence or otherwise of ```ALBUMARTIST``` and whether ```__dirname``` of album begins with 'VA - ' to make its deterimation
