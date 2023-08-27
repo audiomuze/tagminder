@@ -181,6 +181,7 @@ def establish_environment():
     "musicbrainz_albumartistid",
     "musicbrainz_albumid",
     "musicbrainz_artistid",
+    "musicbrainz_composerid",
     "musicbrainz_discid",
     "musicbrainz_releasegroupid",
     "musicbrainz_releasetrackid",
@@ -381,7 +382,7 @@ def square_brackets_to_subtitle():
 
 
 
-def feat_to_artist():
+def title_feat_to_artist():
     ''' Move all instances of Feat and With to ARTIST tag '''
 
     opening_tally = tally_mods()
@@ -411,6 +412,94 @@ def feat_to_artist():
 
 
     dbcursor.execute(f"drop index if exists titles_artists")
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")  
+
+
+
+
+def feat_artist_to_artist():
+    ''' Move all instances of Feat and With to ARTIST tag '''
+
+    opening_tally = tally_mods()
+    dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS artists on alib(artist)''')
+
+    print("\nStripping feat. ARTIST tag and incorporating into delimited ARTIST string...\n")
+
+    ''' Select all records that have another undelimited performer name in the artist field '''
+    dbcursor.execute('''SELECT artist,
+                               rowid 
+                          FROM alib
+                         WHERE artist LIKE '%(Feat. %)%' OR 
+                               artist LIKE '%[Feat. %]%' OR 
+                               artist LIKE '%(Feat: %)%' OR 
+                               artist LIKE '%[Feat: %]%' OR 
+                               artist LIKE '%(Feat %)%' OR 
+                               artist LIKE '%[Feat %]%' OR
+                               artist LIKE '%(Featuring. %)%' OR 
+                               artist LIKE '%[Featuring. %]%' OR 
+                               artist LIKE '%(Featuring: %)%' OR 
+                               artist LIKE '%[Featuring: %]%' OR 
+                               artist LIKE '%(Featuring %)%' OR 
+                               artist LIKE '%[Featuring %]%' OR
+                               artist LIKE '% Featuring. %' OR 
+                               artist LIKE '% Featuring: %' OR 
+                               artist LIKE '% Featuring %' OR 
+                               artist LIKE '% Feat. %' OR 
+                               artist LIKE '% Feat: %' OR 
+                               artist LIKE '% Feat %' OR 
+                               artist LIKE '% With: %';''')
+
+
+    records_to_process = dbcursor.fetchall()
+    
+    feats = ['Feat ', 'Feat:', 'Feat.', 'Feat-', 'Feat -', 'Featuring ', 'Featuring:', 'Featuring.', 'Featuring-',  'Featuring -', 'With:' ]
+
+    ''' now process each in sequece '''
+    for record in records_to_process:
+
+        ''' loop through records  and process each string '''
+        row_artist = record[0] # get field contents
+        table_record = record[1] # get rowid
+
+        ''' test for bracket enclosed contents, strip brackets'''
+        if '[' in row_artist or ']' in row_artist or '(' in row_artist or ')' or '{' in row_artist or '}' in row_artist:
+
+
+            ''' strip bracket components from base'''
+            brackets = ['[', ']', '(', ')', '{', '}']
+            for bracket in brackets:
+                row_artist = row_artist.replace(bracket, '')
+                
+
+        ''' now break down string into base and substring, testing for each instance of feat '''
+        for feat in feats:
+    
+            print(f"'{feat}'")            
+            
+            try:
+                '''check if  this instance of feat is in the string '''
+                split_point = row_artist.lower().index(feat.lower())
+                feat_len = len(feat)
+
+                ''' if it is, split the string into base and substring, removing this instance of feat and trimming both to get rid of extranous whitespace '''
+                base = row_artist[0:split_point -1 ].strip()
+                sub = row_artist[split_point + feat_len:].strip()
+                ''' finally concatenate the string in a way that puddletag knows how to handle the delimiter '''
+                newbase = base + '\\\\' + sub
+
+                print(f"{format(table_record,'07d')}, String: '{row_artist}' Base: '{base}' Sub: '{sub}' Newbase: '{newbase}'")
+                dbcursor.execute('''UPDATE alib set artist = (?) WHERE rowid = (?);''', (newbase, table_record))
+
+            except ValueError:
+
+                ''' if no match exit the loop and continue to next match ... this iimplementation is just to stop code crashing when feat is not present in row_artist '''
+                exit
+
+        print('\n')        
+                    
+
+    dbcursor.execute('''drop index if exists artists''')
     print(f"|\n{tally_mods() - opening_tally} tags were modified")  
 
 
@@ -815,7 +904,7 @@ def strip_live_from_album_name():
 
 def merge_album_version():
     ''' merge album name and version fields into album name '''
-    print(f"\nMerging album name and version fields into album name")
+    print(f"\nMerging album name and version fields into album name where version tag does not already appear in album name")
     opening_tally = tally_mods()
     dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
@@ -891,6 +980,8 @@ def capitalise_releasetype():
 def establish_contributors():
     ''' build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist fields '''
 
+    print("Building a list of unique contibutors (composers, artists & albumartists) that have a single MBID in alib by gathering all mbid's found in alib and checking against artist and albumartist fields\nCheck all namesakes_* tables in database to manually investigate namesakes")
+
 
     dbcursor.execute('''DROP TABLE IF EXISTS role_albumartist;''')
     dbcursor.execute('''DROP TABLE IF EXISTS role_artist;''')
@@ -910,7 +1001,7 @@ def establish_contributors():
     dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_composers on alib(composer);''')
 
 
-    # create contributors table from all albumartists and artist where the abumartist and artist name only appear once alongside an mbid
+    # create contributors table from all albumartists and artists where the abumartist and artist name only appear once alongside an mbid
     dbcursor.execute('''CREATE TABLE role_albumartist AS SELECT *
                                                           FROM (
                                                                WITH GET_PERFORMERS AS (
@@ -1235,8 +1326,6 @@ def show_stats_and_log_changes():
         dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib_rollback")
         dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib_rollback AS SELECT * FROM alib_rollback ORDER BY __path")
         dbcursor.execute("DROP TABLE IF EXISTS alib_rollback")
-        dbcursor.execute("VACUUM")
-
         conn.commit()
         
         print(f"Affected folders have been written out to text file: {dirlist}")
@@ -1276,7 +1365,10 @@ def update_tags():
     trim_and_remove_crlf()
 
     # strip Feat in its various forms from track title and append to ARTIST tag
-    feat_to_artist()
+    title_feat_to_artist()
+
+    # remove all instances of artist entries that fontain feat or with and replace with a delimited string incorporating all performers
+    feat_artist_to_artist()
 
     # merge [recording location] with RECORDINGLOCATION
     merge_recording_locations()
@@ -1367,8 +1459,8 @@ if __name__ == '__main__':
     # show_table_differences()
 
     conn.commit()
-    # print(f"Compacting database {dbfile}")
-    # dbcursor.execute("VACUUM")
+    print(f"Compacting database {dbfile}")
+    dbcursor.execute("VACUUM")
     dbcursor.close()
     conn.close()
     print(f"\n{'─' * 5}\nDone!\n")
