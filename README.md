@@ -48,6 +48,7 @@ I strongly suggest writing the SQLite database to ```/tmp``` as its alib table i
 
 TODO:
 
+- fix update failure bug in live_in_subtitle_means_live()
 - incorporate metadata normalisation routines to standardise case of track ```TITLE```, ```PERFORMER```, ```COMPOSER``` & ```LABEL``` metadata
 - leverage cosine similarity to generate potential duplicate in contributor metadata requiring manual intervention 
 - add Musicbrainz identifiers to all ```ARTIST```, ```PERFORMER```, ```COMPOSER```, ```LYRICIST```, ```WRITER```, ```LABEL```, ```WORK```, ```PART``` and ```ALBUMARTIST``` tags
