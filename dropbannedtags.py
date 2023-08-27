@@ -511,7 +511,7 @@ def feat_artist_to_artist():
     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
     dbcursor.execute('''CREATE INDEX IF NOT EXISTS artists on alib(artist)''')
 
-    print("\nStripping feat. ARTIST tag and incorporating into delimited ARTIST string...\n")
+    print("\nStripping feat. from ARTIST tag and incorporating into delimited ARTIST string...\n")
 
     ''' Select all records that have another undelimited performer name in the artist field '''
     dbcursor.execute('''SELECT artist,
@@ -595,10 +595,10 @@ def merge_recording_locations():
     # ''' append "recording location" to recordinglocation if recordinglocation is empty sql2 is likely redundant because of killbadtags'''
     column_name = "recording location"
     tag_in_table(column_name, 'alib')
+    print(f"\nIncorporating recording location into recordinglocation")
 
     if tag_in_table(column_name, 'alib'):
         opening_tally = tally_mods()
-        print(f"\nIncorporating recording location into recordinglocation")
 
         sql1 = '''
         UPDATE alib SET recordinglocation = alib."recording location", "recording location" = NULL WHERE alib.recordinglocation IS NULL AND alib."recording location" IS NOT NULL;
@@ -608,7 +608,7 @@ def merge_recording_locations():
         '''
         dbcursor.execute(sql1)
         dbcursor.execute(sql2)      
-        print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 
@@ -616,10 +616,10 @@ def release_to_version():
     # ''' append "release" to version if version is empty. sql2 is likely redundant because of killbadtags'''
     column_name = "release"
     tag_in_table(column_name, 'alib')
+    print(f"\nIncorporating 'release' into 'version' and removing 'release' metadata")
 
     if tag_in_table(column_name, 'alib'):
         opening_tally = tally_mods()
-        print(f"\nIncorporating 'release' into 'version' and removing 'release' metadata")
 
         sql1 = '''
         UPDATE alib SET version = alib.release, release = NULL WHERE alib.version IS NULL and alib.release IS NOT NULL;
@@ -629,17 +629,17 @@ def release_to_version():
         '''
         dbcursor.execute(sql1)
         dbcursor.execute(sql2)      
-        print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 
 def unsyncedlyrics_to_lyrics():
     ''' append "unsyncedlyrics" to lyrics if lyrics is empty '''
+    print(f"\nCopying unsyncedlyrics to lyrics where lyrics tag is empty")
     if tag_in_table('unsyncedlyrics', 'alib'):
         opening_tally = tally_mods()
-        print(f"\nCopying unsyncedlyrics to lyrics where lyrics tag is empty")
         dbcursor.execute("UPDATE alib SET lyrics = unsyncedlyrics WHERE lyrics IS NULL AND unsyncedlyrics IS NOT NULL;")
-        print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
 
@@ -1518,7 +1518,7 @@ def update_tags():
     establish_contributors()
 
     # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    add_musicbrainz_identifiers()
+    #add_musicbrainz_identifiers()
 
     ''' return case sensitivity for LIKE to SQLite default '''
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
