@@ -47,7 +47,7 @@ At present it does the following:
 ### Tag standardisation
 - merges ```ALBUM``` and ```VERSION``` tags into ```ALBUM``` tag to get around Logitechmediaserver (LMS), Navidrome and other music servers merging different versions of an album into a single album.  ```VERSION``` is left intact making it simple to reverse with an UPDATE query
 - sets ```COMPILATION``` = ```1``` for all Various Artists albums and to ```0``` for all others.  Tests for presence or otherwise of ```ALBUMARTIST``` and whether ```__dirname``` of album begins with ```VA - ``` to make its determination
-- removes 'Various Artists' as ```ALBUMARTIST```
+- removes 'Various Artists' from ```ALBUMARTIST```
 - writes out multiple ```TAGNAME=value``` rather than ```TAGNAME=value1\\value2``` delimited tag entries
 - Normalises ```RELEASETYPE``` entries for using First Letter Caps for better presentation in music server front-ends that leverage it
 - adds ```MusicBrainz identifiers``` to artists & albumartists leveraging what already exists in file tags.  Where a performer name is associated with > 1 ``MBID``` in your tags these performers are ignored so as not to conflate performers.  Check tables ```namesakes_*``` for contributors requiring manual disambiguation
