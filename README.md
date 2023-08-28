@@ -8,6 +8,7 @@ I have a relatively large music collection and I rely on good metadata to enhanc
 
 ```tagminder``` lets you automatically make pre-coded changes to these sorts of issues and does a lot of cleanup work that is difficult to do within a tagger.  It also does it at scale, repeatably and consistently, no matter whether you're handling 1,000 or 1,000,000 tracks - this is simply an impossible task prone to variation and human error when done manually via a tagger.
 
+### MusicBrainz aware
 Seeing as music servers are increasingly leveraging the MusicBrainz ```MBID's``` when present ```tagminder``` seeks to add ```MusicBrainz MBID's``` where already available in your existing metadata. It builds a table of distinct ```artist/perfomer/composer``` names that have an associated ```MBID` in your tags and then replicates that MBID to all instances of that ```artist/perfomer/composer```.  If your music server is MusicBrainz awarwe, there's a good chance that'll prevent it from conflating namesakes across your music collection.
 
 ### Make no changes to audio tags unless you explicitly choose to
