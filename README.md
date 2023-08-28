@@ -11,10 +11,10 @@ If your library is static in terms of file location one could also use the metad
 ## Understanding the scripts
 
 ### tags2db.py
-Handles the import and export from/to the underlying files and SQLite database.  Basically it is the means of getting your tags in and out of your underlying audio files.  This is where the puddletag depedency originates.  I've modded Keith's Python 2.x code to run under Python 3.  To get it to work all that's required is that you pull a copy of puddletag source from github: https://github.com/puddletag/puddletag, then copy tags2db.py into the puddletag root folder.  You do not need a functioning puddletag to be able to use tags2db.py, albeit in time you might find puddletag handy for some cleansing/ editing that's best left to human intervention.
+Handles the import and export from/to the underlying files and SQLite database.  Basically it is the means of getting your tags in and out of your underlying audio files.  This is where the puddletag depedency originates.  I've modded Keith's Python 2.x code to run under Python 3.  To get it to work all that's required is that you pull a copy of puddletag source from github: https://github.com/puddletag/puddletag, then copy ```tags2db.py``` into the puddletag root folder.  You do not need a functioning puddletag to be able to use ```tags2db.py```, albeit in time you might find puddletag handy for some cleansing/ editing that's best left to human intervention.
 
 ### tagminder.py
-Does the heavy lifting handling the cleanup of tags in the SQL table "alib".  A SQL trigger is used to be able to isolate and write back tags only to files who's tag record has been modified (the trigger field sqlmodded is incremented every time the record is updated)
+Does the heavy lifting handling the cleanup of tags in the SQL table ```alib```.  A SQL trigger is used to be able to isolate and write back tags only to files who's tag record has been modified (the trigger field sqlmodded is incremented every time the record is updated)
 At present it does the following:
 
 ### General tag cleanup
@@ -26,11 +26,11 @@ At present it does the following:
 
 ### Tag standardisation
 - merges ```ALBUM``` and ```VERSION``` tags into ```ALBUM``` tag to get around Logitechmediaserver (LMS), Navidrome and other music servers merging different versions of an album into a single album.  ```VERSION``` is left intact making it simple to reverse with an UPDATE query
-- sets ```COMPILATION``` = ```1``` for all Various Artists albums and to '0' for all others.  Tests for presence or otherwise of ```ALBUMARTIST``` and whether ```__dirname``` of album begins with ```VA - ``` to make its deterimation
+- sets ```COMPILATION``` = ```1``` for all Various Artists albums and to ```0``` for all others.  Tests for presence or otherwise of ```ALBUMARTIST``` and whether ```__dirname``` of album begins with ```VA - ``` to make its deterimation
 - removes 'Various Artists' as ```ALBUMARTIST```
 - writes out multiple ```TAGNAME=value``` rather than ```TAGNAME=value1\\value2``` delimited tag entries
 - Normalises ```RELEASETYPE``` entries for using First Letter Caps for better presentation in music server front-ends that leverage it
-- adds musicbrainz identifiers to artists & albumartists leveraging what already exists in file tags.  Where a performer name is associated with > 1 mbid in your tags these performers are ignored so as not to conflate performers.  Check tables: namesakes_* for contributors requiring disambiguation
+- adds ```musicbrainz identifiers``` to artists & albumartists leveraging what already exists in file tags.  Where a performer name is associated with > 1 ``MBID``` in your tags these performers are ignored so as not to conflate performers.  Check tables ```namesakes_*``` for contributors requiring manual disambiguation
 
 ### Handling of ```Live``` in album names and track titles
 - removes all instances and variations of ```Live``` entries from track titles and moves or appends that to the ```SUBTITLE``` tag as appropriate and ensures that the ```LIVE``` tag is set to ```1```  where this is not already the case
@@ -41,11 +41,10 @@ At present it does the following:
 - removes all instances and variations of ```Feat``` entries ```ARTIST``` and ```TITLE``` tags and appends the delimited performer names to the ```ARTIST``` tag
 
 ### Identifying duplicated audio content
-- identifies all duplicated albums based on records in the alib table.  The code relies on the md5sum embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
-    from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders.  If the strings match you have a 100% match of the audio stream and thus duplicate album, irrespective of tags / metadata.  You can condifently remove all but one of the matched folders.
+- identifies all duplicated albums based on records in the ```alib``` table.  The code relies on the ```md5sum``` embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
+    from the sorted ```md5sum``` of all tracks in a folder and compares that against the same for all other folders.  If the strings match you have a 100% match of the audio stream and thus duplicate album, irrespective of tags / metadata.  You can condifently remove all but one of the matched folders.
 
 ## TODO:
-
 - fix update failure bug in live_in_subtitle_means_live()
 - incorporate metadata normalisation routines to standardise case of track ```TITLE```, ```PERFORMER```, ```COMPOSER``` & ```LABEL``` metadata
 - leverage cosine similarity to generate potential duplicate in contributor metadata requiring manual intervention 
@@ -74,7 +73,7 @@ First import tags from your files into a nominated database:
 ```python /path.to/puddletag/tags2db.py import /tmp/x.db .```
 
 
-Let that run - it'll take a while to ingest tags from your library, writing each file's metatada to a table called alib
+Let that run - it'll take a while to ingest tags from your library, writing each file's metatada to a table called ```alib```
 
 Run ```tagminder.py``` against the same database
 
@@ -83,9 +82,9 @@ Run ```tagminder.py``` against the same database
 
 It'll report its workings and stats as it goes.
 
-When it's done the resulting (changed records only) are written to export.db, which can be exported back to the underlying files like so:
+When it's done the resulting (changed records only) are written to ```export.db```, which can be exported back to the underlying files like so:
 
 
 ```python /path.to/puddletag/tags2db.py export /tmp/flacs/export.db .```
 
-This will overwrite the tags in the associated files, replacing it with the revised tags stored in export.db
+This will overwrite the tags in the associated files, replacing it with the revised tags stored in ```export.db```
