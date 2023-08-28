@@ -8,6 +8,7 @@ I have a relatively large music collection and I rely on good metadata to enhanc
 
 ```tagminder``` lets you automatically make pre-coded changes to these sorts of issues and does a lot of cleanup work that is difficult to do within a tagger.  It also does it at scale, repeatably and consistently, no matter whether you're handling 1,000 or 1,000,000 tracks - this is simply an impossible task prone to variation and human error when done manually via a tagger.
 
+
 In doing its work ```tagminder``` takes the existing tags as a given, not trying to second guess you by replacing your metadata with externally sourced metadata, but rather looking for common metadata issues and solving those automatically.
 
 ### MusicBrainz aware
