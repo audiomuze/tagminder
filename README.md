@@ -15,7 +15,7 @@ In doing its work ```tagminder``` takes the existing tags as a given, not trying
 Seeing as music servers are increasingly leveraging the MusicBrainz ```MBIDs``` when present ```tagminder``` seeks to add ```MusicBrainz MBIDs``` where already available in your existing metadata. It builds a table of distinct ```artist/perfomer/composer``` names that have an associated ```MBID``` in your tags and then replicates that MBID to all instances of that ```artist/perfomer/composer```.  If your music server is MusicBrainz aware, there's a good chance that'll prevent it from conflating namesakes across your music collection.
 
 
-If you happen to have namesakes within your metadata (i.e. same ```artist/performer/composer``` name but with different ```MBID```s) these artists/performers/composers will not be augmenteded as there would be no way of knowing which MBID to apply.  After running ```tagminder``` look for namesakes_* tables in the database - any records therein represent ```artists/performers/composers``` requiring you to manually disambiguate by adding the approproate ```MBID``` to matching records in the ```alib``` table.
+If you happen to have namesakes within your metadata (i.e. same ```artist/performer/composer``` name but with different ```MBID```s) these ```artists/performers/composers``` will not be augmenteded as there would be no way of knowing which MBID to apply.  After running ```tagminder``` look for namesakes_* tables in the database - any records therein represent ```artists/performers/composers``` requiring you to manually disambiguate by adding the approproate ```MBID``` to matching records in the ```alib``` table.
 
 
 ### Make no changes to audio tags unless you explicitly choose to and only write back to affected files
