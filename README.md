@@ -88,8 +88,10 @@ I strongly suggest writing the SQLite database to ```/tmp``` as its ```alib``` t
 
 First import tags from your files into a nominated database:
 
-```cd /root_folder_you_want_to_import_tags_from
-python /path.to/puddletag/tags2db.py import /tmp/x.db .```
+```
+cd /root_folder_you_want_to_import_tags_from
+python /path.to/puddletag/tags2db.py import /tmp/x.db .
+```
 
 
 Let that run - it'll take a while to ingest tags from your library, writing each file's metadata to a table called ```alib```
