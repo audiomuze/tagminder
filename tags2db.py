@@ -319,8 +319,13 @@ def import_tag(tag, conn, columns):
 		# except UnicodeEncodeError:
 		# 	logging.warning('Invalid tag found %s: %s. Not parsing field.' % (tag.filepath, key))
 		# 	continue
+		# keys[key.lower()] = key
+#--------------------------------------------------------
+		key = key.replace('"', '') # check for and remove '"' from tag names ... they shoouldn't exist, but they've been encountered in the wild.  This shall be known henceforce as the Wietsche tax!
+#--------------------------------------------------------
 		keys[key.lower()] = key
 		values[key.lower()] = value
+
 
 	if set(keys).difference(columns):
 		columns = update_db_columns(conn, keys)
