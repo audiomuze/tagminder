@@ -141,13 +141,13 @@ At present tags2db.py must be started in the root of the directory tree you inte
 
 It'll work on physical disk, but it'll take longer. It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags, so you probably want to avoid hammering a SSD by ensuring that you're not writing the database directly to SSD. Use /tmp!
 
-First import tags from your files into a nominated database:
+First import tags from your files into a nominated database (don't forget the '.' at the end, it denotes the current directory):
 
 ```
 cd /root_folder_you_want_to_import_tags_from
 python /path.to/puddletag/tags2db.py import /tmp/x.db .
 ```
-Let that run - it'll take a while to ingest tags from your library, writing each file's metadata to a table called alib
+Let that run - it'll take a while to ingest tags from your library, writing each file's metadata to a table called 'alib'
 
 Run tagminder.py against the same database:
 
@@ -160,7 +160,7 @@ It'll report its workings and stats as it goes.
 When it's done the resulting (changed records only) are written to 'export.db', which can be exported back to the underlying files like so:
 
 ```
-python /path.to/puddletag/tags2db.py export /tmp/flacs/export.db .
+python /path.to/puddletag/tags2db.py export /tmp/export.db .
 ```
 
 This will overwrite the tags in the associated files, replacing it with the metadata tags stored in 'export.db'
