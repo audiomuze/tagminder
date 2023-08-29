@@ -1,8 +1,8 @@
 # Introduction
 
-tagminder is comprised of two Python scripts that import audio metadata from underlying audio files into a dynamically created SQLite database. 
+tagminder is comprised of two Python scripts that import audio metadata from underlying audio files into a dynamically created SQLite database and then process the metadata in order to correct anomalies and enrich the metadata where possible.
 
-It allows you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files. It also leverages the puddletag codebase so you need to either install puddletag, or at least pull it from the git repo to be able to access its code, specifically puddletag/puddlestuff/audioinfo. 
+It enables you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files. It also leverages the puddletag codebase so you need to either install puddletag, or at least pull it from the git repo to be able to access its code, specifically puddletag/puddlestuff/audioinfo. 
 
 Tags are read/written using the Mutagen library as used in puddletag. Requires Python 3.x.
 
@@ -12,27 +12,26 @@ Tags are read/written using the Mutagen library as used in puddletag. Requires P
 
 I have a relatively large music collection and rely on good metadata to enhance my ability to explore the music collection in useful and interesting ways. 
 
-Taggers are great but can only take you so far. Tag sources also vary in consistency and quality, often times including issues like adding featured artist names in track TITLE tags, making it more difficult for a music server to identify the track as a performance of a composition and thus include the particular performance in a list of performances of said composition.
+Taggers are great but can only take you so far. Tag sources also vary in consistency and quality, often times including issues like adding 'feat. artist' entries to track titles or artist and performer tags, making it more difficult for a music server to correctly identify performers and identify a track as a performance of a particular song, and thus include the performance alongside other performances of the same song.
 
-tagminder lets you automatically make pre-coded changes to these sorts of issues and does a lot of cleanup work that is difficult to do within a tagger. It also does it at scale, repeatably and consistently, whether you're handling 1,000 or 1,000,000 tracks - this is simply an impossible task prone to variation and human error when done manually via a tagger.
+tagminder lets you automatically make pre-coded changes to these sorts of issues and does a lot of cleanup work that is difficult to do within a tagger. It also does it at scale, repeatably and consistently, whether you're handling 1,000 or 1,000,000 tracks - this is simply an impossible task prone to variation and human error when tackled via a tagger.
 
-In doing its work tagminder takes the existing tags as a given, not trying to second guess you by replacing your metadata with externally sourced metadata, but rather looking for common metadata issues in your metadata and solving those automatically.
+### Preserving your prior work
+In doing its work tagminder takes your existing tags as a given, not trying to second guess you by replacing your metadata with externally sourced metadata, but rather it looks for common metadata issues in your metadata and solves those automatically.
 
 ### MusicBrainz aware
 
-Seeing as music servers are increasingly leveraging the MusicBrainz MBIDs when present, tagminder seeks to add MusicBrainz MBIDs where already available in your existing metadata. 
+Music servers are increasingly leveraging MusicBrainz MBIDs when present.  tagminder seeks to add MusicBrainz MBIDs to your metadata where MBIDs are already available in your existing metadata e.g. if one performance by an artist happens to have a MBID included in its metadata, tagminder will replaicate that MBID in every other performance that contains the same performer name. 
 
-It builds a table of distinct artist/performer/composer names that have an associated MBID in your tags and then replicates that MBID to all instances of that artist/performer/composer. If your music server is MusicBrainz aware, there's a good chance that'll prevent it from merging the work of unrelated artists in your music collection.
+It builds a table of distinct artist/performer/composer names that have an associated MBID in your tags and then replicates that MBID to all occurences of that artist/performer/composer in your tag metadata. If your music server is MusicBrainz aware, there's a good chance that'll prevent it from merging the work of unrelated artists in your music collection that share the same name.
 
-If you happen to have namesakes within your metadata (i.e. same artist/performer/composer name but with different MBIDs) these artists/performers/composers will not be augmented as there would be no way of knowing which MBID to apply. After running tagminder look for namesakes_* tables in the database - any records therein represent artists/performers/composers requiring you to manually disambiguate by adding the appropriate MBID to matching records in the alib table.
+If you happen to have namesakes within your metadata (i.e. same artist/performer/composer name but with different MBIDs) these artist/performer/composer MBIDs will not be replicated as there would be no way of knowing which MBID to apply. After running tagminder look for namesakes_* tables in the database - any records therein represent artists/performers/composers requiring manual disambiguation by adding the appropriate MBID to matching artist/performer/composer records in the alib table.
 
-Make no changes to audio tags unless you explicitly choose to and only write back to affected files
+### Make no changes to audio tags unless you explicitly choose to and only write back to affected files
 
-tagminder writes changes to a database table and keeps track of which tracks have had metadata changes. It does not make changes to your files unless you explicitly invoke tags2db.py using its export option. All tables in the database can be browsed and edited using a SQLite database editor like Sqlitestudio or DB Browser for SQLite so you can inspect tags and see exactly what would be written to files if you chose to export your changes to the underlying files. 
+tagminder writes changes to a database table and logs which tracks have had metadata changes. It does not make changes to your files unless you explicitly invoke tags2db.py using its export option. All tables in the database can be viewed and edited using a SQLite database editor like Sqlitestudio or DB Browser for SQLite, so you can inspect tags and see exactly what would be written to files if you chose to export your changes to the underlying files. 
 
-In addition to running the automated changes you're also able to manually edit any records using the aforementioned database editors to further enhance/correct metadata issues manually, or through your own SQL queries if you're so inclined. A SQL trigger flags any records changed, whether by way of a SQL update or a manual edit. 
-
-This enables tagminder to generate a database (export.db) containing only changed records, thus ensuring that when writing changes back to underlying files, only those affected files are written to rather than writing back the entire table of metadata, which would affect all files.
+In addition to running the automated changes you're also able to manually edit any records using the aforementioned database editors to further enhance/correct metadata issues manually, or through your own SQL queries if you're so inclined.
 
 ### Backing out changes is easy
 
@@ -40,23 +39,27 @@ Finally, all originally-ingested records are written to a rollback table, so in 
 
 ### Reducing the need for incremental file backups
 
-If your library is static in terms of filename and location, you can also use the metadata database as a means of backing up and versioning metadata simply by keeping various iterations of the database, obviating the need to overwrite a previous backup of the underlying music files. This reduces storage needs, backup times & complexity.
+If your music collection is static in terms of filename and location, you can also use the metadata database as a means of backing up and versioning metadata simply by keeping various iterations of the database.  This obviates the need to overwrite a previous backup of the underlying music files, reducing storage needs, backup times and complexity.
 
-Getting metadata current after restoring a dated backup of your music files would be as simple as exporting the most recent database against the restored files. The added benefit is no need to create incremental backups of your music files simply because you've augmented the metadata - just backup the database and as long as your file locations remain static you have everything you need.
+Getting metadata current after restoring a dated backup of your music files is as simple as exporting the most recent database against the restored files. The added benefit is it eliminates the need to create incremental backups of your music files simply because you've augmented the metadata - just backup the database and as long as your file locations remain static you have everything you need - the audio files and their metadata.
 
 ## Understanding the scripts
 
 ### tags2db.py
 
-Handles the import and export from/to the underlying files and SQLite database. Basically it is the means of getting your tags in and out of your underlying audio files. 
+Handles the import and export from/to the underlying files and SQLite database. It is the means of getting your tags in and out of your underlying audio files. 
 
-This is where the puddletag dependency originates. I've modded Keith's Python 2.x code to run under Python 3. To get it to work, all that's required is that you pull a copy of puddletag source from github: https://github.com/puddletag/puddletag, then copy tags2db.py into the puddletag root folder. 
+This is where the puddletag dependency originates. I've modified Keith's (puddletag's original author) Python 2.x tags to database code to run under Python 3. To get it to work, all that's required is that you pull a copy of puddletag source from github: https://github.com/puddletag/puddletag, then copy tags2db.py into the puddletag root folder so that it has access to puddletag's code library. 
 
-You do not need a functioning puddletag to be able to use tags2db.py, albeit in time you might find puddletag handy for some cleansing/ editing that's best left to human intervention.
+You do not need a functioning puddletag with all dependencies install to be able to use tags2db.py, albeit in time you might find puddletag handy for some cleansing/ editing that's best left to human intervention.
 
 ### tagminder.py
 
-Does the heavy lifting, handling the cleanup of tags in the SQL table alib. A SQL trigger is used to be able to isolate and write back tags only to files who's tag record has been modified (the trigger field sqlmodded is incremented every time a record is updated). 
+Does the heavy lifting, handling the cleanup of tags in the SQL table 'alib'. A SQL trigger flags any records changed, whether by way of a SQL update or a manual edit (the trigger field 'sqlmodded' is incremented every time a tag value in a record is updated). 
+
+This enables tagminder to generate a database 'export.db' containing only changed records.  This ensures that only those files that pertain to modified metadata are written to when updating tags.
+
+
 
 At present it does the following:
 
@@ -108,9 +111,9 @@ At present it does the following:
 
 - incorporate metadata normalisation routines to standardise case of track TITLE, PERFORMER, COMPOSER & LABEL metadata.  Investigate whether MBID obviates this need in LMS
 
-- leverage cosine similarity to generate potential duplicates/ variations on performer name in contributor metadata requiring manual intervention
+- leverage cosine similarity to generate potential duplicates/ variations on performer name in contributor metadata requiring manual tagging intervention
 
-- add MusicBrainz identifiers to all ARTIST, PERFORMER, COMPOSER, LYRICIST, WRITER, LABEL, WORK, PART and ALBUMARTIST tags
+- add MusicBrainz identifiers to all ARTIST, PERFORMER, COMPOSER, LYRICIST, WRITER, LABEL, WORK, PART and ALBUMARTIST tags leveraging a download of tables from the MusicBrainz database
 
 - consider adding musicbrainz_composerid for future app use
 
@@ -120,13 +123,13 @@ At present it does the following:
 
 - merge GENRE and STYLE tags to GENRE tag and dedupe
 
-- enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based GENRE and STYLE entries
-
 - cleanup and standardise genres to eliminate unsanctioned GENRE entries
+
+- enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based GENRE and STYLE entries
 
 - ensure completeness of various tags across all tracks in a folder/album e.g. all tracks have DATE and GENRE assignments and that they're the same (albeit some users will not want track genres homogenised for an album), so keep the code separate
 
-- write out __dirpaths for various queries to additional tables users can use to focus on manual adjustments e.g. adding DATE tag to albums without dates, GENRE tag to albums without genres etc.
+- write out __dirpaths for various queries to additional tables users can use to focus on manual adjustments e.g. adding DATE tag to albums without dates, GENRE tag to albums without genres etc, variations on artist names that are likely the same performer
 
 - fill in the blanks on ALBUMARTIST, GENRE, STYLE, MOOD & THEME tags where not all tracks in an album have these entries
 
@@ -134,7 +137,7 @@ At present it does the following:
 
 ## USAGE:
 
-At present tags2db.py must be started in the root of the directory tree you intend to import. I strongly suggest writing the SQLite database to /tmp as its alib table is dynamically modified every time a new tag is encountered when the tags are being imported from audio files. 
+At present tags2db.py must be started in the root of the directory tree you intend to import. I strongly suggest writing the SQLite database to /tmp as its 'alib' table is dynamically modified every time a new tag is encountered when the tags are being imported from audio files. 
 
 It'll work on physical disk, but it'll take longer. It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags, so you probably want to avoid hammering a SSD by ensuring that you're not writing the database directly to SSD. Use /tmp!
 
@@ -154,10 +157,16 @@ python ~/tagminder.py /tmp/x.db
 
 It'll report its workings and stats as it goes.
 
-When it's done the resulting (changed records only) are written to export.db, which can be exported back to the underlying files like so:
+When it's done the resulting (changed records only) are written to 'export.db', which can be exported back to the underlying files like so:
 
 ```
 python /path.to/puddletag/tags2db.py export /tmp/flacs/export.db .
 ```
 
-This will overwrite the tags in the associated files, replacing it with the revised tags stored in export.db
+This will overwrite the tags in the associated files, replacing it with the metadata tags stored in 'export.db'
+
+### Workflow
+
+- run it once against your entire music collection to process updates en-mass
+
+- thereafter use tagminder to cleanup tags for any music you want to add to your music collection.  For me that means tagging via Picard followed by Puddletag (to leverage tag sources other than MusicBrainz, inspect tags, standardise filenames, rename folders etc.) and then running tagminder to pick up anything I may have overlooked.
