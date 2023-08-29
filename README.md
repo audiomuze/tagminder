@@ -27,7 +27,7 @@ It builds a table of distinct artist/performer/composer names that have an assoc
 
 If you happen to have namesakes within your metadata (i.e. same artist/performer/composer name but with different MBIDs) these artist/performer/composer MBIDs will not be replicated as there would be no way of knowing which MBID to apply. After running tagminder look for namesakes_* tables in the database - any records therein represent artists/performers/composers requiring manual disambiguation by adding the appropriate MBID to matching artist/performer/composer records in the alib table.
 
-### Make no changes to audio tags unless you explicitly choose to and only write back to affected files
+### Make no changes to your files unless you explicitly choose to
 
 tagminder writes changes to a database table and logs which tracks have had metadata changes. It does not make changes to your files unless you explicitly invoke tags2db.py using its export option. All tables in the database can be viewed and edited using a SQLite database editor like Sqlitestudio or DB Browser for SQLite, so you can inspect tags and see exactly what would be written to files if you chose to export your changes to the underlying files. 
 
