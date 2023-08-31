@@ -17,11 +17,11 @@ Taggers are great but can only take you so far. Tag sources also vary in consist
 tagminder lets you automatically make pre-coded changes to these sorts of issues and does a lot of cleanup work that is difficult to do within a tagger. It also does it at scale, repeatably and consistently, whether you're handling 1,000 or 1,000,000 tracks - this is simply an impossible task prone to variation and human error when tackled via a tagger.
 
 ### Preserving your prior work
-In doing its work tagminder takes your existing tags as a given, not trying to second guess you by replacing your metadata with externally sourced metadata, but rather it looks for common metadata issues in your metadata and solves those automatically.
+tagminder takes your existing tags as a given, not trying to second guess you by replacing your metadata with externally sourced metadata, but rather it looks for common metadata issues in your metadata and solves those automatically.
 
 ### MusicBrainz aware
 
-Music servers are increasingly leveraging MusicBrainz MBIDs when present.  tagminder seeks to add MusicBrainz MBIDs to your metadata where MBIDs are already available in your existing metadata e.g. if one performance by an artist happens to have a MBID included in its metadata, tagminder will replaicate that MBID in every other performance that contains the same performer name. 
+Music servers are increasingly leveraging MusicBrainz MBIDs when present.  tagminder seeks to add MusicBrainz MBIDs to your metadata where MBIDs are already available in your existing metadata e.g. if one performance by an artist happens to have a MBID included in its metadata, tagminder will replicate that MBID in every other performance that contains the same performer name. 
 
 It builds a table of distinct artist/performer/composer names that have an associated MBID in your tags and then replicates that MBID to all occurences of that artist/performer/composer in your tag metadata. If your music server is MusicBrainz aware, there's a good chance that'll prevent it from merging the work of unrelated artists in your music collection that share the same name.
 
