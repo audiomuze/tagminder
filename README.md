@@ -8,7 +8,7 @@ Tags are read/written using the Mutagen library as used in puddletag. Requires P
 
 ## General philosophy and rationale
 
-### Making sense from chaos
+### Makes sense from chaos
 
 I have a relatively large music collection and rely on good metadata to enhance my ability to explore the music collection in useful and interesting ways. 
 
@@ -16,7 +16,7 @@ Taggers are great but can only take you so far. Tag sources also vary in consist
 
 tagminder lets you automatically make pre-coded changes to these sorts of issues and does a lot of cleanup work that is difficult to do within a tagger. It also does it at scale, repeatably and consistently, whether you're handling 1,000 or 1,000,000 tracks - this is simply an impossible task prone to variation and human error when tackled via a tagger.
 
-### Preserving your prior work
+### Preserves your prior work
 tagminder takes your existing tags as a given, not trying to second guess you by replacing your metadata with externally sourced metadata, but rather it looks for common metadata issues in your metadata and solves those automatically.
 
 ### MusicBrainz aware
@@ -27,7 +27,7 @@ It builds a table of distinct artist/performer/composer names that have an assoc
 
 If you happen to have namesakes within your metadata (i.e. same artist/performer/composer name but with different MBIDs) these artist/performer/composer MBIDs will not be replicated as there would be no way of knowing which MBID to apply. After running tagminder look for namesakes_* tables in the database - any records therein represent artists/performers/composers requiring manual disambiguation by adding the appropriate MBID to matching artist/performer/composer records in the alib table.
 
-### Make no changes to your files unless you explicitly choose to
+### Leaves your files untouched unless you explicitly choose to export changes
 
 tagminder writes changes to a database table and logs which tracks have had metadata changes. It does not make changes to your files unless you explicitly invoke tags2db.py using its export option. All tables in the database can be viewed and edited using a SQLite database editor like Sqlitestudio or DB Browser for SQLite, so you can inspect tags and see exactly what would be written to files if you chose to export your changes to the underlying files. 
 
