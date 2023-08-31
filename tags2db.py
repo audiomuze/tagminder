@@ -305,8 +305,9 @@ def import_tag(tag, conn, columns):
 			value = tag.filepath
 		else:
 
-			if key == 'artist' or key == 'performer' or key == 'composer' or key == 'genre'  or key == 'personnel' or key == 'producer' or key == 'style' or key == 'mood' or key == 'theme':
-				value = sort_field(remove_dupes(value))
+			# if key == 'artist' or key == 'performer' or key == 'composer' or key == 'genre'  or key == 'personnel' or key == 'producer' or key == 'style' or key == 'mood' or key == 'theme':
+			# 	value = sort_field(remove_dupes(value))
+			# have commented above out as it's modding tags on the way in and thus hiding errors rather than fixing them on the way out
 
 			if not isinstance(value, (int, float, str)):
 
@@ -320,9 +321,9 @@ def import_tag(tag, conn, columns):
 		# 	logging.warning('Invalid tag found %s: %s. Not parsing field.' % (tag.filepath, key))
 		# 	continue
 		# keys[key.lower()] = key
-#--------------------------------------------------------
-		key = key.replace('"', '') # check for and remove '"' from tag names ... they shoouldn't exist, but they've been encountered in the wild.  This shall be known henceforce as the Wietsche tax!
-#--------------------------------------------------------
+
+		key = key.replace('"', '') # check for and remove '"' from tag names ... they shouldn't exist, but they've been encountered in the wild and are illegal in SQLite column names.  This shall be known henceforce as the Wietsche tax!
+
 		keys[key.lower()] = key
 		values[key.lower()] = value
 
@@ -353,13 +354,11 @@ def import_dir(dbpath, dirpath):
 
 
 	""" at some point you need to modify the call to scantree to accept the passed parameter - until you do it needs to be started in the directory you want to import """
-	for filepath in scantree('.'):	
+	for filepath in scantree(dirpath):	
 
 			try:
 				logging.info("Import started: " + filepath.path)
 				tag = audioinfo.Tag(filepath.path)
-				# print(tag)
-				# input()
 			except (Exception, e):
 				logging.error("Could not import file: " + filepath.path)
 				logging.exception(e)
@@ -367,8 +366,6 @@ def import_dir(dbpath, dirpath):
 				if tag is not None:
 					try:
 						columns = import_tag(tag, conn, columns)
-						# print(type(filepath))
-						# input()
 						logging.info('Imported completed: ' + str(filepath))
 					except Exception as e:
 						logging.error('Error occured importing file %s' % filepath)
