@@ -137,22 +137,22 @@ At present it does the following:
 
 ## USAGE:
 
-At present tags2db.py must be started in the root of the directory tree you intend to import. I strongly suggest writing the SQLite database to /tmp as its 'alib' table is dynamically modified every time a new tag is encountered when the tags are being imported from audio files. 
+I strongly suggest writing the SQLite database to /tmp as its 'alib' table is dynamically modified every time a new tag is encountered when tags are being imported from audio files. 
 
 It'll work on physical disk, but it'll take longer. It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags, so you probably want to avoid hammering a SSD by ensuring that you're not writing the database directly to SSD. Use /tmp!
 
-First import tags from your files into a nominated database (don't forget the '.' at the end, it denotes the current directory):
+First import tags from your files into a nominated database:
 
 ```
 cd /root_folder_you_want_to_import_tags_from
-python /path.to/puddletag/tags2db.py import /tmp/x.db .
+python /path.to/puddletag/tags2db.py import /tmp/dbname.db /path/to/import/from
 ```
 Let that run - it'll take a while to ingest tags from your library, writing each file's metadata to a table called 'alib'
 
 Run tagminder.py against the same database:
 
 ```
-python ~/tagminder.py /tmp/x.db
+python ~/tagminder.py /tmp/dbname.db
 ```
 
 It'll report its workings and stats as it goes.
@@ -160,7 +160,7 @@ It'll report its workings and stats as it goes.
 When it's done the resulting (changed records only) are written to 'export.db', which can be exported back to the underlying files like so:
 
 ```
-python /path.to/puddletag/tags2db.py export /tmp/export.db .
+python /path.to/puddletag/tags2db.py export /tmp/export.db /path/imported/from
 ```
 
 This will overwrite the tags in the associated files, replacing it with the metadata tags stored in 'export.db'
