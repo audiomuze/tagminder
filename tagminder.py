@@ -486,7 +486,10 @@ def title_feat_to_artist():
                 sub = row_title[split_point + feat_len:].strip()
 
                 ''' finally derive the new artist entry by concatenate the string in a way that puddletag knows how to handle the delimiter '''
-                new_artist = row_artist + '\\\\' + sub
+                if row_artist is None:
+                    new_artist = sub
+                else:
+                    new_artist = row_artist + '\\\\' + sub
 
                 print(f"{format(table_record,'07d')}, String: '{row_title}' Base: '{base}' Sub: '{sub}' New artist: '{new_artist}'")
                 dbcursor.execute('''UPDATE alib set title = (?), artist = (?) WHERE rowid = (?);''', (base, new_artist, table_record))
@@ -774,74 +777,82 @@ def strip_live_from_titles():
     records_to_process = [''] # initiate a list of one item to satisfy a while list is not empty
     iterator = 0
     exhausted_queries = 0
-
+    mismatched_brackets = 0
     print(f"\nStripping ([Live]) from track titles...")
 
-    while records_to_process and not exhausted_queries: # PEP 8 recommended method for testing whether or not a list is empty.  exhausted_queries is a trigger that's activated when it's time to exit the while loop
+    # while records_to_process and not exhausted_queries: # PEP 8 recommended method for testing whether or not a list is empty.  exhausted_queries is a trigger that's activated when it's time to exit the while loop
 
-        ''' Select all records with (live and/or [live in title '''
-        dbcursor.execute('''SELECT title,
-                                   subtitle,
-                                   live,
-                                   rowid
-                              FROM alib
-                             WHERE title LIKE '%(live%' OR 
-                                   title LIKE '%[live%';''')
+    ''' Select all records with (live%)% or [live%]% in title '''
+    dbcursor.execute('''SELECT title,
+                               subtitle,
+                               live,
+                               rowid
+                          FROM alib
+                         WHERE title LIKE '%(live%)%' OR 
+                               title LIKE '%[live%]%';''')
 
-        records_to_process = dbcursor.fetchall()
-        record_count = len(records_to_process)
-        mismatched_brackets = 0
+    records_to_process = dbcursor.fetchall()
+    record_count = len(records_to_process)
 
-        ''' now process each in sequece '''
-        for record in records_to_process:
+    # ''' test whether we've hit that point where the query keeps returning the same records with mismatching brackets, in which case it's time to exit the while loop '''
+    # if mismatched_brackets == record_count:
 
-            ''' loop through records to test whether they're all mismatched brackets'''
-            row_title = record[0]
+    #     exhausted_queries = 1
 
-            ''' if the entry containa matching opening and closing brackets process it, otherwise skip over itas it isn't a record that shoul be processed '''
-            if ('[' in row_title and ']' in row_title) or ('(' in row_title and ')' in row_title):
-
-                ''' we've not exhausted query results, so continue processing '''
-                row_subtitle = record[1]  # record's subtitle field
-                row_islive = record[2] # record's live field
-                row_to_process = record[3] # rowid of record being processed
-
-                ''' test for matching bracket pairs and set up the bracket variables '''
-                if '[' in row_title and ']' in row_title:
-
-                    opening_bracket = row_title.index('[')
-                    closing_bracket =  row_title.index(']') + 1
-
-                elif '(' in row_title and ')' in row_title:
-
-                        opening_bracket = row_title.index('(')
-                        closing_bracket =  row_title.index(')') + 1
-
-                ''' generate substring and title values from the existing title'''
-                sub = row_title[opening_bracket:closing_bracket]
-                base = row_title.replace(sub, '').strip()
-
-                ''' set live value '''
-                islive = '1' if 'live' in sub.lower() else None
-
-                ''' concatenate row subtitle if there's a pre-existing subtitle '''
-                row_subtitle = sub if row_subtitle is None else (row_subtitle + ' ' + sub).strip()
-
-                ''' write out the changed title, subtitle and live fields based on the values just derived '''
-                dbcursor.execute('''UPDATE alib set title = (?), subtitle = (?) WHERE rowid = (?);''', (base, row_subtitle, row_to_process))
-                if (row_islive is None or row_islive == '0') and islive is not None:
-                    dbcursor.execute('''UPDATE alib set live = (?) WHERE rowid = (?);''', (islive, row_to_process))
-
-            else:
-
-                ''' seeing as the record was a wash increment the number of mismatches.  when this number equals the record_count of records matching the select statement it's time to trigger exhausted_queries to break the while loop '''
-                mismatched_brackets += 1
+    print(f"Asessing {record_count} records...")
 
 
-        ''' test whether we've hit that point where the query keeps returning the same records with mismatching brackets, in which case it's time to exit the while loop '''
-        if mismatched_brackets == record_count:
+    ''' now process each in sequece '''
+    for record in records_to_process:
 
-            exhausted_queries = 1
+        ''' loop through records to test whether they're all mismatched brackets'''
+        row_title = record[0]
+
+        # ''' if the entry contains a matching opening and closing bracket pair process it, otherwise skip over it as it isn't a record that should be processed '''
+        # if ('[' in row_title and ']' in row_title) or ('(' in row_title and ')' in row_title):
+
+        ''' we've not exhausted query results, so continue processing '''
+        row_subtitle = record[1]  # record's subtitle field
+        row_islive = record[2] # record's live field
+        row_to_process = record[3] # rowid of record being processed
+
+
+        ''' test for which matching bracket pairs and set up the bracket variables '''
+        if '[' in row_title and ']' in row_title:
+
+            opening_bracket = row_title.index('[')
+            closing_bracket =  row_title.index(']') + 1
+
+        elif '(' in row_title and ')' in row_title:
+
+                opening_bracket = row_title.index('(')
+                closing_bracket =  row_title.index(')') + 1
+
+        ''' generate substring and title values from the existing title'''
+        sub = row_title[opening_bracket:closing_bracket]
+        base = row_title.replace(sub, '').strip()
+
+        ''' set live value '''
+        islive = '1' if 'live' in sub.lower() else None
+
+        ''' concatenate row subtitle if there's a pre-existing subtitle '''
+        row_subtitle = sub if row_subtitle is None else (row_subtitle + ' ' + sub).strip()
+
+        ''' write out the changed title, subtitle and live fields based on the values just derived '''
+        dbcursor.execute('''UPDATE alib set title = (?), subtitle = (?) WHERE rowid = (?);''', (base, row_subtitle, row_to_process))
+        if (row_islive is None or row_islive == '0') and islive == 1:
+            dbcursor.execute('''UPDATE alib set live = (?) WHERE rowid = (?);''', (islive, row_to_process))
+
+        # else:
+
+        #     ''' seeing as the record was a wash increment the number of mismatches.  when this number equals the record_count of records matching the select statement it's time to trigger exhausted_queries to break the while loop '''
+        #     mismatched_brackets += 1
+        #     print("Encountered mismatched bracket pair # {mismatched_brackets}, skipping record")
+
+        # ''' test whether we've hit that point where the query keeps returning the same records with mismatching brackets, in which case it's time to exit the while loop '''
+        # if mismatched_brackets == record_count:
+
+        #     exhausted_queries = 1
 
     dbcursor.execute(f"drop index if exists titles")
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
@@ -907,6 +918,7 @@ def dedupe_fields():
                         query = f"UPDATE alib SET {text_tag} = (?) WHERE rowid = (?);", (final_value, row_to_process)
                         print(query)
                         dbcursor.execute(*query)
+
     dbcursor.execute("DROP INDEX IF EXISTS dedupe_tag")
     print(f"|\n{tally_mods() - opening_tally} tags were deduped")
 
@@ -1003,6 +1015,16 @@ def merge_album_version():
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
+def merge_genre_style():
+    ''' merge genre and style fields into genre field '''
+    print(f"\nMerging genre and style tags into genre tag where style tag does not already appear in genre tag")
+    opening_tally = tally_mods()
+    dbcursor.execute(f"UPDATE alib SET genre = genre || '\\' || style WHERE style IS NOT NULL AND NOT INSTR(genre, style);")
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+
+
 def split_album_version():
     ''' split album name and version fields, reverting album tag to album name '''
     print(f"\nRemoving VERSION tag from ABUM tag")
@@ -1016,22 +1038,26 @@ def split_album_version():
 
 def set_compilation_flag():
     ''' set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise '''
-    print(f"\nSetting COMPILATION = '1' / '0' depending on whether __dirname starts with 'VA -'")
+    print(f"\nSetting COMPILATION = '1' / '0' depending on whether __dirname starts with 'VA -' or 'Various Artists - '")
     opening_tally = tally_mods()
     dbcursor.execute('''
                         UPDATE alib
                            SET compilation = '1'
                          WHERE (compilation IS NULL OR 
                                 compilation != '1' AND 
-                                substring(__dirname, 1, 4) = 'VA -' AND 
-                                albumartist IS NULL);''')
+
+                                (substring(__dirname, 1, 4) = 'VA -' OR
+                                substring(__dirname, 1, 17) = 'Various Artists - ' ) AND 
+                                (albumartist IS NULL OR
+                                albumartist = 'Various Artists'));''')
 
     dbcursor.execute('''
                         UPDATE alib
                            SET compilation = '0'
                          WHERE (compilation IS NULL OR 
                                 compilation != '0' AND 
-                                substring(__dirname, 1, 4) != 'VA -' AND 
+                                (substring(__dirname, 1, 4) != 'VA -' OR 
+                                substring(__dirname, 1, 17) != 'Various Artists - ' ) AND 
                                 albumartist IS NOT NULL);''')
 
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
@@ -1274,6 +1300,15 @@ def find_duplicate_flac_albums():
     from the sorted md5sum of al tracks in a folder and compares that against the same for all other folders.  If the strings match you have a 100% match of the audio stream and thus duplicate album, irrespective of tags.
     '''
 
+    print(f'\nChecking for FLAC files that do not have an md5sum in the tag header')
+    dbcursor.execute("CREATE TABLE nonstandard_FLACS AS SELECT DISTINCT __dirpath FROM alib WHERE __md5sig = '' OR __md5sig = '0' OR __md5sig is null ORDER BY __path;")
+    dbcursor.execute("SELECT __dirpath from nonstandard_FLACS")
+    invalid_flac_albums = dbcursor.fetchall()
+    if invalid_flac_albums:
+
+        print(f"|\nInvalid FLAC albums present, aborting duplicate album detection.  See table 'nonstandard_FLACS' for a list of folders containing nonstandard FLAC files that should be re-encoded")
+        return
+
     print(f"\nSearching for duplicated flac albums based on __md5sig")
     duplicated_flac_albums = 0
 
@@ -1509,7 +1544,7 @@ def update_tags():
     dedupe_fields()
 
     # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    # find_duplicate_flac_albums()
+    find_duplicate_flac_albums()
 
     # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
     strip_live_from_album_name()
