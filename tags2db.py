@@ -366,7 +366,7 @@ def import_dir(dbpath, dirpath):
 				if tag is not None:
 					try:
 						columns = import_tag(tag, conn, columns)
-						logging.info('Imported completed: ' + str(filepath))
+						logging.info('Import completed: ' + str(filepath))
 					except Exception as e:
 						logging.error('Error occured importing file %s' % filepath)
 						logging.exception(e)
