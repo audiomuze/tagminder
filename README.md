@@ -108,6 +108,8 @@ At present it does the following:
 
 ## TODO:
 
+- modularise code, a single file is fast becomeing unmanageable
+
 - fix update failure bug in live_in_subtitle_means_live()
 
 - incorporate metadata normalisation routines to standardise case of track TITLE, PERFORMER, COMPOSER & LABEL metadata.  Investigate whether MBID obviates this need in LMS
