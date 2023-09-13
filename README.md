@@ -2,7 +2,7 @@
 
 tagminder is comprised of two Python scripts that import audio metadata from underlying audio files into a dynamically created SQLite database and then process the metadata in order to correct anomalies and enrich the metadata where possible.
 
-It enables you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files. It also leverages the puddletag codebase so you need to either install puddletag, or at least pull it from the git repo to be able to access its code, specifically puddletag/puddlestuff/audioinfo. 
+It enables you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files. It also leverages the [puddletag](https://github.com/puddletag/puddletag) codebase so you need to either install puddletag, or at least pull it from the git repo to be able to access its code, specifically puddletag/puddlestuff/audioinfo. 
 
 Tags are read/written using the Mutagen library as used in puddletag. Requires Python 3.x.
 
@@ -103,7 +103,8 @@ At present it does the following:
 
 #### Identifying duplicated FLAC audio content
 
-- identifies all duplicated albums based on records in the alib table. The code relies on the md5sum embedded in properly-encoded FLAC files. – It basically creates a concatenated string from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders. If the strings match you have a 100% match of the audio stream and thus a duplicate album, irrespective of tags / metadata. You can confidently remove all but one of the matched folders.  If any FLAC files are missing the md5sum or the md5sum is zero then duplicate detection is abandoned but a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```
+- identifies all duplicated albums based on records in the alib table. The code relies on the md5sum embedded in properly-encoded FLAC files. – It basically creates a concatenated string from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders. If the strings match you have a 100% match of the audio stream and thus a duplicate album, irrespective of tags / metadata. You can confidently remove all but one of the matched folders.
+- If any FLAC files are missing the md5sum or the md5sum is zero then duplicate detection is abandoned but a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```
 
 ## TODO:
 
