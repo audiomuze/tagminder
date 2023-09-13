@@ -101,9 +101,9 @@ At present it does the following:
 
 - removes all instances and variations of Feat entries ARTIST and TITLE tags and appends the delimited performer names to the ARTIST tag
 
-#### Identifying duplicated audio content
+#### Identifying duplicated FLAC audio content
 
-- identifies all duplicated albums based on records in the alib table. The code relies on the md5sum embedded in properly-encoded FLAC files. – It basically creates a concatenated string from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders. If the strings match you have a 100% match of the audio stream and thus a duplicate album, irrespective of tags / metadata. You can confidently remove all but one of the matched folders.
+- identifies all duplicated albums based on records in the alib table. The code relies on the md5sum embedded in properly-encoded FLAC files. – It basically creates a concatenated string from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders. If the strings match you have a 100% match of the audio stream and thus a duplicate album, irrespective of tags / metadata. You can confidently remove all but one of the matched folders.  If any FLAC files are missing the md5sum or the md5sum is zero then duplicate detection is abandoned but a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```
 
 ## TODO:
 
