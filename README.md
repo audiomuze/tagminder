@@ -49,7 +49,7 @@ Getting metadata current after restoring a dated backup of your music files is a
 
 Handles the import and export from/to the underlying files and SQLite database. It is the means of getting your tags in and out of your underlying audio files. 
 
-This is where the puddletag dependency originates. I've modified Keith's (puddletag's original author) Python 2.x tags to database code to run under Python 3. To get it to work, all that's required is that you pull a copy of puddletag source from github: https://github.com/puddletag/puddletag, then copy tags2db.py into the puddletag root folder so that it has access to puddletag's code library. 
+This is where the puddletag dependency originates. I've modified Keith's (puddletag's original author) Python 2.x tags to database code to run under Python 3. To get it to work, all that's required is that you pull a copy of [puddletag source from github](https://github.com/puddletag/puddletag), then copy tags2db.py into the puddletag root folder so that it has access to puddletag's code library. 
 
 You do not need a functioning puddletag with all dependencies install to be able to use tags2db.py, albeit in time you might find puddletag handy for some cleansing/ editing that's best left to human intervention.
 
