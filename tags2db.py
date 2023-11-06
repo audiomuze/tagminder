@@ -209,6 +209,7 @@ def initdb(dbpath):
 	__version text,
 	__vendorstring text,
 	__md5sig text,
+	tagminder_uuid blob,
 	sqlmodded text,
 	reflac text,
 	discnumber text,
