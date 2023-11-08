@@ -4,6 +4,8 @@ from os.path import exists, dirname
 import re
 import sqlite3
 import sys
+import uuid
+
 
 
 ''' function to clear screen '''
