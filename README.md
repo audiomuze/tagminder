@@ -124,9 +124,9 @@ At present it does the following:
 
 - incorporate metadata enrichment leveraging MusicBrainz and inferences based on existing track related metadata in table
 
-- merge GENRE and STYLE tags to GENRE tag and dedupe
+- ~~merge GENRE and STYLE tags to GENRE tag and dedupe~~
 
-- cleanup and standardise genres to eliminate unsanctioned GENRE entries
+- ~~cleanup and standardise genres to eliminate unsanctioned GENRE entries~~
 
 - enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based GENRE and STYLE entries
 
