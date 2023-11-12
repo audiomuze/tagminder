@@ -2158,7 +2158,8 @@ def add_genres_and_styles():
             album_artist = item[0]
             print(f'Processing albumartist: {album_artist}')
             
-            dbcursor.execute(f'SELECT DISTINCT genre, style FROM alib WHERE albumartist = "{album_artist}" ORDER BY albumartist;')
+            #dbcursor.execute(f'SELECT DISTINCT genre, style FROM alib WHERE albumartist = "{album_artist}" ORDER BY albumartist;')
+            dbcursor.execute('''SELECT DISTINCT genre, style FROM alib WHERE albumartist = (?) ORDER BY albumartist;''', (album_artist,))
 
             records = dbcursor.fetchall()
             if len(records) > 0:
@@ -2166,7 +2167,6 @@ def add_genres_and_styles():
                 #set up empty lists to hold the genre and style values
                 concatenated_genres = []
                 concatenated_styles = []
-                album_artist = item[0]
 
                 #iterate through every record
                 for record in records:
@@ -2196,24 +2196,24 @@ def add_genres_and_styles():
                     else:
                         style_list = []
 
-                    print(f'Baseline Style: {baseline_style}')
-                    print(f'Baseline Genre: {baseline_genre}')
-                    print(f'Concatenated_Styles: {concatenated_styles}')
-                    print(f'Concatenated_Genres: {concatenated_genres}')
+                    # print(f'Baseline Style: {baseline_style}')
+                    # print(f'Baseline Genre: {baseline_genre}')
+                    # print(f'Concatenated_Styles: {concatenated_styles}')
+                    # print(f'Concatenated_Genres: {concatenated_genres}')
 
                 if concatenated_styles:
                     # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
                     caseless_styles = caseless_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
-                    print(f'Caseless_Styles: {caseless_styles}')
+                    # print(f'Caseless_Styles: {caseless_styles}')
 
                 else:
                     caseless_styles = []
 
                 if concatenated_genres:
 
-                    # dedupe concatenated_styles by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                    # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
                     caseless_genres = caseless_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
-                    print(f'Caseless_Genres: {caseless_genres}')
+                    # print(f'Caseless_Genres: {caseless_genres}')
 
                 else:
                     caseless_genres = []
@@ -2248,7 +2248,7 @@ def add_genres_and_styles():
                 else:
                     print(f'= No Genre tags found for albumartist: {item}\n')
 
-    conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
+    conn.commit()
     dbcursor.execute('DROP INDEX IF EXISTS albumartists;')
     closing_tally = tally_mods()
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
@@ -2699,7 +2699,7 @@ def capitalise_releasetype():
 
 
 def add_releasetype():
-    print(f"\nSetting 'First Letter Caps' for all instances of releasetype")
+    print(f"\nAdding releasetype tag where none is present")
     opening_tally = tally_mods()
 
     # set Singles
@@ -3277,16 +3277,16 @@ def update_tags():
     add_tagminder_uuid()
 
     # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    # find_duplicate_flac_albums()
+    find_duplicate_flac_albums()
 
     # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
     cleanse_genres_and_styles()
 
-    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in one's library
+    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
     add_genres_and_styles()
 
-
-    
+    # allmusic.com has become lazy with their metadata, often assigning only Pop/Rock to an album.  This routine adds genres where an album has only Pop/Rock.  Genres added will be amalgamation of the same artist's other work in your library
+    augment_poprock()
 
     ''' return case sensitivity for LIKE to SQLite default '''
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
@@ -3329,6 +3329,9 @@ if __name__ == '__main__':
 ''' todo: ref https://github.com/audiomuze/tags2sqlite
 add:
 - write out test files: all __dirpath's missing genres, composers, year/date, mbalbumartistid
+- fill in blanks on albumartist, genre, style, mood, theme where some files relating to an album have a different or no value for aformentioned fields.
+- add MBID table to mix and test for its existence - if it exists use that to add MBIDs rather than what's already in alib - this will produce a more comprehensive result
+- are we filling in blanks on composers anywhere in here?
 
 
  '''
