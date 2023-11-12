@@ -16,6 +16,7 @@ def firstlettercaps(s):
     return re.sub(r"[A-Za-z]+('[A-Za-z]+)?", lambda mo: mo.group(0)[0].upper() + mo.group(0)[1:].lower(), s)
 
 
+
 def table_exists(table_name):
     ''' test whether table exists in a database '''
     dbcursor.execute(f"SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{table_name}';")
@@ -23,12 +24,10 @@ def table_exists(table_name):
     return (dbcursor.fetchone()[0] == 1)
 
 
-
 def get_columns(table_name):
     ''' return the list of columns in a table '''
     dbcursor.execute(f"SELECT name FROM PRAGMA_TABLE_INFO('{table_name}');")
     return(dbcursor.fetchall())
-
 
 
 def tag_in_table(tag, table_name):
@@ -39,7 +38,6 @@ def tag_in_table(tag, table_name):
     dblist = list(zip(*dbtags))[0]
     ''' build list of matching tagnames in dblist '''
     return(tag in dblist)
-
 
 
 def dedupe_and_sort(input_string, delimiter=r'\\'):
@@ -2047,7 +2045,6 @@ def cleanse_genres_and_styles():
             baseline_genre = record[0]
             baseline_style = record[1]
 
-            
             # generate incoming genre and style lists from record
             if baseline_genre is not None:
                 genre_list = delimited_string_to_list(baseline_genre)
@@ -2084,23 +2081,12 @@ def cleanse_genres_and_styles():
                 caseless_genres = []
 
             # Now merge genre_list and style list
-            #if vetted_genres or vetted_styles:
-                
-            #    vetted_genres_and_styles = sorted(set(vetted_genres + vetted_styles))
-                
-            #else:
-            #    vetted_genres_and_styles = []
-
             if caseless_genres or caseless_styles:
                 
                 caseless_genres_and_styles = sorted(set(caseless_genres + caseless_styles))
                 
             else:
                 caseless_genres_and_styles = []
-
-            #print(f'- Vetted Genres.........: {vetted_genres}')
-            #print(f'- Vetted Styles.........: {vetted_styles}')
-            #print(f'- Vetted Genres & Styles: {vetted_genres_and_styles}\n|')
 
             print(f'- Incoming Styles.........: {style_list}')
             print(f'- Caseless Styles.........: {caseless_styles}')            
@@ -2138,8 +2124,135 @@ def cleanse_genres_and_styles():
 
     conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
     dbcursor.execute('DROP INDEX IF EXISTS genres;')
+    dbcursor.execute('DROP INDEX IF EXISTS styles;')
     closing_tally = tally_mods()
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+
+def add_genres_and_styles():
+    ''' pseudocode...
+    gather distinct list of all albumartists in lib
+    get list of all albums by each albumartist
+    walk each album, gather and append genre and style into lists
+    set and sort each to kill off duplicates
+    write the sorted, deduped values to genre and style for all albums where genre is null and albumartist matches
+    what this doesn't cover is instances where genres are not complete for all tracks in an album 
+        ... another function to come '''
+
+    opening_tally = tally_mods()
+    print(f"\nAdding Genres and Styles to albums without, based on amalgamation of albumartist's genres and styles from other works:\n")
+    dbcursor.execute("CREATE INDEX IF NOT EXISTS albumartists ON alib(albumartist);")
+
+    dbcursor.execute('''SELECT DISTINCT albumartist
+                          FROM alib
+                         WHERE (albumartist IS NOT NULL AND 
+                               genre IS NOT NULL)
+                         ORDER BY albumartist;''')
+
+    albumartists = dbcursor.fetchall()
+    if len(albumartists) > 0:
+
+
+        for item in albumartists:
+            album_artist = item[0]
+            print(f'Processing albumartist: {album_artist}')
+            
+            dbcursor.execute(f'SELECT DISTINCT genre, style FROM alib WHERE albumartist = "{album_artist}" ORDER BY albumartist;')
+
+            records = dbcursor.fetchall()
+            if len(records) > 0:
+
+                #set up empty lists to hold the genre and style values
+                concatenated_genres = []
+                concatenated_styles = []
+                album_artist = item[0]
+
+                #iterate through every record
+                for record in records:
+
+                    #store the baseline values
+                    baseline_genre = record[0]
+                    baseline_style = record[1]
+
+                    # generate incoming genre and style lists from record and append incoming genre and style lists from record
+                    if baseline_genre is not None:
+
+                        genre_list = delimited_string_to_list(baseline_genre)
+                        genre_list.sort()
+                        concatenated_genres.extend(delimited_string_to_list(baseline_genre))
+
+                    else:
+
+                        genre_list = []
+
+
+                    if baseline_style is not None:
+
+                        style_list = delimited_string_to_list(baseline_style)
+                        style_list.sort()
+                        concatenated_styles.extend(delimited_string_to_list(baseline_style))
+
+                    else:
+                        style_list = []
+
+                    print(f'Baseline Style: {baseline_style}')
+                    print(f'Baseline Genre: {baseline_genre}')
+                    print(f'Concatenated_Styles: {concatenated_styles}')
+                    print(f'Concatenated_Genres: {concatenated_genres}')
+
+                if concatenated_styles:
+                    # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                    caseless_styles = caseless_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
+                    print(f'Caseless_Styles: {caseless_styles} for albumartist {item}')
+
+                else:
+                    caseless_styles = []
+
+                if concatenated_genres:
+
+                    # dedupe concatenated_styles by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                    caseless_genres = caseless_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
+                    print(f'Caseless_Genres: {caseless_genres} for albumartist: {item}')
+
+                else:
+                    caseless_genres = []
+
+                if caseless_genres or caseless_styles:
+                    # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                    caseless_genres_and_styles = sorted(set(caseless_genres + caseless_styles))
+                else:
+                    caseless_genres_and_styles = None
+                    
+                if caseless_styles:
+
+                    if style_list != caseless_styles:
+                        ''' replace all instances of that Style entry with unvetted Style entries removed, set to NULL if no legitimate entry '''
+                        replacement_style = list_to_delimited_string(caseless_styles)
+                        print(f'= Replacing Style: {baseline_style}')
+                        print(f'             With: {replacement_style}')
+                        dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) AND genre IS NULL AND style IS NULL );''', (replacement_style, album_artist))
+
+                else:
+                    print(f'= No Style tags found for albumartist: {item}\n')
+
+                if caseless_genres_and_styles:
+
+                    if genre_list != caseless_genres_and_styles:
+                        ''' replace all instances of that Genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
+                        replacement_genre = list_to_delimited_string(caseless_genres_and_styles)
+                        print(f'= Replacing genre: {baseline_genre}')
+                        print(f'             With: {replacement_genre}\n')
+                        dbcursor.execute('''UPDATE alib SET genre = (?) WHERE (albumartist = (?) AND genre IS NULL);''', (replacement_genre, album_artist))
+
+                else:
+                    print(f'= No Genre tags found for albumartist: {item}\n')
+
+    conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
+    dbcursor.execute('DROP INDEX IF EXISTS albumartists;')
+    closing_tally = tally_mods()
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
 
 
 def title_keywords_to_subtitle():
@@ -2581,6 +2694,89 @@ def capitalise_releasetype():
         print(release[0], flc)
         # SQLite WHERE clause is case sensistive so this should not repeatedly upddate records every time it is run
         dbcursor.execute('''UPDATE alib SET releasetype = (?) WHERE releasetype = (?) AND releasetype != (?);''', (flc, release[0], flc))
+
+    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+
+
+def add_releasetype():
+    print(f"\nSetting 'First Letter Caps' for all instances of releasetype")
+    opening_tally = tally_mods()
+
+    # set Singles
+    print('Detecting and setting Singles...')
+    dbcursor.execute('''WITH cte AS (
+                            SELECT DISTINCT __dirpath,
+                                            count( * ) AS track_count,
+                                            releasetype,
+                                            genre
+                              FROM alib
+                             WHERE releasetype IS NULL AND 
+                                   genre NOT LIKE '%Classical%' AND 
+                                   genre NOT LIKE '%Jazz%' 
+                             GROUP BY __dirpath
+                             ORDER BY track_count,
+                                      __dirpath
+                        )
+                        UPDATE alib
+                           SET releasetype = 'Single'
+                         WHERE __dirpath IN (
+                            SELECT __dirpath
+                              FROM cte
+                             WHERE track_count <= 3 AND 
+                                   releasetype IS NULL
+                        );''')
+
+    # set EPs
+    print('Detecting and setting EPs...')
+    dbcursor.execute('''WITH cte AS (
+                            SELECT DISTINCT __dirpath,
+                                            count( * ) AS track_count,
+                                            releasetype,
+                                            genre
+                              FROM alib
+                             WHERE releasetype IS NULL AND 
+                                   genre NOT LIKE '%Classical%' AND 
+                                   genre NOT LIKE '%Jazz%' 
+                             GROUP BY __dirpath
+                             ORDER BY track_count,
+                                      __dirpath
+                        )
+                        UPDATE alib
+                           SET releasetype = 'Ep'
+                         WHERE __dirpath IN (
+                            SELECT __dirpath
+                              FROM cte
+                             WHERE track_count > 3 AND 
+                                   track_count <= 6
+                        );''')
+
+    # set Soundtracks
+    print('Detecting and setting Soundtracks...')
+    dbcursor.execute('''UPDATE alib
+                           SET releasetype = 'Soundtrack'
+                         WHERE __dirpath LIKE '%/OST%' AND 
+                               releasetype IS NULL;''')
+
+    # set Albums
+    print('Detecting and setting Albums...')
+    dbcursor.execute('''WITH cte AS (
+                            SELECT DISTINCT __dirpath,
+                                            count( * ) AS track_count,
+                                            releasetype
+                              FROM alib
+                             WHERE releasetype IS NULL
+                             GROUP BY __dirpath
+                             ORDER BY track_count,
+                                      __dirpath
+                        )
+                        UPDATE alib
+                           SET releasetype = 'Album'
+                         WHERE __dirpath IN (
+                            SELECT __dirpath
+                              FROM cte
+                             WHERE track_count > 6
+                        );''')
+
     print(f"|\n{tally_mods() - opening_tally} tags were modified")
 
 
@@ -3060,6 +3256,9 @@ def update_tags():
     # Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
     capitalise_releasetype()
 
+    # Determines releasetype  to each album if not already populated
+    add_releasetype()
+
     # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
     dedupe_fields()
 
@@ -3080,6 +3279,11 @@ def update_tags():
 
     # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
     cleanse_genres_and_styles()
+
+    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in one's library
+    add_genres_and_styles()
+
+
     
 
     ''' return case sensitivity for LIKE to SQLite default '''
