@@ -128,6 +128,8 @@ At present it does the following:
 
 - ~~cleanup and standardise genres to eliminate unsanctioned GENRE entries~~
 
+- ~~Adding Genres and Styles to albums without, based on amalgamation of albumartist's genres and styles from their other works in database~~ -- NOTE, THIS HAS POTENTIAL TO POISON THE WELL SO DON'T USE LIGHTLY
+
 - enrich "Pop/Rock", "Jazz" & "Classical" only genre assignments with artist based GENRE and STYLE entries
 
 - ensure completeness of various tags across all tracks in a folder/album e.g. all tracks have DATE and GENRE assignments and that they're the same (albeit some users will not want track genres homogenised for an album), so keep the code separate
