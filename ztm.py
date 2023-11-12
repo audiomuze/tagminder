@@ -2204,7 +2204,7 @@ def add_genres_and_styles():
                 if concatenated_styles:
                     # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
                     caseless_styles = caseless_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
-                    print(f'Caseless_Styles: {caseless_styles} for albumartist {item}')
+                    print(f'Caseless_Styles: {caseless_styles}')
 
                 else:
                     caseless_styles = []
@@ -2213,7 +2213,7 @@ def add_genres_and_styles():
 
                     # dedupe concatenated_styles by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
                     caseless_genres = caseless_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
-                    print(f'Caseless_Genres: {caseless_genres} for albumartist: {item}')
+                    print(f'Caseless_Genres: {caseless_genres}')
 
                 else:
                     caseless_genres = []
@@ -2955,6 +2955,7 @@ def add_musicbrainz_identifiers():
     opening_tally = tally_mods()
 
     # albumartist updates
+    print('Updating albumartists')
     dbcursor.execute('''UPDATE alib
                            SET musicbrainz_albumartistid = (
                                    SELECT contributor_with_mbid.mbid
@@ -2972,6 +2973,7 @@ def add_musicbrainz_identifiers():
            
        
     # artist updates
+    print('Updating artists')
     dbcursor.execute('''UPDATE alib
                            SET musicbrainz_artistid = (
                                    SELECT contributor_with_mbid.mbid
@@ -2992,12 +2994,12 @@ def add_musicbrainz_identifiers():
     #                        SET musicbrainz_composerid = (
     #                                SELECT contributor_with_mbid.mbid
     #                                  FROM contributor_with_mbid
-    #                                 WHERE contributor_with_mbid.contributor = alib.artist
+    #                                 WHERE contributor_with_mbid.contributor = alib.composer
     #                            )
     #                      WHERE EXISTS (
     #                                SELECT contributor_with_mbid.mbid
     #                                  FROM contributor_with_mbid
-    #                                 WHERE contributor_with_mbid.contributor = alib.artist
+    #                                 WHERE contributor_with_mbid.contributor = alib.composer
     #                            )
     #                     AND 
     #                            alib.musicbrainz_composerid IS NULL;'''
