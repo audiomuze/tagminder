@@ -2138,11 +2138,11 @@ def add_genres_and_styles():
     set and sort each to kill off duplicates
     write the sorted, deduped values to genre and style for all albums where genre is null and albumartist matches
     what this doesn't cover is instances where genres are not complete for all tracks in an album 
-        ... another function to come '''
+        ... another function to come as a precursor or incorporated herein '''
 
     opening_tally = tally_mods()
     print(f"\nAdding Genres and Styles to albums without, based on amalgamation of albumartist's genres and styles from other works:\n")
-    dbcursor.execute("CREATE INDEX IF NOT EXISTS albumartists ON alib(albumartist);")
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS albumartists ON alib(albumartist);''')
 
     dbcursor.execute('''SELECT DISTINCT albumartist
                           FROM alib
@@ -2164,16 +2164,22 @@ def add_genres_and_styles():
             records = dbcursor.fetchall()
             if len(records) > 0:
 
-                #set up empty lists to hold the genre and style values
-                concatenated_genres = []
-                concatenated_styles = []
-
                 #iterate through every record
                 for record in records:
 
-                    #store the baseline values
+                    #store the baseline values related to the currently processed record
                     baseline_genre = record[0]
                     baseline_style = record[1]
+
+                    #set up empty lists to hold the genre and style values ensuring we re-baseline concatenated genres and styles at every iteration otherwise we're appending earlier results to a new albumartist
+                    genre_list = []
+                    style_list = []
+                    concatenated_genres = []
+                    concatenated_styles = []
+                    caseless_genres = []
+                    caseless_styles = []
+                    caseless_genres_and_styles = []
+
 
                     # generate incoming genre and style lists from record and append incoming genre and style lists from record
                     if baseline_genre is not None:
@@ -2182,9 +2188,9 @@ def add_genres_and_styles():
                         genre_list.sort()
                         concatenated_genres.extend(delimited_string_to_list(baseline_genre))
 
-                    else:
+                    # else:
 
-                        genre_list = []
+                    #     genre_list = []
 
 
                     if baseline_style is not None:
@@ -2193,60 +2199,61 @@ def add_genres_and_styles():
                         style_list.sort()
                         concatenated_styles.extend(delimited_string_to_list(baseline_style))
 
+                    # else:
+                    #     style_list = []
+
+
+                    if concatenated_styles:
+                        # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                        caseless_styles = caseless_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
+
+
+                    # else:
+                    #     caseless_styles = []
+
+                    if concatenated_genres:
+
+                        # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                        caseless_genres = caseless_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
+
+
+                    # else:
+                    #     caseless_genres = []
+
+                    if caseless_genres or caseless_styles:
+                        # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                        caseless_genres_and_styles = sorted(set(caseless_genres + caseless_styles))
                     else:
-                        style_list = []
+                        caseless_genres_and_styles = None
 
-                    # print(f'Baseline Style: {baseline_style}')
-                    # print(f'Baseline Genre: {baseline_genre}')
-                    # print(f'Concatenated_Styles: {concatenated_styles}')
-                    # print(f'Concatenated_Genres: {concatenated_genres}')
+                    # Now we've done all the processing, compare results and decide what changes to write out
+                    print(f'Outcomes for {album_artist}:')
 
-                if concatenated_styles:
-                    # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                    caseless_styles = caseless_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
-                    # print(f'Caseless_Styles: {caseless_styles}')
+                    if caseless_styles:
 
-                else:
-                    caseless_styles = []
+                        if style_list != caseless_styles:
+                            ''' replace all instances of that Style entry with unvetted Style entries removed, set to NULL if no legitimate entry '''
+                            replacement_style = list_to_delimited_string(caseless_styles)
+                            print(f'= Replacing Style: {baseline_style}')
+                            print(f'             With: {replacement_style}')
+                            dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) AND genre IS NULL AND style IS NULL );''', (replacement_style, album_artist))
 
-                if concatenated_genres:
+                    else:
+                        print(f'= No Style tags found for albumartist: {album_artist}\n')
 
-                    # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                    caseless_genres = caseless_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
-                    # print(f'Caseless_Genres: {caseless_genres}')
+                    if caseless_genres_and_styles:
 
-                else:
-                    caseless_genres = []
+                        if genre_list != caseless_genres_and_styles:
+                            ''' replace all instances of that Genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
+                            replacement_genre = list_to_delimited_string(caseless_genres_and_styles)
+                            print(f'= Replacing genre: {baseline_genre}')
+                            print(f'             With: {replacement_genre}\n')
+                            # write out changes to all albums where genre tag has no data or genre entry simply amounts to Pop/Rock.  allmusic.com has become lazy with their metadata, 
+                            # often assigning only Pop/Rock to an album so adds to genre where an album has only Pop/Rock as assigned genre
+                            dbcursor.execute('''UPDATE alib SET genre = (?) WHERE (albumartist = (?) AND (genre IS NULL OR genre = 'Pop/Rock'));''', (replacement_genre, album_artist))
 
-                if caseless_genres or caseless_styles:
-                    # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                    caseless_genres_and_styles = sorted(set(caseless_genres + caseless_styles))
-                else:
-                    caseless_genres_and_styles = None
-                    
-                if caseless_styles:
-
-                    if style_list != caseless_styles:
-                        ''' replace all instances of that Style entry with unvetted Style entries removed, set to NULL if no legitimate entry '''
-                        replacement_style = list_to_delimited_string(caseless_styles)
-                        print(f'= Replacing Style: {baseline_style}')
-                        print(f'             With: {replacement_style}')
-                        dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) AND genre IS NULL AND style IS NULL );''', (replacement_style, album_artist))
-
-                else:
-                    print(f'= No Style tags found for albumartist: {item}\n')
-
-                if caseless_genres_and_styles:
-
-                    if genre_list != caseless_genres_and_styles:
-                        ''' replace all instances of that Genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
-                        replacement_genre = list_to_delimited_string(caseless_genres_and_styles)
-                        print(f'= Replacing genre: {baseline_genre}')
-                        print(f'             With: {replacement_genre}\n')
-                        dbcursor.execute('''UPDATE alib SET genre = (?) WHERE (albumartist = (?) AND genre IS NULL);''', (replacement_genre, album_artist))
-
-                else:
-                    print(f'= No Genre tags found for albumartist: {item}\n')
+                    else:
+                        print(f'= No Genre tags found for albumartist: {album_artist}\n')
 
     conn.commit()
     dbcursor.execute('DROP INDEX IF EXISTS albumartists;')
@@ -3285,8 +3292,6 @@ def update_tags():
     # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
     add_genres_and_styles()
 
-    # allmusic.com has become lazy with their metadata, often assigning only Pop/Rock to an album.  This routine adds genres where an album has only Pop/Rock.  Genres added will be amalgamation of the same artist's other work in your library
-    augment_poprock()
 
     ''' return case sensitivity for LIKE to SQLite default '''
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
