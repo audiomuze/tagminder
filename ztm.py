@@ -2253,84 +2253,84 @@ def add_genres_and_styles():
                         concatenated_styles.extend(delimited_string_to_list(baseline_style))
 
 
-                if concatenated_styles:
-                    # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                    caseless_styles = caseless_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
-                else:
-                    caseless_styles = None
+            if concatenated_styles:
+                # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                caseless_styles = caseless_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
+            else:
+                caseless_styles = None
 
 
-                if concatenated_genres:
+            if concatenated_genres:
+
+                # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                caseless_genres = caseless_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
+            else:
+                caseless_genres = None
+
+
+            if caseless_genres:
+                if  caseless_styles:
 
                     # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                    caseless_genres = caseless_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
+                    caseless_genres_and_styles = sorted(set(caseless_genres + caseless_styles))
                 else:
-                    caseless_genres = None
+                    caseless_genres_and_styles = sorted(set(caseless_genres))
 
+            elif caseless_styles:
 
-                if caseless_genres:
-                    if  caseless_styles:
+                caseless_genres_and_styles = sorted(set(caseless_styles))
 
-                        # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                        caseless_genres_and_styles = sorted(set(caseless_genres + caseless_styles))
-                    else:
-                        caseless_genres_and_styles = sorted(set(caseless_genres))
+            else:
+                caseless_genres_and_styles = None
 
-                elif caseless_styles:
+            # Now we've done all the processing, write out the changes to populate the style nd genre tags if they're empty
 
-                    caseless_genres_and_styles = sorted(set(caseless_styles))
+            if caseless_styles:
 
-                else:
-                    caseless_genres_and_styles = None
+                ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
+                replacement_style = list_to_delimited_string(caseless_styles)
+                print(f'└ Replacing Style:\n└ NULL\n  └ {replacement_style}')
+                # write out the aggregated deduped and sorted styles derived from the albumartist's albums in the collection that have style metadata
+                dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) AND style IS NULL );''', (replacement_style, album_artist))
 
-                # Now we've done all the processing, write out the changes to populate the style nd genre tags if they're empty
+            else:
+                print(f'└ No Style tags found and thus none added for albumartist: {album_artist}')
+                replacement_style = None
 
-                if caseless_styles:
+            if caseless_genres_and_styles:
 
-                    ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
-                    replacement_style = list_to_delimited_string(caseless_styles)
-                    print(f'└ Replacing Style:\n└ NULL\n  └ {replacement_style}')
-                    # write out the aggregated deduped and sorted styles derived from the albumartist's albums in the collection that have style metadata
-                    dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) AND style IS NULL );''', (replacement_style, album_artist))
+                ''' replace all instances of NULL genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
+                replacement_genre = list_to_delimited_string(caseless_genres_and_styles)
+                print(f'├ Replacing genre:\n└ NULL\n  └ {replacement_genre}\n')
+                # write out changes to all albums where genre tag has no data
+                dbcursor.execute('''UPDATE alib SET genre = (?) WHERE (albumartist = (?) AND genre IS NULL);''', (replacement_genre, album_artist))
 
-                else:
-                    print(f'└ No Style tags found and thus none added for albumartist: {album_artist}')
-                    replacement_style = None
+                # enrich 'Pop/Rock' and 'Jazz' only entries for the same albumartist.  allmusic.com has become lazy with their metadata, 
+                # often assigning only Pop/Rock or 'Jazz' to an album so this code adds to genre where an album has only 'Pop/Rock' or 'Jazz'as assigned genre and there are other albums by the same
+                # albumartist in the library that have richer genre and style metadata.  This could poison a few albums with incorrect genre and style assignments [where artist cross genres in their 
+                # discography], however, there should be more correct than incorrect results and incorrect results can be noted when browsing music or encountering anomlies in genre based playlists
+                # and the incorrect genre entries manually removed with a tagger.
 
-                if caseless_genres_and_styles:
+                # now update all records related to album_artist that have ony 'Pop/Rock' or 'Jazz' as genre entry and no style entry
+                # create a list for 'Pop/Rock' only albums and another for 'Jazz' only albums
+                # augmented_poprock = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Pop/Rock'])))
+                # augmented_jazz = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Jazz'])))
+                # print(f'├ Replacing genre:\n└ Pop/Rock\n  └ {augmented_poprock}\n')
 
-                    ''' replace all instances of NULL genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
-                    replacement_genre = list_to_delimited_string(caseless_genres_and_styles)
-                    print(f'├ Replacing genre:\n└ NULL\n  └ {replacement_genre}\n')
-                    # write out changes to all albums where genre tag has no data
-                    dbcursor.execute('''UPDATE alib SET genre = (?) WHERE (albumartist = (?) AND genre IS NULL);''', (replacement_genre, album_artist))
+                # dbcursor.execute('''UPDATE alib
+                #                        SET genre = (?)
+                #                      WHERE (albumartist = (?) AND 
+                #                             genre = 'Pop/Rock');''', (augmented_poprock, album_artist))
 
-                    # enrich 'Pop/Rock' and 'Jazz' only entries for the same albumartist.  allmusic.com has become lazy with their metadata, 
-                    # often assigning only Pop/Rock or 'Jazz' to an album so this code adds to genre where an album has only 'Pop/Rock' or 'Jazz'as assigned genre and there are other albums by the same
-                    # albumartist in the library that have richer genre and style metadata.  This could poison a few albums with incorrect genre and style assignments [where artist cross genres in their 
-                    # discography], however, there should be more correct than incorrect results and incorrect results can be noted when browsing music or encountering anomlies in genre based playlists
-                    # and the incorrect genre entries manually removed with a tagger.
+                # print(f'├ Replacing genre:\n└ Jazz\n  └ {augmented_poprock}\n')
+                # dbcursor.execute('''UPDATE alib
+                #                        SET genre = (?)
+                #                      WHERE (albumartist = (?) AND 
+                #                             genre = 'Jazz');''', (augmented_jazz, album_artist))
 
-                    # now update all records related to album_artist that have ony 'Pop/Rock' or 'Jazz' as genre entry and no style entry
-                    # create a list for 'Pop/Rock' only albums and another for 'Jazz' only albums
-                    augmented_poprock = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Pop/Rock'])))
-                    augmented_jazz = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Jazz'])))
-                    print(f'├ Replacing genre:\n└ Pop/Rock\n  └ {augmented_poprock}\n')
-
-                    dbcursor.execute('''UPDATE alib
-                                           SET genre = (?)
-                                         WHERE (albumartist = (?) AND 
-                                                genre = 'Pop/Rock');''', (augmented_poprock, album_artist))
-
-                    print(f'├ Replacing genre:\n└ Jazz\n  └ {augmented_poprock}\n')
-                    dbcursor.execute('''UPDATE alib
-                                           SET genre = (?)
-                                         WHERE (albumartist = (?) AND 
-                                                genre = 'Jazz');''', (augmented_jazz, album_artist))
-
-                else:
-                    print(f'└ No Genre tags found and thus none added for albumartist: {album_artist}')
-                    replacement_genre = None
+            else:
+                print(f'└ No Genre tags found and thus none added for albumartist: {album_artist}\n')
+                replacement_genre = None
 
     conn.commit()
     dbcursor.execute('DROP INDEX IF EXISTS albumartists;')
