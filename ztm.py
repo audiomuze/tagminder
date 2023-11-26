@@ -2126,7 +2126,7 @@ def cleanse_genres_and_styles():
                 # replace all instances of that genre entry with unvetted genre entries removed, set to NULL if no legitimate entry
 
                 replacement_style = None if not caseless_styles else list_to_delimited_string(caseless_styles)
-                print(f'└ Replacing Style:\n└ {baseline_style}\n>\n └ {replacement_style}')
+                print(f'└ Replacing Style:\n└ {baseline_style}\n  └ {replacement_style}')
                 update_required = True
                 # dbcursor.execute('''UPDATE alib SET style = (?) WHERE style = (?);''', (replacement_style, baseline_style))
 
@@ -2143,7 +2143,7 @@ def cleanse_genres_and_styles():
                 # replace all instances of that genre entry with unvetted genre entries removed, set to NULL if no legitimate entry
 
                 replacement_genre = None if not caseless_genres_and_styles else list_to_delimited_string(caseless_genres_and_styles)
-                print(f'├ Replacing genre:\n└ {baseline_genre}\n>\n └ {replacement_genre}\n')
+                print(f'├ Replacing genre:\n└ {baseline_genre}\n  └ {replacement_genre}\n')
                 update_required = True                
                 # dbcursor.execute('''UPDATE alib SET genre = (?) WHERE genre = (?);''', (replacement_genre, baseline_genre))
                 
@@ -2289,7 +2289,7 @@ def add_genres_and_styles():
 
                     ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
                     replacement_style = list_to_delimited_string(caseless_styles)
-                    print(f'└ Replacing Style:\n└ NULL\n>\n└ {replacement_style}')
+                    print(f'└ Replacing Style:\n└ NULL\n  └ {replacement_style}')
                     # write out the aggregated deduped and sorted styles derived from the albumartist's albums in the collection that have style metadata
                     dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) AND style IS NULL );''', (replacement_style, album_artist))
 
@@ -2301,7 +2301,7 @@ def add_genres_and_styles():
 
                     ''' replace all instances of NULL genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
                     replacement_genre = list_to_delimited_string(caseless_genres_and_styles)
-                    print(f'├ Replacing genre:\n└ NULL\n>\n└ {replacement_genre}\n')
+                    print(f'├ Replacing genre:\n└ NULL\n  └ {replacement_genre}\n')
                     # write out changes to all albums where genre tag has no data
                     dbcursor.execute('''UPDATE alib SET genre = (?) WHERE (albumartist = (?) AND genre IS NULL);''', (replacement_genre, album_artist))
 
@@ -2315,14 +2315,14 @@ def add_genres_and_styles():
                     # create a list for 'Pop/Rock' only albums and another for 'Jazz' only albums
                     augmented_poprock = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Pop/Rock'])))
                     augmented_jazz = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Jazz'])))
-                    print(f'├ Replacing genre:\n└ Pop/Rock\n>\n└ {augmented_poprock}\n')
+                    print(f'├ Replacing genre:\n└ Pop/Rock\n  └ {augmented_poprock}\n')
 
                     dbcursor.execute('''UPDATE alib
                                            SET genre = (?)
                                          WHERE (albumartist = (?) AND 
                                                 genre = 'Pop/Rock');''', (augmented_poprock, album_artist))
 
-                    print(f'├ Replacing genre:\n└ Jazz\n>\n└ {augmented_poprock}\n')
+                    print(f'├ Replacing genre:\n└ Jazz\n  └ {augmented_poprock}\n')
                     dbcursor.execute('''UPDATE alib
                                            SET genre = (?)
                                          WHERE (albumartist = (?) AND 
@@ -2883,7 +2883,7 @@ def add_tagminder_uuid():
 
         # generate a uuid v4 value
         uuidval = str(uuid.uuid4())
-        print(f'Adding UUID {uuidval} to {record[1]}/{record[2]}')
+        #print(f'Adding UUID {uuidval} to {record[1]}/{record[2]}')
         # Add the generated UUID to the row entry
         dbcursor.execute('''UPDATE alib set tagminder_uuid = (?) WHERE rowid = (?);''', (uuidval, record[0]))
 
