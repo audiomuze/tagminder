@@ -1624,7 +1624,7 @@ def nullify_empty_tags():
             dbcursor.execute(f"CREATE INDEX IF NOT EXISTS nullify ON alib ({field_to_check}) WHERE TRIM({field_to_check}) = '';")
             dbcursor.execute(f"UPDATE alib SET {field_to_check} = NULL WHERE TRIM({field_to_check}) = '';")
             dbcursor.execute(f"DROP INDEX IF EXISTS nullify;")
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -1665,7 +1665,7 @@ def trim_and_remove_crlf():
         dbcursor.execute(f"drop index if exists crlf")
         dbcursor.execute(f"drop index if exists crlf1")
 
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -1675,7 +1675,7 @@ def square_brackets_to_subtitle():
     print(f"\nUpdating titles to remove any text enclosed in square brackets from TITLE and appending same to SUBTITLE tag")
     # dbcursor.execute("UPDATE alib SET title = IIF(TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)) = '', title, TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1))), subtitle = IIF(subtitle IS NULL OR TRIM(subtitle) = '', SUBSTR(title, INSTR(title, '[')), subtitle || ' ' || SUBSTR(title, INSTR(title, '['))) WHERE title LIKE '%[%';")
     dbcursor.execute("UPDATE alib SET title = TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)), subtitle = IIF(subtitle IS NULL OR TRIM(subtitle) = '', SUBSTR(title, INSTR(title, '[')), subtitle || ' ' || SUBSTR(title, INSTR(title, '['))) WHERE title LIKE '%[%' AND TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)) != '';")
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -1709,7 +1709,7 @@ def square_brackets_to_subtitle():
 
 
 #     dbcursor.execute(f"drop index if exists titles_artists")
-#     print(f"|\n{tally_mods() - opening_tally} tags were modified")  
+#     print(f"|\n{tally_mods() - opening_tally} records were modified")  
 
 def title_feat_to_artist():
     ''' Move all instances of Feat and With in track TITLE to ARTIST tag '''
@@ -1800,7 +1800,7 @@ def title_feat_to_artist():
                     
 
     dbcursor.execute('''drop index if exists artists''')
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")  
+    print(f"|\n{tally_mods() - opening_tally} records were modified")  
 
 
 
@@ -1887,7 +1887,7 @@ def feat_artist_to_artist():
                     
 
     dbcursor.execute('''drop index if exists artists''')
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")  
+    print(f"|\n{tally_mods() - opening_tally} records were modified")  
 
 
 
@@ -1908,7 +1908,7 @@ def merge_recording_locations():
         '''
         dbcursor.execute(sql1)
         dbcursor.execute(sql2)      
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -1929,7 +1929,7 @@ def release_to_version():
         '''
         dbcursor.execute(sql1)
         dbcursor.execute(sql2)      
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -1939,7 +1939,7 @@ def unsyncedlyrics_to_lyrics():
     opening_tally = tally_mods()
     if tag_in_table('unsyncedlyrics', 'alib'):
         dbcursor.execute("UPDATE alib SET lyrics = unsyncedlyrics WHERE lyrics IS NULL AND unsyncedlyrics IS NOT NULL;")
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -1948,7 +1948,7 @@ def nullify_performers_matching_artists():
     opening_tally = tally_mods()
     print(f"\nRemoving performer names where they match or appear in artist tag")
     dbcursor.execute('UPDATE alib SET performer = NULL WHERE ( (lower(performer) = lower(artist) ) OR INSTR(artist, performer) > 0);')
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 # def nullify_artists_matching_albumartist():
@@ -2012,7 +2012,7 @@ def nullify_performers_matching_artists():
                     
 
 #     dbcursor.execute('''drop index if exists artists''')
-#     print(f"|\n{tally_mods() - opening_tally} tags were modified")  
+#     print(f"|\n{tally_mods() - opening_tally} records were modified")  
 
 
 
@@ -2117,12 +2117,7 @@ def cleanse_genres_and_styles():
                 print(f'└ Replacing Style:\n└ {baseline_style}\n  └ {replacement_style}')
                 # update_required = True
                 dbcursor.execute('''UPDATE alib SET style = (?) WHERE style = (?);''', (replacement_style, baseline_style))
-
-            # else:
-
-            #     print('└ No changes being made to Style tags')
-            #     #replacement_style = list_to_delimited_string(style_list)
-            #     replacement_style = baseline_style
+                print(f"|\n{tally_mods() - opening_tally} style records were modified")                
 
 
             # compare the sorted genre list to deduped vetted_genres with unwanted entries removed
@@ -2135,24 +2130,14 @@ def cleanse_genres_and_styles():
                 print(f'├ Replacing genre:\n└ {baseline_genre}\n  └ {replacement_genre}\n')
                 # update_required = True                
                 dbcursor.execute('''UPDATE alib SET genre = (?) WHERE genre = (?);''', (replacement_genre, baseline_genre))
+                print(f"|\n{tally_mods() - opening_tally} genre records were modified")
+
                 
-            # else:
-            #     print('└ No changes being made to Genre tags\n')
-            #     replacement_genre = list_to_delimited_string(genre_list)
-
-
-            # if update_required:
-
-            #     print(f'Setting genre = {replacement_genre}, style = {replacement_style} where genre = {baseline_genre} and style = {baseline_style})')
-            #     print(f"dbcursor.execute('''UPDATE alib SET genre = (?), style = (?) WHERE (genre = (?) AND style = (?));''', ({replacement_genre}, {replacement_style}, {baseline_genre}, {baseline_style}))")
-            #     input()
-            #     dbcursor.execute('''UPDATE alib SET genre = (?), style = (?) WHERE (genre = (?) AND style = (?));''', (replacement_genre, replacement_style, baseline_genre, baseline_style))
-
     conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
     dbcursor.execute('DROP INDEX IF EXISTS genres;')
     dbcursor.execute('DROP INDEX IF EXISTS styles;')
     closing_tally = tally_mods()
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2305,37 +2290,73 @@ def add_genres_and_styles():
 
                 # now update all records related to album_artist that have ony 'Pop/Rock' or 'Jazz' as genre entry and no style entry
                 # create a list for 'Pop/Rock' only albums and another for 'Jazz' only albums
-                augmented_poprock = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Pop/Rock'])))
-                augmented_pop = list_to_delimited_string(sorted(['Pop', 'Pop/Rock']))
-                augmented_jazz = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Jazz'])))
-                print(f"├ Replacing all instances of genre:\n└ 'Pop/Rock' with:\n  └ {augmented_poprock} for {album_artist}\n")
 
-                dbcursor.execute('''UPDATE alib
-                                       SET genre = (?),
-                                           style = (?) 
+
+
+
+
+                #check for existence of Pop/Rock only entties for this albumartist
+                dbcursor.execute('''SELECT DISTINCT genre,
+                                                    style
+                                      FROM alib
                                      WHERE (albumartist = (?) AND 
                                             (genre = 'Pop/Rock' AND 
-                                             style IS NULL) );''', (augmented_poprock, replacement_style, album_artist))
+                                             style IS NULL) );''', (album_artist,))
 
-                print(f"├ Replacing all instances of genre:\n└ 'Pop' with:\n  └ {augmented_pop} for {album_artist}\n")
+                sub_records = dbcursor.fetchall()
+                if len(sub_records) > 0:
 
-                dbcursor.execute('''UPDATE alib
-                                       SET genre = (?),
-                                           style = (?) 
+                    augmented_genre = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Pop/Rock'])))
+                    print(f"├ Replacing all instances of genre:\n└ 'Pop/Rock' with:\n  └ {augmented_genre} for {album_artist}\n")
+
+                    dbcursor.execute('''UPDATE alib
+                                           SET genre = (?),
+                                               style = (?) 
+                                         WHERE (albumartist = (?) AND 
+                                                (genre = 'Pop/Rock' AND 
+                                                 style IS NULL) );''', (augmented_genre, replacement_style, album_artist))
+
+                #check for existence of Pop only entties for this albumartist
+                dbcursor.execute('''SELECT DISTINCT genre,
+                                                    style
+                                      FROM alib
                                      WHERE (albumartist = (?) AND 
                                             (genre = 'Pop' AND 
-                                             style IS NULL) );''', (augmented_pop, replacement_style, album_artist))
+                                             style IS NULL) );''', (album_artist,))
 
+                sub_records = dbcursor.fetchall()
+                if len(sub_records) > 0:
 
+                    augmented_genre = list_to_delimited_string(sorted(['Pop', 'Pop/Rock']))                    
+                    print(f"├ Replacing all instances of genre:\n└ 'Pop' with:\n  └ {augmented_genre} for {album_artist}\n")
 
-                print(f"├ Replacing all instances of genre:\n└ 'Jazz' with:\n  └ {augmented_jazz} for {album_artist}\n")
-                #print(f"├ Replacing all instances of genre:\n└ 'Pop/Rock' with:\n  └ {augmented_poprock} for {album_artist}\n")
-                dbcursor.execute('''UPDATE alib
-                                       SET genre = (?),
-                                           style = (?) 
+                    dbcursor.execute('''UPDATE alib
+                                           SET genre = (?),
+                                               style = (?) 
+                                         WHERE (albumartist = (?) AND 
+                                                (genre = 'Pop' AND 
+                                                 style IS NULL) );''', (augmented_genre, replacement_style, album_artist))
+
+                #check for existence of Jazz only entties for this albumartist
+                dbcursor.execute('''SELECT DISTINCT genre,
+                                                    style
+                                      FROM alib
                                      WHERE (albumartist = (?) AND 
                                             (genre = 'Jazz' AND 
-                                             style IS NULL) );''', (augmented_jazz, replacement_style, album_artist))
+                                             style IS NULL) );''', (album_artist,))
+
+                sub_records = dbcursor.fetchall()
+                if len(sub_records) > 0:
+
+                    augmented_genre = list_to_delimited_string(sorted(set(caseless_genres_and_styles + ['Jazz'])))
+                    print(f"├ Replacing all instances of genre:\n└ 'Jazz' with:\n  └ {augmented_genre} for {album_artist}\n")
+                    
+                    dbcursor.execute('''UPDATE alib
+                                           SET genre = (?),
+                                               style = (?) 
+                                         WHERE (albumartist = (?) AND 
+                                                (genre = 'Jazz' AND 
+                                                 style IS NULL) );''', (augmented_genre, replacement_style, album_artist))
 
             else:
                 print(f' └ No Genre tags found in library and thus none added for albumartist: {album_artist}\n')
@@ -2344,7 +2365,7 @@ def add_genres_and_styles():
     conn.commit()
     dbcursor.execute('DROP INDEX IF EXISTS albumartists;')
     closing_tally = tally_mods()
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2388,7 +2409,7 @@ def title_keywords_to_subtitle():
                              WHERE (title LIKE ?) AND 
                                    subtitle IS NULL;''', (keyword, keyword, keyword))
     dbcursor.execute(f"drop index if exists titles_subtitles")
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2402,7 +2423,7 @@ def live_in_subtitle_means_live():
                                LOWER(subtitle) LIKE '%(live%' OR 
                                LOWER(subtitle) LIKE '% live %' AND 
                                live != '1';''')
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 def live_means_live_in_subtitle():
@@ -2417,7 +2438,7 @@ def live_means_live_in_subtitle():
                                NOT (instr(lower(subtitle), '[live') ) AND 
                                NOT (instr(lower(subtitle), '(live') );''')
 
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 # def tag_live_tracks():
@@ -2455,7 +2476,7 @@ def live_means_live_in_subtitle():
 #         dbcursor.execute(f"UPDATE alib SET subtitle = subtitle || '\\\\' || trim(substr(title, instr(title, ?))), title = trim(substr(title, 1, instr(title, ?) - 1) ) WHERE (title LIKE ? AND subtitle IS NOT NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
 
 #     dbcursor.execute(f"drop index if exists titles_subtitles")
-#     print(f"|\n{tally_mods() - opening_tally} tags were modified")
+#     print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2549,7 +2570,7 @@ def strip_live_from_titles():
         #     exhausted_queries = 1
 
     dbcursor.execute(f"drop index if exists titles")
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2669,7 +2690,7 @@ def kill_singular_discnumber():
         dbcursor.execute("UPDATE alib SET discnumber = NULL where __dirpath = ?", (var,))
 
     dbcursor.execute('''DROP INDEX IF EXISTS dirpaths_discnumbers;''')
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 def strip_live_from_album_name():
@@ -2697,7 +2718,7 @@ def strip_live_from_album_name():
                            SET album = trim(substr(album, 1, length(album) - 7) ) 
                          WHERE lower(substr(album, -6) ) IN ('(live)', '[live]');''')
 
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
     
 
 
@@ -2706,7 +2727,7 @@ def merge_album_version():
     print(f"\nMerging album name and version fields into album name where version tag does not already appear in album name")
     opening_tally = tally_mods()
     dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 def merge_genre_style():
@@ -2714,7 +2735,7 @@ def merge_genre_style():
     print(f"\nMerging genre and style tags into genre tag where style tag does not already appear in genre tag")
     opening_tally = tally_mods()
     dbcursor.execute(f"UPDATE alib SET genre = genre || '\\' || style WHERE style IS NOT NULL AND NOT INSTR(genre, style);")
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2727,7 +2748,7 @@ def split_album_version():
                            SET album = substring(album, 1, INSTR(album, version) - 2) 
                          WHERE version IS NOT NULL AND 
                                INSTR(album, version);''')
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 def set_compilation_flag():
@@ -2754,7 +2775,7 @@ def set_compilation_flag():
                                 substring(__dirname, 1, 17) != 'Various Artists - ' ) AND 
                                 albumartist IS NOT NULL);''')
 
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2772,7 +2793,7 @@ def nullify_albumartist_in_va():
                            SET ensemble = NULL
                          WHERE lower(ensemble) = 'various artists';''')
 
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2788,7 +2809,7 @@ def capitalise_releasetype():
         # SQLite WHERE clause is case sensistive so this should not repeatedly upddate records every time it is run
         dbcursor.execute('''UPDATE alib SET releasetype = (?) WHERE releasetype = (?) AND releasetype != (?);''', (flc, release[0], flc))
 
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 def add_releasetype():
@@ -2870,7 +2891,7 @@ def add_releasetype():
                              WHERE track_count > 6
                         );''')
 
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
@@ -2896,7 +2917,7 @@ def add_tagminder_uuid():
         # Add the generated UUID to the row entry
         dbcursor.execute('''UPDATE alib set tagminder_uuid = (?) WHERE rowid = (?);''', (uuidval, record[0]))
 
-    print(f"|\n{tally_mods() - opening_tally} tags were modified")
+    print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
 
