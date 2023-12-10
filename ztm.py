@@ -2379,14 +2379,14 @@ def cleanse_genres_and_styles():
             # compare the sorted style list to deduped vetted_style with unwanted entries removed and write changes to the table if they're not the same
             if incoming_styles != vetted_styles:
 
-                print(f"└── Incoming styles DON'T MATCH Vetted Styles!\n")
+                print(f"└─┐ Incoming styles DON'T MATCH Vetted Styles!\n")
                 # if they're not the same then an update to matching records in table is warranted
                 print(f"    └─┐ Replacing Style:\n      ├ {baseline_style}\n      ├ {replacement_style}")
                 dbcursor.execute('''UPDATE alib SET style = (?) WHERE (genre = (?) AND style = (?));''', (replacement_style, baseline_genre, baseline_style))
                 print(f"      └── {tally_mods() - opening_tally} style records were modified\n")                
 
             else:
-                print(f'└── Incoming Styles MATCHES Vetted Styles!\n')
+                print(f'│\n└── Incoming Styles MATCHES Vetted Styles!\n')
 
 
             replacement_genre = None if not vetted_genres_and_styles else list_to_delimited_string(vetted_genres_and_styles)
@@ -2397,7 +2397,7 @@ def cleanse_genres_and_styles():
             # compare the sorted genre list to deduped vetted_genres with unwanted entries removed and write changes to the table if they're not the same
             if incoming_genres != vetted_genres_and_styles:
 
-                print(f"└── Incoming Genres DON'T MATCH merged vetted Genres & Styles!")
+                print(f"└─┐ Incoming Genres DON'T MATCH merged vetted Genres & Styles!")
                 # if they're not the same then an update to matching records in table is warranted
                 print(f"    └─┐ Replacing genre:\n      ├ {baseline_genre}\n      ├ {replacement_genre}")
                 # when updating genre d it on basis of both old or new Style tags matching - this way you capture both matching conditions
@@ -2409,7 +2409,7 @@ def cleanse_genres_and_styles():
                 print(f"      └── {tally_mods() - opening_tally} genre records were modified\n")
 
             else:
-                print(f'└── Incoming Genres MATCH merged vetted Genres & Styles!')
+                print(f'│\n└── Incoming Genres MATCH merged vetted Genres & Styles!')
 
                 
     conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
