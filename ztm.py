@@ -2305,6 +2305,7 @@ def nullify_performers_matching_artists():
 
 
 
+
 def cleanse_genres_and_styles():
     ''' iterate over genre and style tags and remove tag entries that are not in the vetted list defined in vetted_genre_pool(), then merge genre and style tags into genre tag '''
     ''' the problem we are trying to solve here is five-fold: '''
@@ -2326,6 +2327,7 @@ def cleanse_genres_and_styles():
     records = dbcursor.fetchall()
 
     opening_tally = tally_mods()
+
     print(f"\nDeduplicating and removing spurious Genre & Style assignments and merging Genre & Style for all albums having genre and/or style metadata:\n")
 
     if len(records) > 0:
@@ -2336,8 +2338,13 @@ def cleanse_genres_and_styles():
         #iterate through every record
         for record in records:
 
-            #increment loop counter
-            loop_iterator += 1 
+            #increment loop counter and tally number changes as baseline
+            loop_iterator += 1
+            loop_mods = tally_mods()
+
+            # set update_trigger to FALSE.  This trigger is used to determine whether a table update is required.  It's set to TRUE when either style or genre needs an update
+            update_triggered = False
+
             print(f'\nProcessing unique genre & style combination {loop_iterator} / {population}, [{loop_iterator / population:0.0%}] present in your file tags:')
 
             #store the baseline values which would serve as the replacement criteria where a table update is required
@@ -2372,44 +2379,46 @@ def cleanse_genres_and_styles():
 
             replacement_style = None if not vetted_styles else list_to_delimited_string(vetted_styles)
             print(f'├ Incoming Styles.........: {incoming_styles}')
-            print(f'├ Vetted Styles list......: {vetted_styles}')                            
+            print(f'├ Vetted Styles...........: {vetted_styles}')                            
             print(f'├ Replacement Styles......: {replacement_style}')
 
 
             # compare the sorted style list to deduped vetted_style with unwanted entries removed and write changes to the table if they're not the same
             if incoming_styles != vetted_styles:
 
-                print(f"└─┐ Incoming styles DON'T MATCH Vetted Styles!\n")
+                print(f"├── Incoming styles DON'T MATCH Vetted Styles!")
                 # if they're not the same then an update to matching records in table is warranted
-                print(f"    └─┐ Replacing Style:\n      ├ {baseline_style}\n      ├ {replacement_style}")
-                dbcursor.execute('''UPDATE alib SET style = (?) WHERE (genre = (?) AND style = (?));''', (replacement_style, baseline_genre, baseline_style))
-                print(f"      └── {tally_mods() - opening_tally} style records were modified\n")                
+                print(f"├── Replacing Style:\n│     ├ {baseline_style}\n│     └ {replacement_style}\n│")
+                update_triggered = True
 
             else:
-                print(f'│\n└── Incoming Styles MATCHES Vetted Styles!\n')
+                print(f'├───── Incoming Styles MATCHES Vetted Styles!\n│')
 
 
             replacement_genre = None if not vetted_genres_and_styles else list_to_delimited_string(vetted_genres_and_styles)
             print(f'├ Incoming Genres.........: {incoming_genres}')
-            print(f'├ Vetted Genres list......: {vetted_genres}')
+            print(f'├ Vetted Genres...........: {vetted_genres}')
             print(f'├ Replacement Genres......: {replacement_genre}')                
 
             # compare the sorted genre list to deduped vetted_genres with unwanted entries removed and write changes to the table if they're not the same
             if incoming_genres != vetted_genres_and_styles:
 
-                print(f"└─┐ Incoming Genres DON'T MATCH merged vetted Genres & Styles!")
+                print(f"├── Incoming Genres DON'T MATCH merged vetted Genres & Styles!")
                 # if they're not the same then an update to matching records in table is warranted
-                print(f"    └─┐ Replacing genre:\n      ├ {baseline_genre}\n      ├ {replacement_genre}")
-                # when updating genre d it on basis of both old or new Style tags matching - this way you capture both matching conditions
-                dbcursor.execute('''UPDATE alib
-                                       SET genre = (?) 
-                                     WHERE (genre = (?) AND 
-                                            (style = (?) OR 
-                                             style = (?) ) );''', (replacement_genre, baseline_genre, replacement_style, baseline_style))
-                print(f"      └── {tally_mods() - opening_tally} genre records were modified\n")
+                print(f"└── Replacing genre:\n    ├ {baseline_genre}\n    ├ {replacement_genre}")
+                update_triggered = True
 
             else:
-                print(f'│\n└── Incoming Genres MATCH merged vetted Genres & Styles!')
+                print(f'└── Incoming Genres MATCH merged Vetted Genres & Styles!')
+
+            if update_triggered:
+
+                dbcursor.execute('''UPDATE alib
+                                       SET genre = (?),
+                                           style = (?) 
+                                     WHERE (genre = (?) AND 
+                                            (style = (?) ) );''', (replacement_genre, replacement_style, baseline_genre, baseline_style))
+                print(f"    └── {tally_mods() - loop_mods} records were modified\n")
 
                 
     conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
@@ -2417,6 +2426,7 @@ def cleanse_genres_and_styles():
     dbcursor.execute('DROP INDEX IF EXISTS styles;')
     closing_tally = tally_mods()
     print(f"|\n{tally_mods() - opening_tally} records were modified")
+
 
 
 
