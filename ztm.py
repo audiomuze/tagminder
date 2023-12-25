@@ -2238,13 +2238,13 @@ def add_genres_and_styles():
             vetted_styles = []
             vetted_genres_and_styles = []
 
-            print(f'┌ Processing albumartist: {album_artist} #{loop_iterator}/{population} [{loop_iterator / population:0.1%}] that has albums with no genre or style metadata')            
+            print(f'\n┌ Processing albumartist: {album_artist} #{loop_iterator}/{population} [{loop_iterator / population:0.1%}] that has albums with no genre or style metadata')            
             
             # get a list of all that albumartist's genres and styles by polling all records that have one or both of genre and style tags
             dbcursor.execute('''SELECT DISTINCT genre,
                                                 style
                                   FROM alib
-                                 WHERE (albumartist = (?) AND 
+                                 WHERE (albumartist = (?) COLLATE NOCASE AND 
                                         (genre IS NOT NULL OR 
                                          style IS NOT NULL) ) 
                                  ORDER BY albumartist;''', (album_artist,))
@@ -2255,8 +2255,9 @@ def add_genres_and_styles():
             # right, now we have all unique genre and style records for this albumartist where there's either a genre or style entry, or both
             if non_blanks > 0:
 
-                # iterate through every record, building up genre and style lists from every unique combination pertaining to the albumartist into concatenated_genres[] and concatenated_styles[]
+                
                 print(f'├ Processing genre and style entries from {non_blanks} albums by {album_artist}')
+                # iterate through every record, building up genre and style lists from every unique combination pertaining to the albumartist into concatenated_genres[] and concatenated_styles[]
                 for record in records:
 
                     # store the baseline values related to the currently processed record
@@ -2280,242 +2281,242 @@ def add_genres_and_styles():
                         concatenated_styles = sorted(set(concatenated_styles))
 
 
-                    # now you're done collecting metadata, process the end result, getting rid of unvetted items and eliminating duplicate entries
-                    if concatenated_styles:
-                        # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                        vetted_styles = vetted_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
-                        ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
-                        replacement_style = list_to_delimited_string(vetted_styles)
-                        update_triggered = True
+                # now you're done collecting concatedated_genre and concatenated_style metadata, process the end result, getting rid of unvetted items and eliminating duplicate entries
+                if concatenated_styles:
+                    # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                    vetted_styles = vetted_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
+                    ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
+                    replacement_style = list_to_delimited_string(vetted_styles)
+                    update_triggered = True
 
 
-                    else:
-                        vetted_styles = None
-                        replacement_style = None
-                        print(f'├ No Style tags found and thus none added to albums by albumartist: {album_artist} without style tag')
+                else:
+                    vetted_styles = None
+                    replacement_style = None
+                    print(f'├ No Style tags found and thus none added to albums by albumartist: {album_artist} without style tag')
 
-                    if concatenated_genres:
+                if concatenated_genres:
+
+                    # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
+                    vetted_genres = vetted_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
+                else:
+                    vetted_genres = None
+
+
+                # right, now we've merged, sorted and deduplicated a vetted genres and vetted styles list it's time to merge vetted_genres and vetted_styles
+                if vetted_genres:
+                    if  vetted_styles:
 
                         # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                        vetted_genres = vetted_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
+                        vetted_genres_and_styles = sorted(set(vetted_genres + vetted_styles))
                     else:
-                        vetted_genres = None
+                        vetted_genres_and_styles = sorted(set(vetted_genres))
+
+                elif vetted_styles:
+
+                    vetted_genres_and_styles = sorted(set(vetted_styles))
+
+                else:
+                    vetted_genres_and_styles = None
 
 
-                    # right, now we've merged, sorted and deduplicated a vetted genres and vetted styles list it's time to merge vetted_genres and vetted_styles
-                    if vetted_genres:
-                        if  vetted_styles:
+                # Now we've done all the processing, assess whether an update to style or genre is required write out the changes to populate the style and genre tags if they're empty
+                # if vetted_styles:
 
-                            # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                            vetted_genres_and_styles = sorted(set(vetted_genres + vetted_styles))
-                        else:
-                            vetted_genres_and_styles = sorted(set(vetted_genres))
+                #     ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
+                #     replacement_style = list_to_delimited_string(vetted_styles)
+                #     update_triggered = True
+               
+                # else:
+                #     print(f'├ No Style tags found and thus none added for albumartist: {album_artist}')
+                #     replacement_style = None
 
-                    elif vetted_styles:
+                if vetted_genres_and_styles:
 
-                        vetted_genres_and_styles = sorted(set(vetted_styles))
+                    ''' replace all instances of NULL genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
+                    replacement_genre = list_to_delimited_string(vetted_genres_and_styles)
+                    update_triggered = True
 
-                    else:
-                        vetted_genres_and_styles = None
+                else:
+                    print(f'└ ├ No Genre tags found and thus none added to albums by albumartist: {album_artist} without genre tag\n')
+                    replacement_genre = None
 
-
-                    # Now we've done all the processing, assess whether an update to style or genre is required write out the changes to populate the style and genre tags if they're empty
-                    # if vetted_styles:
-
-                    #     ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
-                    #     replacement_style = list_to_delimited_string(vetted_styles)
-                    #     update_triggered = True
-                   
-                    # else:
-                    #     print(f'├ No Style tags found and thus none added for albumartist: {album_artist}')
-                    #     replacement_style = None
-
-                    if vetted_genres_and_styles:
-
-                        ''' replace all instances of NULL genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
-                        replacement_genre = list_to_delimited_string(vetted_genres_and_styles)
-                        update_triggered = True
-
-                    else:
-                        print(f'└ ├ No Genre tags found and thus none added to albums by albumartist: {album_artist} without genre tag\n')
-                        replacement_genre = None
-
-                    if update_triggered:
+                if update_triggered:
 
                     # now we know genre, style or both need an update, so evaluate and execute accordingly
 
-                        if (replacement_style and replacement_genre): # i.e both need changing
+                    if (replacement_style and replacement_genre): # i.e both need changing
 
-                            print(f'├ Replacing genre:\n└ NULL\n  └ WITH {replacement_genre}\n')
-                            print(f'├ Replacing style:\n└ NULL\n  └ WITH {replacement_style}')                
-                            # write out changes to all albums where genre and style tag have no data
-                            dbcursor.execute('''UPDATE alib SET genre = (?), style = (?) WHERE ( albumartist = (?) AND (genre IS NULL AND style IS NULL));''', (replacement_genre, replacement_style, album_artist))
-
-
-                        elif replacement_style:
-                            print(f'├ Replacing style:\n└ NULL\n  └ WITH {replacement_style}\n')
-                            # write out changes to all albums where style tag has no data
-                            dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) AND style IS NULL );''', (replacement_style, album_artist))
+                        print(f'├ Replacing genre:\n└ NULL\n  └ WITH {replacement_genre}')
+                        print(f'├ Replacing style:\n└ NULL\n  └ WITH {replacement_style}')                
+                        # write out changes to all albums where genre and style tag have no data
+                        dbcursor.execute('''UPDATE alib SET genre = (?), style = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND (genre IS NULL AND style IS NULL));''', (replacement_genre, replacement_style, album_artist))
 
 
-                        elif replacement_genre:
-                            print(f'├ Replacing genre:\n└ NULL\n  └ WITH {replacement_genre}\n')
-                            # write out changes to all albums where genre tag has no data
-                            dbcursor.execute('''UPDATE alib SET genre = (?) WHERE ( albumartist = (?) AND genre IS NULL);''', (replacement_genre, album_artist))
-
-                        # increment loop_mods to take account of the changes just processed
-                        # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
+                    elif replacement_style:
+                        print(f'├ Replacing style:\n└ NULL\n  └ WITH {replacement_style}\n')
+                        # write out changes to all albums where style tag has no data
+                        dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND style IS NULL );''', (replacement_style, album_artist))
 
 
-                        # update loop_mods to take into account changes processed thus far
-                        # loop_mods = tally_mods()
+                    elif replacement_genre:
+                        print(f'├ Replacing genre:\n└ NULL\n  └ WITH {replacement_genre}\n')
+                        # write out changes to all albums where genre tag has no data
+                        dbcursor.execute('''UPDATE alib SET genre = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND genre IS NULL);''', (replacement_genre, album_artist))
 
-                        # enrich 'Pop/Rock' and 'Jazz' only entries for the same albumartist.  allmusic.com has become lazy with their metadata, 
-                        # often assigning only Pop/Rock or 'Jazz' to an album so this code adds to genre where an album has only 'Pop/Rock' or 'Jazz'as assigned genre and there are other albums by the same
-                        # albumartist in the library that have richer genre and style metadata.  This could poison a few albums with incorrect genre and style assignments [where artist cross genres in their 
-                        # discography], however, there should be more correct than incorrect results and incorrect results can be noted when browsing music or encountering anomlies in genre based playlists
-                        # and the incorrect genre entries manually removed with a tagger.
-
-                        # now update all records related to album_artist that have ony 'Pop/Rock' or 'Jazz' as genre entry and no style entry
-                        # create a list for 'Pop/Rock' only albums and another for 'Jazz' only albums
-
-                        ##################################################################
-                        # check for existence of Pop/Rock only entries for this albumartist
-                        ##################################################################
-                        dbcursor.execute('''SELECT genre                                           
-                                              FROM alib
-                                             WHERE (albumartist = (?) AND 
-                                                    (genre = 'Pop/Rock' AND 
-                                                     style IS NULL) );''', (album_artist,))
-
-                        sub_records = dbcursor.fetchall()
-                        # if there are matching records and we have a vetted_genres_and_styles entry to augment with
-                        if len(sub_records) > 0 and vetted_genres_and_styles:
+                    # increment loop_mods to take account of the changes just processed
+                    # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
 
 
-                            # define augmented_genre to incorporate ['Pop/Rock'] and whatever is already in vetted_genres_and_styles
-                            augmented_genre = list_to_delimited_string(sorted(set(vetted_genres_and_styles + ['Pop/Rock'])))
-                            print(f"├ Replacing all instances of genre:\n└ 'Pop/Rock' with:\n  └ {augmented_genre} for {album_artist}")
+                    # update loop_mods to take into account changes processed thus far
+                    # loop_mods = tally_mods()
+
+                    # enrich 'Pop/Rock' and 'Jazz' only entries for the same albumartist.  allmusic.com has become lazy with their metadata, 
+                    # often assigning only Pop/Rock or 'Jazz' to an album so this code adds to genre where an album has only 'Pop/Rock' or 'Jazz'as assigned genre and there are other albums by the same
+                    # albumartist in the library that have richer genre and style metadata.  This could poison a few albums with incorrect genre and style assignments [where artist cross genres in their 
+                    # discography], however, there should be more correct than incorrect results and incorrect results can be noted when browsing music or encountering anomlies in genre based playlists
+                    # and the incorrect genre entries manually removed with a tagger.
+
+                    # now update all records related to album_artist that have ony 'Pop/Rock' or 'Jazz' as genre entry and no style entry
+                    # create a list for 'Pop/Rock' only albums and another for 'Jazz' only albums
+
+                    ##################################################################
+                    # check for existence of Pop/Rock only entries for this albumartist
+                    ##################################################################
+                    dbcursor.execute('''SELECT genre                                           
+                                          FROM alib
+                                         WHERE (albumartist = (?) AND 
+                                                (genre = 'Pop/Rock' AND 
+                                                 style IS NULL) );''', (album_artist,))
+
+                    sub_records = dbcursor.fetchall()
+                    # if there are matching records and we have a vetted_genres_and_styles entry to augment with
+                    if len(sub_records) > 0 and vetted_genres_and_styles:
 
 
-                            if replacement_style:
-                                # if there's a style value write both genre and style tags
-                                dbcursor.execute('''UPDATE alib
-                                                       SET genre = (?),
-                                                           style = (?) 
-                                                     WHERE (albumartist = (?) AND 
-                                                            (genre = 'Pop/Rock' AND 
-                                                             style IS NULL) );''', (augmented_genre, replacement_style, album_artist))
-                                # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
-                                # # increment loop_mods to take account of the changes just proceassed
-                                # loop_mods = tally_mods()
-
-                            else:
-
-                                dbcursor.execute('''UPDATE alib
-                                                       SET genre = (?)
-                                                     WHERE (albumartist = (?) AND 
-                                                            (genre = 'Pop/Rock' AND 
-                                                             style IS NULL) );''', (augmented_genre, album_artist))
-                                # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
-                                # increment loop_mods to take account of the changes just proceassed
-                                # loop_mods = tally_mods()
-
-                        ###############################################################################################
-                        # now check for existence of Pop only entities for this albumartist and augment with 'Pop/Rock'
-                        ###############################################################################################
-                        dbcursor.execute('''SELECT genre
-                                              FROM alib
-                                             WHERE (albumartist = (?) AND 
-                                                    (genre = 'Pop' AND 
-                                                     style IS NULL) );''', (album_artist,))
-
-                        sub_records = dbcursor.fetchall()
-                        # if there are matching records and we have a vetted_genres_and_styles entry to augment with
-                        if len(sub_records) > 0:
-
-                            if vetted_genres_and_styles:
-
-                                # define augmented_genre to incorporate ['Pop', 'Pop/Rock'] and whatever is already in vetted_genres_and_styles
-                                augmented_genre = list_to_delimited_string(sorted(set(vetted_genres_and_styles + ['Pop', 'Pop/Rock'])))
-                            else:
-
-                                # otherwise just augment with ['Pop', 'Pop/Rock']
-                                augmented_genre = list_to_delimited_string(sorted(['Pop', 'Pop/Rock']))                    
+                        # define augmented_genre to incorporate ['Pop/Rock'] and whatever is already in vetted_genres_and_styles
+                        augmented_genre = list_to_delimited_string(sorted(set(vetted_genres_and_styles + ['Pop/Rock'])))
+                        print(f"├ Replacing all instances of genre:\n└ 'Pop/Rock' with:\n  └ {augmented_genre} for {album_artist}")
 
 
-                            print(f"├ Replacing all instances of genre:\n└ 'Pop' with:\n  └ {augmented_genre} for {album_artist}\n")
+                        if replacement_style:
+                            # if there's a style value write both genre and style tags
+                            dbcursor.execute('''UPDATE alib
+                                                   SET genre = (?),
+                                                       style = (?) 
+                                                 WHERE (albumartist = (?) COLLATE NOCASE AND 
+                                                        (genre = 'Pop/Rock' AND 
+                                                         style IS NULL) );''', (augmented_genre, replacement_style, album_artist))
+                            # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
+                            # # increment loop_mods to take account of the changes just proceassed
+                            # loop_mods = tally_mods()
+
+                        else:
+
+                            dbcursor.execute('''UPDATE alib
+                                                   SET genre = (?)
+                                                 WHERE (albumartist = (?) COLLATE NOCASE AND 
+                                                        (genre = 'Pop/Rock' AND 
+                                                         style IS NULL) );''', (augmented_genre, album_artist))
+                            # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
+                            # increment loop_mods to take account of the changes just proceassed
+                            # loop_mods = tally_mods()
+
+                    ###############################################################################################
+                    # now check for existence of Pop only entities for this albumartist and augment with 'Pop/Rock'
+                    ###############################################################################################
+                    dbcursor.execute('''SELECT genre
+                                          FROM alib
+                                         WHERE (albumartist = (?) COLLATE NOCASE AND 
+                                                (genre = 'Pop' AND 
+                                                 style IS NULL) );''', (album_artist,))
+
+                    sub_records = dbcursor.fetchall()
+                    # if there are matching records and we have a vetted_genres_and_styles entry to augment with
+                    if len(sub_records) > 0:
+
+                        if vetted_genres_and_styles:
+
+                            # define augmented_genre to incorporate ['Pop', 'Pop/Rock'] and whatever is already in vetted_genres_and_styles
+                            augmented_genre = list_to_delimited_string(sorted(set(vetted_genres_and_styles + ['Pop', 'Pop/Rock'])))
+                        else:
+
+                            # otherwise just augment with ['Pop', 'Pop/Rock']
+                            augmented_genre = list_to_delimited_string(sorted(['Pop', 'Pop/Rock']))                    
+
+
+                        print(f"├ Replacing all instances of genre:\n└ 'Pop' with:\n  └ {augmented_genre} for {album_artist}\n")
+
+                        if replacement_style:
+                        # if there's a style value write both genre and style tags
+
+                            dbcursor.execute('''UPDATE alib
+                                                   SET genre = (?),
+                                                       style = (?) 
+                                                 WHERE (albumartist = (?) COLLATE NOCASE AND 
+                                                        (genre = 'Pop' AND 
+                                                         style IS NULL) );''', (augmented_genre, replacement_style, album_artist))
+                            # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
+                            # increment loop_mods to take account of the changes just proceassed
+                            # loop_mods = tally_mods()
+
+
+                        else:
+                        # if there's no style value write genre tags only
+                            dbcursor.execute('''UPDATE alib
+                                                   SET genre = (?) 
+                                                 WHERE (albumartist = (?) COLLATE NOCASE AND 
+                                                        (genre = 'Pop' AND 
+                                                         style IS NULL) );''', (augmented_genre, album_artist))
+                            # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
+                            # increment loop_mods to take account of the changes just proceassed
+                            # loop_mods = tally_mods()
+
+
+                    ##################################################################
+                    # check for existence of Jazz only entities for this albumartist
+                    ##################################################################
+                    dbcursor.execute('''SELECT genre
+                                          FROM alib
+                                         WHERE (albumartist = (?) COLLATE NOCASE AND 
+                                                (genre = 'Jazz' AND 
+                                                 style IS NULL) );''', (album_artist,))
+
+                    sub_records = dbcursor.fetchall()
+                    if len(sub_records) > 0:
+
+                        if vetted_genres_and_styles:
+
+                            # define augmented_genre to incorporate ['Pop', 'Pop/Rock'] and whatever is already in vetted_genres_and_styles
+                            augmented_genre = list_to_delimited_string(sorted(set(vetted_genres_and_styles + ['Jazz'])))
+                            print(f"├ Replacing all instances of genre:\n└ 'Jazz' with:\n  └ {augmented_genre} for {album_artist}\n")
 
                             if replacement_style:
                             # if there's a style value write both genre and style tags
-
+                            
                                 dbcursor.execute('''UPDATE alib
                                                        SET genre = (?),
                                                            style = (?) 
-                                                     WHERE (albumartist = (?) AND 
-                                                            (genre = 'Pop' AND 
+                                                     WHERE (albumartist = (?) COLLATE NOCASE AND 
+                                                            (genre = 'Jazz' AND 
                                                              style IS NULL) );''', (augmented_genre, replacement_style, album_artist))
                                 # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
                                 # increment loop_mods to take account of the changes just proceassed
                                 # loop_mods = tally_mods()
 
+                            
+                        else:
+                            dbcursor.execute('''UPDATE alib
+                                                   SET genre = (?)
+                                                 WHERE (albumartist = (?) COLLATE NOCASE AND 
+                                                        (genre = 'Jazz' AND 
+                                                         style IS NULL) );''', (augmented_genre, album_artist))
+                            # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
+                            # increment loop_mods to take account of the changes just proceassed
+                            # loop_mods = tally_mods()
 
-                            else:
-                            # if there's no style value write genre tags only
-                                dbcursor.execute('''UPDATE alib
-                                                       SET genre = (?) 
-                                                     WHERE (albumartist = (?) AND 
-                                                            (genre = 'Pop' AND 
-                                                             style IS NULL) );''', (augmented_genre, album_artist))
-                                # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
-                                # increment loop_mods to take account of the changes just proceassed
-                                # loop_mods = tally_mods()
-
-
-                        ##################################################################
-                        # check for existence of Jazz only entities for this albumartist
-                        ##################################################################
-                        dbcursor.execute('''SELECT genre
-                                              FROM alib
-                                             WHERE (albumartist = (?) AND 
-                                                    (genre = 'Jazz' AND 
-                                                     style IS NULL) );''', (album_artist,))
-
-                        sub_records = dbcursor.fetchall()
-                        if len(sub_records) > 0:
-
-                            if vetted_genres_and_styles:
-
-                                # define augmented_genre to incorporate ['Pop', 'Pop/Rock'] and whatever is already in vetted_genres_and_styles
-                                augmented_genre = list_to_delimited_string(sorted(set(vetted_genres_and_styles + ['Jazz'])))
-                                print(f"├ Replacing all instances of genre:\n└ 'Jazz' with:\n  └ {augmented_genre} for {album_artist}\n")
-
-                                if replacement_style:
-                                # if there's a style value write both genre and style tags
-                                
-                                    dbcursor.execute('''UPDATE alib
-                                                           SET genre = (?),
-                                                               style = (?) 
-                                                         WHERE (albumartist = (?) AND 
-                                                                (genre = 'Jazz' AND 
-                                                                 style IS NULL) );''', (augmented_genre, replacement_style, album_artist))
-                                    # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
-                                    # increment loop_mods to take account of the changes just proceassed
-                                    # loop_mods = tally_mods()
-
-                                
-                            else:
-                                dbcursor.execute('''UPDATE alib
-                                                       SET genre = (?)
-                                                     WHERE (albumartist = (?) AND 
-                                                            (genre = 'Jazz' AND 
-                                                             style IS NULL) );''', (augmented_genre, album_artist))
-                                # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
-                                # increment loop_mods to take account of the changes just proceassed
-                                # loop_mods = tally_mods()
-
-            else:
-                print(f'├ No genre or style tags found in library for albums by {album_artist}\n')                
+                else:
+                    print(f'├ No genre or style tags found in library for albums by {album_artist}\n')                
 
 
     conn.commit()
