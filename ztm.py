@@ -1625,7 +1625,7 @@ def nullify_empty_tags():
             dbcursor.execute(f"CREATE INDEX IF NOT EXISTS nullify ON alib ({field_to_check}) WHERE TRIM({field_to_check}) = '';")
             dbcursor.execute(f"UPDATE alib SET {field_to_check} = NULL WHERE TRIM({field_to_check}) = '';")
             dbcursor.execute(f"DROP INDEX IF EXISTS nullify;")
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -1666,7 +1666,7 @@ def trim_and_remove_crlf():
         dbcursor.execute(f"drop index if exists crlf")
         dbcursor.execute(f"drop index if exists crlf1")
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def set_apostrophe():
@@ -1691,7 +1691,7 @@ def set_apostrophe():
 
         dbcursor.execute(f"drop index if exists apostrophe")
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -1701,7 +1701,7 @@ def square_brackets_to_subtitle():
     print(f"\nUpdating titles to remove any text enclosed in square brackets from TITLE and appending same to SUBTITLE tag")
     # dbcursor.execute("UPDATE alib SET title = IIF(TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)) = '', title, TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1))), subtitle = IIF(subtitle IS NULL OR TRIM(subtitle) = '', SUBSTR(title, INSTR(title, '[')), subtitle || ' ' || SUBSTR(title, INSTR(title, '['))) WHERE title LIKE '%[%';")
     dbcursor.execute("UPDATE alib SET title = TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)), subtitle = IIF(subtitle IS NULL OR TRIM(subtitle) = '', SUBSTR(title, INSTR(title, '[')), subtitle || ' ' || SUBSTR(title, INSTR(title, '['))) WHERE title LIKE '%[%' AND TRIM(SUBSTR(title, 1, INSTR(title, '[') - 1)) != '';")
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def title_feat_to_artist():
@@ -1793,7 +1793,7 @@ def title_feat_to_artist():
                     
 
     dbcursor.execute('''drop index if exists artists''')
-    print(f"|\n{tally_mods() - opening_tally} records were modified")  
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")  
 
 
 
@@ -1880,7 +1880,7 @@ def feat_artist_to_artist():
                     
 
     dbcursor.execute('''drop index if exists artists''')
-    print(f"|\n{tally_mods() - opening_tally} records were modified")  
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")  
 
 
 
@@ -1901,7 +1901,7 @@ def merge_recording_locations():
         '''
         dbcursor.execute(sql1)
         dbcursor.execute(sql2)      
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -1922,7 +1922,7 @@ def release_to_version():
         '''
         dbcursor.execute(sql1)
         dbcursor.execute(sql2)      
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -1932,7 +1932,7 @@ def unsyncedlyrics_to_lyrics():
     opening_tally = tally_mods()
     if tag_in_table('unsyncedlyrics', 'alib'):
         dbcursor.execute("UPDATE alib SET lyrics = unsyncedlyrics WHERE lyrics IS NULL AND unsyncedlyrics IS NOT NULL;")
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -1941,7 +1941,7 @@ def nullify_performers_matching_artists():
     opening_tally = tally_mods()
     print(f"\nRemoving performer names where they match or appear in artist tag")
     dbcursor.execute('UPDATE alib SET performer = NULL WHERE ( (lower(performer) = lower(artist) ) OR INSTR(artist, performer) > 0);')
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -2228,7 +2228,7 @@ def add_genres_and_styles():
                 else:
                     vetted_styles = []
                     replacement_style = None
-                    print(f'├ No Style tags found and thus none added to albums by albumartist: {album_artist} without style tag')
+                    #print(f'├ No Style tags found and thus none added to albums by albumartist: {album_artist} without style tag')
 
                 if concatenated_genres:
 
@@ -2252,7 +2252,7 @@ def add_genres_and_styles():
                 else:
 
                     replacement_genre = None
-                    print(f'└ ├ No Genre tags found and thus none added to albums by albumartist: {album_artist} without genre tag\n')
+                    #print(f'└ ├ No Genre tags found and thus none added to albums by albumartist: {album_artist} without genre tag\n')
 
                 if update_triggered:
 
@@ -2260,13 +2260,13 @@ def add_genres_and_styles():
 
                     if (replacement_style and replacement_genre): # i.e both need changing
 
-                        print(f'├ Replacing genre:\n└ NULL\n  └ WITH {vetted_genres_and_styles}')
-                        print(f'├ Replacing style:\n└ NULL\n  └ WITH {replacement_style}')                
+                        # print(f'├ Replacing genre:\n└ NULL\n  └ WITH {vetted_genres_and_styles}')
+                        # print(f'├ Replacing style:\n└ NULL\n  └ WITH {replacement_style}')                
                         # write out changes to all albums where genre and style tag have no data
                         dbcursor.execute('''UPDATE alib SET genre = (?), style = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND (genre IS NULL AND style IS NULL));''', (replacement_genre, replacement_style, album_artist))
 
                     else:
-                        print(f'├ Replacing genre:\n└ NULL\n  └ WITH {vetted_genres_and_styles}')
+                        # print(f'├ Replacing genre:\n└ NULL\n  └ WITH {vetted_genres_and_styles}')
                         # write out changes to all albums where genre tag has no data
                         dbcursor.execute('''UPDATE alib SET genre = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND genre IS NULL);''', (replacement_genre, album_artist))
 
@@ -2451,7 +2451,7 @@ def add_genres_and_styles():
     dbcursor.execute('DROP INDEX IF EXISTS albartists4;')
     dbcursor.execute('DROP INDEX IF EXISTS albartists5;')
     closing_tally = tally_mods()
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def title_keywords_to_subtitle():
@@ -2494,7 +2494,7 @@ def title_keywords_to_subtitle():
                              WHERE (title LIKE ?) AND 
                                    subtitle IS NULL;''', (keyword, keyword, keyword))
     dbcursor.execute(f"drop index if exists titles_subtitles")
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -2508,7 +2508,7 @@ def live_in_subtitle_means_live():
                                LOWER(subtitle) LIKE '%(live%' OR 
                                LOWER(subtitle) LIKE '% live %' AND 
                                live != '1';''')
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def live_means_live_in_subtitle():
@@ -2523,7 +2523,7 @@ def live_means_live_in_subtitle():
                                NOT (instr(lower(subtitle), '[live') ) AND 
                                NOT (instr(lower(subtitle), '(live') );''')
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 # def tag_live_tracks():
@@ -2655,7 +2655,7 @@ def strip_live_from_titles():
         #     exhausted_queries = 1
 
     dbcursor.execute(f"drop index if exists titles")
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -2725,7 +2725,7 @@ def dedupe_fields():
                         dbcursor.execute(*query)
 
     dbcursor.execute("DROP INDEX IF EXISTS dedupe_tag")
-    print(f"|\n{tally_mods() - opening_tally} tags were deduped")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def kill_singular_discnumber():
@@ -2781,7 +2781,7 @@ def kill_singular_discnumber():
         dbcursor.execute("UPDATE alib SET discnumber = NULL where __dirpath = ?", (var,))
 
     dbcursor.execute('''DROP INDEX IF EXISTS dirpaths_discnumbers;''')
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def strip_live_from_album_name():
@@ -2809,7 +2809,7 @@ def strip_live_from_album_name():
                            SET album = trim(substr(album, 1, length(album) - 7) ) 
                          WHERE lower(substr(album, -6) ) IN ('(live)', '[live]');''')
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
     
 
 
@@ -2818,7 +2818,7 @@ def merge_album_version():
     print(f"\nMerging album name and version fields into album name where version tag does not already appear in album name")
     opening_tally = tally_mods()
     dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def merge_genre_style():
@@ -2826,7 +2826,7 @@ def merge_genre_style():
     print(f"\nMerging genre and style tags into genre tag where style tag does not already appear in genre tag")
     opening_tally = tally_mods()
     dbcursor.execute(f"UPDATE alib SET genre = genre || '\\' || style WHERE style IS NOT NULL AND NOT INSTR(genre, style);")
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def split_album_version():
@@ -2837,7 +2837,7 @@ def split_album_version():
                            SET album = substring(album, 1, INSTR(album, version) - 2) 
                          WHERE version IS NOT NULL AND 
                                INSTR(album, version);''')
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def set_compilation_flag():
@@ -2864,7 +2864,7 @@ def set_compilation_flag():
                                 substring(__dirname, 1, 17) != 'Various Artists - ' ) AND 
                                 albumartist IS NOT NULL);''')
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def nullify_albumartist_in_va():
@@ -2881,7 +2881,7 @@ def nullify_albumartist_in_va():
                            SET ensemble = NULL
                          WHERE lower(ensemble) = 'various artists';''')
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def capitalise_releasetype():
@@ -2896,7 +2896,7 @@ def capitalise_releasetype():
         # SQLite WHERE clause is case sensistive so this should not repeatedly upddate records every time it is run
         dbcursor.execute('''UPDATE alib SET releasetype = (?) WHERE releasetype = (?) AND releasetype != (?);''', (flc, release[0], flc))
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def add_releasetype():
@@ -2978,7 +2978,7 @@ def add_releasetype():
                              WHERE track_count > 6
                         );''')
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 
@@ -3004,7 +3004,7 @@ def add_tagminder_uuid():
         # Add the generated UUID to the row entry
         dbcursor.execute('''UPDATE alib set tagminder_uuid = (?) WHERE rowid = (?);''', (uuidval, record[0]))
 
-    print(f"|\n{tally_mods() - opening_tally} records were modified")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def establish_contributors():
@@ -3210,7 +3210,7 @@ def add_musicbrainz_identifiers():
                                alib.musicbrainz_composerid IS NULL;'''
                     )
 
-    print(f"|\n{tally_mods() - opening_tally} musicbrainz identifiers added to artists & albumartists")
+    print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
 def find_duplicate_flac_albums():
@@ -3323,6 +3323,33 @@ def find_duplicate_flac_albums():
         print(f"|\n{duplicated_flac_albums[0]} duplicated FLAC albums present - see table __dirpaths_with_same_content for a listing")
 
 
+def disambiguate_contributors():
+    '''sequentially process the contents of the disambiguator table, replacing all instances of existing_name with replacement_name '''
+
+    dbcursor.execute('''SELECT existing_contributor, replacement_contributor FROM disambiguator;''')
+
+    records = dbcursor.fetchall()
+    matched_records = len(records)
+
+    # process each record in turn
+    if matched_records > 0:
+
+        opening_tally = tally_mods()
+        for record in records:
+
+            # store the baseline values related to the currently processed record
+            existing_val = record[0]
+            replacement_val = record[1]
+
+            print(f'Replacing all instances of artist, albumartist and composer entry: {existing_val} with {replacement_val}')
+            dbcursor.execute('''UPDATE alib SET artist = (?) WHERE artist = (?);''', (replacement_val, existing_val))
+            dbcursor.execute('''UPDATE alib SET albumartist = (?) WHERE albumartist = (?);''', (replacement_val, existing_val))
+            dbcursor.execute('''UPDATE alib SET composer = (?) WHERE composer = (?);''', (replacement_val, existing_val))
+
+        print(f"|\n{tally_mods() - opening_tally} changes were processed")
+
+
+
 
 
 def show_stats_and_log_changes():
@@ -3400,92 +3427,95 @@ def update_tags():
 
     ''' here you add whatever update and enrichment queries you want to run against the table '''
 
-    # transfer any unsynced lyrics to LYRICS tag
-    unsyncedlyrics_to_lyrics()
+    # # transfer any unsynced lyrics to LYRICS tag
+    # unsyncedlyrics_to_lyrics()
 
-    # merge [recording location] with RECORDINGLOCATION
-    merge_recording_locations()
+    # # merge [recording location] with RECORDINGLOCATION
+    # merge_recording_locations()
 
-    # merge release tag to VERSION tag
-    release_to_version()
+    # # merge release tag to VERSION tag
+    # release_to_version()
 
-    # get rid of tags we don't want to store
-    kill_badtags()
+    # # get rid of tags we don't want to store
+    # kill_badtags()
 
-    # set all empty tags ('') to NULL
-    nullify_empty_tags()
+    # # set all empty tags ('') to NULL
+    # nullify_empty_tags()
 
-    # remove CR & LF from text tags (excluding lyrics & review tags)
-    trim_and_remove_crlf()
+    # # remove CR & LF from text tags (excluding lyrics & review tags)
+    # trim_and_remove_crlf()
 
-    # get rid of on-standard apostrophes
-    # set_apostrophe()
+    # # get rid of on-standard apostrophes
+    # # set_apostrophe()
 
-    # strip Feat in its various forms from track title and append to ARTIST tag
-    title_feat_to_artist()
+    # # strip Feat in its various forms from track title and append to ARTIST tag
+    # title_feat_to_artist()
 
-    # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    feat_artist_to_artist()
+    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    # feat_artist_to_artist()
 
-    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    nullify_performers_matching_artists()
+    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    # nullify_performers_matching_artists()
 
-    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    strip_live_from_titles()
+    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    # strip_live_from_titles()
 
-    # moves known keywords in brackets to subtitle
-    title_keywords_to_subtitle()
+    # # moves known keywords in brackets to subtitle
+    # title_keywords_to_subtitle()
 
-    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    square_brackets_to_subtitle()
+    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    # square_brackets_to_subtitle()
 
-    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    strip_live_from_album_name()
+    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    # strip_live_from_album_name()
 
-    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    live_in_subtitle_means_live()
+    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    # live_in_subtitle_means_live()
 
-    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    live_means_live_in_subtitle()
+    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    # live_means_live_in_subtitle()
 
-    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    kill_singular_discnumber()
+    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    # kill_singular_discnumber()
 
-    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    merge_album_version()
+    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # merge_album_version()
 
-    # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    set_compilation_flag()
+    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # set_compilation_flag()
 
-    # set albumartist to NULL for all compilation albums where they are not NULL
-    nullify_albumartist_in_va()
+    # # set albumartist to NULL for all compilation albums where they are not NULL
+    # nullify_albumartist_in_va()
 
-    # Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    capitalise_releasetype()
+    # # Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    # capitalise_releasetype()
 
-    # Determines releasetype  to each album if not already populated
-    add_releasetype()
+    # # Determines releasetype  to each album if not already populated
+    # add_releasetype()
 
-    # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    dedupe_fields()
+    # # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # dedupe_fields()
 
-    # build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist fields
-    establish_contributors()
+    # # build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist fields
+    # establish_contributors()
 
-    # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    add_musicbrainz_identifiers()
+    # # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    # add_musicbrainz_identifiers()
 
-    # add a uuid4 tag to every record that does not have one
-    add_tagminder_uuid()
+    # # add a uuid4 tag to every record that does not have one
+    # add_tagminder_uuid()
 
-    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    find_duplicate_flac_albums()
+    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    # find_duplicate_flac_albums()
 
-    # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
-    cleanse_genres_and_styles()
+    # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    # cleanse_genres_and_styles()
 
-    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
-    add_genres_and_styles()
+    # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
+    # add_genres_and_styles()
+
+    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    disambiguate_contributors()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
