@@ -2189,18 +2189,7 @@ def add_genres_and_styles():
                                (genre IS NULL AND 
                                 style IS NULL) );''')
 
-
-
-
-    # now get a list of all albumartists that have a genre entry or a style entry as the initial input to work from
-    # dbcursor.execute('''SELECT DISTINCT albumartist
-    #                       FROM alib
-    #                      WHERE (albumartist IS NOT NULL AND 
-    #                             (genre IS NOT NULL OR 
-    #                              style IS NOT NULL) ) 
-    #                      ORDER BY albumartist;''')
-
-    # now get a list of all albumartists that have albums neither a genre nor a style entry as the initial input to work from
+    # now get a list of all albumartists that have albums with neither a genre nor a style entry as the initial input to work from
     # the working assumption here is that these same albumartists have other albums in the lib that do have genre and style metadata
     # we're going to aggregate and write that genre and style metadata to the albums by those albumartists where genre and style are missing
 
@@ -2271,7 +2260,7 @@ def add_genres_and_styles():
                         # add the baseline_genre to the existing string
                         concatenated_genres.extend(delimited_string_to_list(baseline_genre))
                         # sort and eliminate duplicates to keep the list lean
-                        concatenated_genres = sorted(set(concatenated_genres))
+                        #concatenated_genres = sorted(set(concatenated_genres))
 
 
                     if baseline_style is not None:
@@ -2279,7 +2268,7 @@ def add_genres_and_styles():
                         # add the baseline_style to the existing string
                         concatenated_styles.extend(delimited_string_to_list(baseline_style))
                         # sort and elimiate duplicates to keep the list lean
-                        concatenated_styles = sorted(set(concatenated_styles))
+                        #concatenated_styles = sorted(set(concatenated_styles))
 
 
                 # now you're done collecting concatenated_genre and concatenated_style metadata, process the end result, getting rid of unvetted items and eliminating duplicate entries
