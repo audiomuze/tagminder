@@ -2223,13 +2223,15 @@ def add_genres_and_styles():
         # concatenate these genre and style values into variables for application to each album by that albumartist that has neither a genre nor a style value.
         for item in albumartists:
 
+            # incrememt a loop var so you can determine % completion
             loop_iterator += 1
-
-            album_artist = item[0]
+            # reset update_trigger
             update_triggered = False
+            # pickup albumartist
+            album_artist = item[0]
 
             ''' initialise empty lists to append from that albumartist's unique genre and style combinations ensuring we re-baseline concatenated genres and styles
-            at every iteration of albumartist otherwise we're appending earlier results to a new albumartist '''
+            at every iteration of albumartist otherwise we're appending a previous loop's results to a new albumartist '''
             genre_list = []
             style_list = []
             concatenated_genres = []
@@ -2250,13 +2252,12 @@ def add_genres_and_styles():
                                  ORDER BY albumartist;''', (album_artist,))
 
             records = dbcursor.fetchall()
-            non_blanks = len(records)
+            matched_records = len(records)
 
             # right, now we have all unique genre and style records for this albumartist where there's either a genre or style entry, or both
-            if non_blanks > 0:
+            if matched_records > 0:
 
-                
-                print(f'├ Processing genre and style entries from {non_blanks} albums by {album_artist}')
+                print(f'├ Accumulating and concatenating genre and style entries from {matched_records} albums by {album_artist}')
                 # iterate through every record, building up genre and style lists from every unique combination pertaining to the albumartist into concatenated_genres[] and concatenated_styles[]
                 for record in records:
 
@@ -2281,17 +2282,17 @@ def add_genres_and_styles():
                         concatenated_styles = sorted(set(concatenated_styles))
 
 
-                # now you're done collecting concatedated_genre and concatenated_style metadata, process the end result, getting rid of unvetted items and eliminating duplicate entries
+                # now you're done collecting concatenated_genre and concatenated_style metadata, process the end result, getting rid of unvetted items and eliminating duplicate entries
                 if concatenated_styles:
                     # dedupe concatenated_styles by calling set and vet the outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
                     vetted_styles = vetted_list_intersection(sorted(set(concatenated_styles)), vetted_genre_pool())
-                    ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
+                    # convert vetted styles to a delimited string for writing to table
                     replacement_style = list_to_delimited_string(vetted_styles)
+                    # set update trigger
                     update_triggered = True
 
-
                 else:
-                    vetted_styles = None
+                    vetted_styles = []
                     replacement_style = None
                     print(f'├ No Style tags found and thus none added to albums by albumartist: {album_artist} without style tag')
 
@@ -2299,47 +2300,25 @@ def add_genres_and_styles():
 
                     # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
                     vetted_genres = vetted_list_intersection(sorted(set(concatenated_genres)), vetted_genre_pool())
-                else:
-                    vetted_genres = None
 
+                else:
+                    vetted_genres = []
 
                 # right, now we've merged, sorted and deduplicated a vetted genres and vetted styles list it's time to merge vetted_genres and vetted_styles
-                if vetted_genres:
-                    if  vetted_styles:
-
-                        # dedupe concatenated_genres by calling set and vet the sorted outcomes against the vetted pool, returning the matched items from vetted_genre_pool()
-                        vetted_genres_and_styles = sorted(set(vetted_genres + vetted_styles))
-                    else:
-                        vetted_genres_and_styles = sorted(set(vetted_genres))
-
-                elif vetted_styles:
-
-                    vetted_genres_and_styles = sorted(set(vetted_styles))
-
-                else:
-                    vetted_genres_and_styles = None
-
-
-                # Now we've done all the processing, assess whether an update to style or genre is required write out the changes to populate the style and genre tags if they're empty
-                # if vetted_styles:
-
-                #     ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
-                #     replacement_style = list_to_delimited_string(vetted_styles)
-                #     update_triggered = True
-               
-                # else:
-                #     print(f'├ No Style tags found and thus none added for albumartist: {album_artist}')
-                #     replacement_style = None
+                vetted_genres_and_styles = sorted(set(vetted_genres + vetted_styles))
 
                 if vetted_genres_and_styles:
-
+                    ''' replace all instances of that Style entry with unvetted Style entries removed, or set to NULL if no legitimate entry '''
                     ''' replace all instances of NULL genre entry with unvetted Genre entries removed, set to NULL if no legitimate entry '''
+                    # convert vetted genres_and_styles to a delimited string for writing to table
                     replacement_genre = list_to_delimited_string(vetted_genres_and_styles)
+                    # set update trigger
                     update_triggered = True
 
                 else:
-                    print(f'└ ├ No Genre tags found and thus none added to albums by albumartist: {album_artist} without genre tag\n')
+
                     replacement_genre = None
+                    print(f'└ ├ No Genre tags found and thus none added to albums by albumartist: {album_artist} without genre tag\n')
 
                 if update_triggered:
 
@@ -2352,17 +2331,16 @@ def add_genres_and_styles():
                         # write out changes to all albums where genre and style tag have no data
                         dbcursor.execute('''UPDATE alib SET genre = (?), style = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND (genre IS NULL AND style IS NULL));''', (replacement_genre, replacement_style, album_artist))
 
-
-                    elif replacement_style:
-                        print(f'├ Replacing style:\n└ NULL\n  └ WITH {replacement_style}\n')
-                        # write out changes to all albums where style tag has no data
-                        dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND style IS NULL );''', (replacement_style, album_artist))
-
-
-                    elif replacement_genre:
+                    else:
                         print(f'├ Replacing genre:\n└ NULL\n  └ WITH {replacement_genre}\n')
                         # write out changes to all albums where genre tag has no data
                         dbcursor.execute('''UPDATE alib SET genre = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND genre IS NULL);''', (replacement_genre, album_artist))
+
+                    # elif replacement_style:
+                    #     print(f'├ Replacing style:\n└ NULL\n  └ WITH {replacement_style}\n')
+                    #     # write out changes to all albums where style tag has no data
+                    #     dbcursor.execute('''UPDATE alib SET style = (?) WHERE ( albumartist = (?) COLLATE NOCASE AND style IS NULL );''', (replacement_style, album_artist))
+
 
                     # increment loop_mods to take account of the changes just processed
                     # print(f"    └── {tally_mods() - loop_mods} records were modified\n")
@@ -3468,89 +3446,89 @@ def update_tags():
 
     ''' here you add whatever update and enrichment queries you want to run against the table '''
 
-    # transfer any unsynced lyrics to LYRICS tag
-    unsyncedlyrics_to_lyrics()
+    # # transfer any unsynced lyrics to LYRICS tag
+    # unsyncedlyrics_to_lyrics()
 
-    # merge [recording location] with RECORDINGLOCATION
-    merge_recording_locations()
+    # # merge [recording location] with RECORDINGLOCATION
+    # merge_recording_locations()
 
-    # merge release tag to VERSION tag
-    release_to_version()
+    # # merge release tag to VERSION tag
+    # release_to_version()
 
-    # get rid of tags we don't want to store
-    kill_badtags()
+    # # get rid of tags we don't want to store
+    # kill_badtags()
 
-    # set all empty tags ('') to NULL
-    nullify_empty_tags()
+    # # set all empty tags ('') to NULL
+    # nullify_empty_tags()
 
-    # remove CR & LF from text tags (excluding lyrics & review tags)
-    trim_and_remove_crlf()
+    # # remove CR & LF from text tags (excluding lyrics & review tags)
+    # trim_and_remove_crlf()
 
-    # get rid of on-standard apostrophes
-    # set_apostrophe()
+    # # get rid of on-standard apostrophes
+    # # set_apostrophe()
 
-    # strip Feat in its various forms from track title and append to ARTIST tag
-    title_feat_to_artist()
+    # # strip Feat in its various forms from track title and append to ARTIST tag
+    # title_feat_to_artist()
 
-    # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    feat_artist_to_artist()
+    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    # feat_artist_to_artist()
 
-    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    nullify_performers_matching_artists()
+    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    # nullify_performers_matching_artists()
 
-    # mark live performances as LIVE=1 if not already tagged accordingly NEEDS REVISITING - might be superceded by strip_live_from_titles().
-    # tag_live_tracks()
+    # # mark live performances as LIVE=1 if not already tagged accordingly NEEDS REVISITING - might be superceded by strip_live_from_titles().
+    # # tag_live_tracks()
 
-    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    strip_live_from_titles()
+    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    # strip_live_from_titles()
 
-    # moves known keywords in brackets to subtitle
-    title_keywords_to_subtitle()
+    # # moves known keywords in brackets to subtitle
+    # title_keywords_to_subtitle()
 
-    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    square_brackets_to_subtitle()
+    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    # square_brackets_to_subtitle()
 
-    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    live_in_subtitle_means_live()
+    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    # live_in_subtitle_means_live()
 
-    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    live_means_live_in_subtitle()
+    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    # live_means_live_in_subtitle()
 
-    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    kill_singular_discnumber()
+    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    # kill_singular_discnumber()
 
-    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    merge_album_version()
+    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # merge_album_version()
 
-    # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    set_compilation_flag()
+    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # set_compilation_flag()
 
-    # set albumartist to NULL for all compilation albums where they are not NULL
-    nullify_albumartist_in_va()
+    # # set albumartist to NULL for all compilation albums where they are not NULL
+    # nullify_albumartist_in_va()
 
-    # Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    capitalise_releasetype()
+    # # Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    # capitalise_releasetype()
 
-    # Determines releasetype  to each album if not already populated
-    add_releasetype()
+    # # Determines releasetype  to each album if not already populated
+    # add_releasetype()
 
-    # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    dedupe_fields()
+    # # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # dedupe_fields()
 
-    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    strip_live_from_album_name()
+    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    # strip_live_from_album_name()
 
-    # build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist fields
-    establish_contributors()
+    # # build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist fields
+    # establish_contributors()
 
-    # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    add_musicbrainz_identifiers()
+    # # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    # add_musicbrainz_identifiers()
 
-    # add a uuid4 tag to every record that does not have one
-    add_tagminder_uuid()
+    # # add a uuid4 tag to every record that does not have one
+    # add_tagminder_uuid()
 
-    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    find_duplicate_flac_albums()
+    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    # find_duplicate_flac_albums()
 
     # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
     cleanse_genres_and_styles()
