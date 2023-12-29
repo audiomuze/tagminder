@@ -117,11 +117,11 @@ At present it does the following:
 
 - incorporate metadata normalisation routines to standardise case of track TITLE, PERFORMER, COMPOSER & LABEL metadata.  Investigate whether MBID obviates this need in Logitechmediaserver
 
-- leverage cosine similarity to generate potential duplicates/ variations on performer name in contributor metadata requiring manual tagging intervention
+- leverage cosine similarity to generate potential duplicates/ variations on performer name in contributor metadata requiring manual tagging intervention.  In development!
 
 - add MusicBrainz identifiers to all ARTIST, PERFORMER, COMPOSER, LYRICIST, WRITER, LABEL, WORK, PART and ALBUMARTIST tags leveraging a download of tables from the MusicBrainz database
 
-- consider adding musicbrainz_composerid for future app use
+- ~consider adding musicbrainz_composerid for future app use~
 
 - remember to search for ARTIST and ALBUMARTIST with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional MBID’s are added where appropriate
 
