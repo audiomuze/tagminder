@@ -1786,7 +1786,7 @@ def title_feat_to_artist():
 
             except ValueError:
 
-                ''' if no match exit the loop and continue to next match ... this iimplementation is just to stop code crashing when feat is not present in row_title '''
+                ''' if no match exit the loop and continue to next match ... this implementation is just to stop code crashing when feat is not present in row_title '''
                 exit
 
         print('\n')        
@@ -3323,10 +3323,69 @@ def find_duplicate_flac_albums():
         print(f"|\n{duplicated_flac_albums[0]} duplicated FLAC albums present - see table __dirpaths_with_same_content for a listing")
 
 
+def string_groups():
+    ''' Function to generate a unique list of:
+    contributors by merging artist, performer, albumartist and composer entries from alib into a single file for parsing by string-grouper in order to identify potential duplicates
+    titles by selecting distinct tracks from alib'''
+
+    dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
+
+    dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')
+    dbcursor.execute('''CREATE TABLE ct AS SELECT DISTINCT artist
+                                             FROM alib
+                                            WHERE artist IS NOT NULL AND 
+                                                  artist NOT LIKE '%\\%' AND 
+                                                  artist NOT LIKE '%, %'
+                                            ORDER BY artist;''')
+
+    dbcursor.execute('''INSERT INTO ct (
+                                           artist
+                                       )
+                                       SELECT albumartist
+                                         FROM alib
+                                        WHERE albumartist IS NOT NULL AND 
+                                              albumartist NOT LIKE '%\\%' AND 
+                                                  albumartist NOT LIKE '%, %'
+                                        ORDER BY albumartist;''')
+
+    dbcursor.execute('''INSERT INTO ct (
+                                           artist
+                                       )
+                                       SELECT performer
+                                         FROM alib
+                                        WHERE performer IS NOT NULL AND 
+                                              performer NOT LIKE '%\\%' AND 
+                                                  performer NOT LIKE '%, %'
+                                        ORDER BY performer;''')
+
+    dbcursor.execute('''INSERT INTO ct (
+                                           artist
+                                       )
+                                       SELECT composer
+                                         FROM alib
+                                        WHERE composer IS NOT NULL AND 
+                                              composer NOT LIKE '%\\%' AND 
+                                                  composer NOT LIKE '%, %'
+                                        ORDER BY composer;''')
+
+    dbcursor.execute('''CREATE TABLE sg_contributors AS SELECT DISTINCT artist
+                                                         FROM ct
+                                                        ORDER BY artist;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
+
+    dbcursor.execute('''DROP TABLE IF EXISTS sg_tracks;''')
+    dbcursor.execute('''CREATE TABLE sg_tracks AS SELECT DISTINCT title as title
+                                             FROM alib
+                                            WHERE title IS NOT NULL and lower(genre) is not like "%classical%"
+                                            ORDER BY title;''')
+
+
+
 def disambiguate_contributors():
     '''sequentially process the contents of the disambiguator table, replacing all instances of existing_name with replacement_name '''
 
-    dbcursor.execute('''SELECT existing_contributor, replacement_contributor FROM disambiguator;''')
+    #import only records that have not previously been written to alib in a previous call to disambiguate_contributors()
+    dbcursor.execute('''SELECT existing_contributor, replacement_contributor, rowid FROM disambiguation WHERE alib_updated = FALSE ;''')
 
     records = dbcursor.fetchall()
     matched_records = len(records)
@@ -3334,21 +3393,39 @@ def disambiguate_contributors():
     # process each record in turn
     if matched_records > 0:
 
+        print(f'Correcting {matched_records} names across all artist, performer, albumartist and composer entries in alib')
+
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS artists ON alib (artist);''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS albumartist ON alib (albumartist);''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS composer ON alib (composer);''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS composer ON alib (performer);''')
+
+
         opening_tally = tally_mods()
         for record in records:
 
             # store the baseline values related to the currently processed record
             existing_val = record[0]
-            replacement_val = record[1]
+            replacement_val = record[1].strip() # ensure there are no inadvertent spaces in the replacement value
+            table_record = record[2] # get rowid
 
-            print(f'Replacing all instances of artist, albumartist and composer entry: {existing_val} with {replacement_val}')
+            print(f'Replacing:\n- "{existing_val}"\n with:\n- "{replacement_val}"\n')
             dbcursor.execute('''UPDATE alib SET artist = (?) WHERE artist = (?);''', (replacement_val, existing_val))
             dbcursor.execute('''UPDATE alib SET albumartist = (?) WHERE albumartist = (?);''', (replacement_val, existing_val))
+            dbcursor.execute('''UPDATE alib SET performer = (?) WHERE performer = (?);''', (replacement_val, existing_val))
             dbcursor.execute('''UPDATE alib SET composer = (?) WHERE composer = (?);''', (replacement_val, existing_val))
+
+            # mark this record as having been processed so it is bypassed in future
+            dbcursor.execute('''UPDATE disambiguation SET alib_updated = TRUE WHERE rowid = (?);''', (table_record,))
 
         print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
+    else:
+        print('No remaining name corrections to process')
 
+
+def trim_whitespace():
+    ''' get rid of multiple spaces between characters in strings '''
 
 
 
@@ -3514,8 +3591,12 @@ def update_tags():
     # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
     # add_genres_and_styles()
 
+    # build the tables required as input into string-grouper
+    string_groups()
+
     # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    disambiguate_contributors()
+    disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+    
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
