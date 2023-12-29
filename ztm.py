@@ -3374,11 +3374,12 @@ def string_groups():
     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
 
     dbcursor.execute('''DROP TABLE IF EXISTS sg_tracks;''')
-    dbcursor.execute('''CREATE TABLE sg_tracks AS SELECT DISTINCT title as title
-                                             FROM alib
-                                            WHERE title IS NOT NULL and lower(genre) is not like "%classical%"
-                                            ORDER BY title;''')
 
+    dbcursor.execute('''CREATE TABLE sg_tracks AS SELECT DISTINCT title
+                                                    FROM alib
+                                                   WHERE title IS NOT NULL AND 
+                                                         genre NOT LIKE '%Classical%'
+                                                   ORDER BY title;''')
 
 
 def disambiguate_contributors():
