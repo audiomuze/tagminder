@@ -1,6 +1,7 @@
 import csv
 import os
 from os.path import exists, dirname
+import pandas as pd
 import re
 import sqlite3
 import sys
@@ -3382,47 +3383,176 @@ def string_groups():
                                                    ORDER BY title;''')
 
 
+
+def generate_string_grouper_input():
+
+#    build up table of contributors made up of artist, performers, albumartists and composers
+#    at this stage we're avoiding dealing with delimited artists and artists with comma space
+#    we'll come back to these in the future.
+
+#    This process culminates in the creation of a table called string_grouper_input which is
+#    then referenced by string-grouper to generate a list of likely artist name duplicates
+#    for investigation by the user.
+
+#    Following investigation, the user generates a CSV comprising current name and replacement 
+#    name, which is then imported into the disambiguation table.  This table is leveraged by 
+#    Python code which reads the disambiguation table into a Python dictionary and pulls all 
+#    artist, performer, albumartist and composer records from alib into a Pandas dataframe, 
+#    applies the changes set out in the disambiguation table and writes the changes back to 
+#    the alib table.
+
+#    In practice, one would run this routine to build up string_grouper_input, feed it through 
+#    string-grouper, popula disambiguation with additional records based on the human curated 
+#    results of string-grouper and then run the Python routine that makes the update a few times 
+#    over until such time that the user is satisfied dimininshing returns have set in such that
+#    it no longer warrants further pursuit.
+   
+
+    dbcursor.execute('''DROP TABLE IF EXISTS disambiguator_landing;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS string_grouper;''')
+
+    dbcursor.execute('''CREATE TABLE disambiguator_landing (
+                            existing_contributor    TEXT,
+                            replacement_contributor TEXT
+                        );''')
+
+
+    dbcursor.execute('''CREATE TABLE ct AS SELECT DISTINCT artist
+                                             FROM alib
+                                            WHERE artist IS NOT NULL AND 
+                                                  artist NOT LIKE '%\\%' AND 
+                                                  artist NOT LIKE '%, %'
+                                            ORDER BY artist;''')
+
+    dbcursor.execute('''INSERT INTO ct (
+                                           artist
+                                       )
+                                       SELECT albumartist
+                                         FROM alib
+                                        WHERE albumartist IS NOT NULL AND 
+                                              albumartist NOT LIKE '%\\%' AND 
+                                                  albumartist NOT LIKE '%, %'
+                                        ORDER BY albumartist;''')
+
+    dbcursor.execute('''INSERT INTO ct (
+                                           artist
+                                       )
+                                       SELECT performer
+                                         FROM alib
+                                        WHERE performer IS NOT NULL AND 
+                                              performer NOT LIKE '%\\%' AND 
+                                                  performer NOT LIKE '%, %'
+                                        ORDER BY performer;''')
+
+    dbcursor.execute('''INSERT INTO ct (
+                                           artist
+                                       )
+                                       SELECT composer
+                                         FROM alib
+                                        WHERE composer IS NOT NULL AND 
+                                              composer NOT LIKE '%\\%' AND 
+                                                  composer NOT LIKE '%, %'
+                                        ORDER BY composer;''')
+
+    dbcursor.execute('''CREATE TABLE string_grouper AS SELECT DISTINCT artist
+                                                         FROM ct
+                                                        WHERE artist IS NOT NULL
+                                                        ORDER BY artist;''')
+
+    dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')
+    dbcursor.execute('''ALTER TABLE string_grouper RENAME TO sg_contributors;''')
+
+
+''' Here we begin utilising Pandas DFs capabilities to make mass updates made to artist, performer, composer and albumartist data'''
+
+def convert_dfrow(row, delim: str = r"\\"):
+    result = []
+
+    for item in row:
+        if not pd.isna(item):
+            item = delim.join(disambiguation_dict.get(x, x) for x in item.split(delim))
+
+        result.append(item)
+
+    return result    
+
+def compare_large_dataframes(df1, df2):
+
+    # Example usage:
+    # Assuming df1 and df2 are your DataFrames
+    # differing_records will contain only the rows in df2 that differ from df1
+    # differing_records = compare_dataframes(df1, df2)
+
+    '''This method uses the merge function with the indicator parameter set to True. It then filters the resulting DataFrame to keep only the rows present in df2 but not in df1.
+    Depending on your specific use case, this approach might offer better performance, especially for large datasets.
+    However, it's always a good idea to test with your actual data to determine which method works best for your situation.'''
+
+
+    # Check if the DataFrames have the same shape
+    if df1.shape != df2.shape:
+        raise ValueError("DataFrames must have the same number of rows and columns")
+
+    # Merge the DataFrames and keep only the rows that are different
+    merged_df = pd.merge(df1, df2, how='outer', indicator=True).query('_merge == "right_only"').drop('_merge', axis=1)
+
+    return merged_df
+
+
+
 def disambiguate_contributors():
-    '''sequentially process the contents of the disambiguator table, replacing all instances of existing_name with replacement_name '''
 
-    #import only records that have not previously been written to alib in a previous call to disambiguate_contributors()
-    dbcursor.execute('''SELECT existing_contributor, replacement_contributor, rowid FROM disambiguation WHERE alib_updated = FALSE ;''')
+    dbcursor.execute('''SELECT existing_contributor, replacement_contributor FROM disambiguation WHERE alib_updated = FALSE ;''')
 
-    records = dbcursor.fetchall()
-    matched_records = len(records)
+    disambiguation_records = dbcursor.fetchall()
+    disambiguation_count = len(disambiguation_records)
 
-    # process each record in turn
-    if matched_records > 0:
+    # if there are unprocessed records in disambiguation table
+    if disambiguation_count > 0:
 
-        print(f'Correcting {matched_records} names across all artist, performer, albumartist and composer entries in alib')
+        # convert list of disambiguation records into a dict
+        disambiguation_dict = {key: value for key, value in disambiguation_records}
 
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS artists ON alib (artist);''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS albumartist ON alib (albumartist);''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS composer ON alib (composer);''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS composer ON alib (performer);''')
+        # load all artist, performer, albumartist and composer records in alib into a df then process the dataframe
+        df1 = pd.read_sql_query('SELECT rowid AS alib_rowid, artist, performer, albumartist, composer from alib order by __path', conn)
+
+        # make a copy against which to apply changes which we'll subsequently compare with df1 to isolate changes
+        df2 = df1.copy()
+
+        # transform the columns of interest
+        df2[['artist', 'performer', 'albumartist', 'composer']] = df2[['artist', 'performer', 'albumartist', 'composer']].apply(convert_dfrow)
+        print(df2.info(verbose=True))
+        df3 = compare_large_dataframes(df1, df2)
+        print(df3.info(verbose=True))  
 
 
-        opening_tally = tally_mods()
-        for record in records:
+        # now write changes back to db
 
-            # store the baseline values related to the currently processed record
-            existing_val = record[0]
-            replacement_val = record[1].strip() # ensure there are no inadvertent spaces in the replacement value
-            table_record = record[2] # get rowid
+        if df3.empty is False:
 
-            print(f'Replacing:\n- "{existing_val}"\n with:\n- "{replacement_val}"\n')
-            dbcursor.execute('''UPDATE alib SET artist = (?) WHERE artist = (?);''', (replacement_val, existing_val))
-            dbcursor.execute('''UPDATE alib SET albumartist = (?) WHERE albumartist = (?);''', (replacement_val, existing_val))
-            dbcursor.execute('''UPDATE alib SET performer = (?) WHERE performer = (?);''', (replacement_val, existing_val))
-            dbcursor.execute('''UPDATE alib SET composer = (?) WHERE composer = (?);''', (replacement_val, existing_val))
+            # Save df3 to a Sqlite table, replacing it if necessary
+            df3.to_sql('disambiguation_updates', conn, if_exists='replace', index=False)
 
-            # mark this record as having been processed so it is bypassed in future
-            dbcursor.execute('''UPDATE disambiguation SET alib_updated = TRUE WHERE rowid = (?);''', (table_record,))
+            # process the updates back to alib
+            dbcursor.execute('''UPDATE alib
+                                   SET artist = disambiguation_updates.artist,
+                                       performer = disambiguation_updates.performer,
+                                       albumartist = disambiguation_updates.albumartist,
+                                       composer = disambiguation_updates.composer
+                                  FROM disambiguation_updates
+                                 WHERE disambiguation_updates.alib_rowid = alib.rowid;''')
 
-        print(f"|\n{tally_mods() - opening_tally} changes were processed")
+
+
+            # update disambiguation table to mark changes to alib_updated.  This should be called only after the database update
+            dbcursor.execute('''UPDATE disambiguation set alib_updated = TRUE WHERE alib_updated = FALSE ;''')
+            conn.commit()
+
 
     else:
         print('No remaining name corrections to process')
+
 
 
 def trim_whitespace():
@@ -3593,10 +3723,10 @@ def update_tags():
     # add_genres_and_styles()
 
     # build the tables required as input into string-grouper
-    string_groups()
+    # string_groups()
 
-    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    disambiguate_contributors_df() # this only does something if there are records in the disambiguation table that have not yet been processed
     
 
 
