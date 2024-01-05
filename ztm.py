@@ -3407,7 +3407,7 @@ def generate_string_grouper_input():
 #    over until such time that the user is satisfied dimininshing returns have set in such that
 #    it no longer warrants further pursuit.
    
-
+    print('Generating sg_contributors table which holds distinct list of artist, performers, albumartits and composers present in your tags')
     dbcursor.execute('''DROP TABLE IF EXISTS disambiguator_landing;''')
     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
     dbcursor.execute('''DROP TABLE IF EXISTS string_grouper;''')
@@ -3457,26 +3457,31 @@ def generate_string_grouper_input():
 
     dbcursor.execute('''CREATE TABLE string_grouper AS SELECT DISTINCT artist
                                                          FROM ct
-                                                        WHERE artist IS NOT NULL
+                                                        WHERE artist IS NOT NULL AND artist != ''
                                                         ORDER BY artist;''')
 
     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
     dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')
     dbcursor.execute('''ALTER TABLE string_grouper RENAME TO sg_contributors;''')
 
+    dbcursor.execute('''select count(*) from sg_contributors''')
 
-''' Here we begin utilising Pandas DFs capabilities to make mass updates made to artist, performer, composer and albumartist data'''
+    records_generated = dbcursor.fetchall()[0]
+    print(f'Your library contains {records_generated} unique artists, performers, albumartists and composers')
 
-def convert_dfrow(row, delim: str = r"\\"):
-    result = []
 
-    for item in row:
-        if not pd.isna(item):
-            item = delim.join(disambiguation_dict.get(x, x) for x in item.split(delim))
 
-        result.append(item)
+# ''' Here we begin utilising Pandas DFs capabilities to make mass updates made to artist, performer, composer and albumartist data'''
+# def convert_dfrow(row, delim: str = r"\\"):
+#     result = []
 
-    return result    
+#     for item in row:
+#         if not pd.isna(item):
+#             item = delim.join(disambiguation_dict.get(x, x) for x in item.split(delim))
+
+#         result.append(item)
+
+#     return result    
 
 def compare_large_dataframes(df1, df2):
 
@@ -3502,6 +3507,24 @@ def compare_large_dataframes(df1, df2):
 
 
 def disambiguate_contributors():
+    '''  Function that leverages Pandas DataFrames to apply metadata changes to artist, performer, albumartist & composer fields in a dataframe 
+    representing these datapoints in the alib table and then writing back the changes to a table (disambiguation_updates) in the database.  This 
+    table is then used to update records in alib based on matching rowid.'''
+
+
+    # first define an inner function convert_dfrow to transform every row in every in-scope column in the df
+    ''' Here we begin utilising Pandas DFs capabilities to make mass updates made to artist, performer, composer and albumartist data'''
+    def convert_dfrow(row, delim: str = r"\\"):
+        result = []
+
+        for item in row:
+            if not pd.isna(item):
+                item = delim.join(disambiguation_dict.get(x, x) for x in item.split(delim))
+
+            result.append(item)
+
+        return result    
+
 
     dbcursor.execute('''SELECT existing_contributor, replacement_contributor FROM disambiguation WHERE alib_updated = FALSE ;''')
 
@@ -3519,12 +3542,14 @@ def disambiguate_contributors():
 
         # make a copy against which to apply changes which we'll subsequently compare with df1 to isolate changes
         df2 = df1.copy()
+        print(f'Stats relating to records imported from alib table for processing:\n')
 
-        # transform the columns of interest
+        # transform the columns of interest by calling innner function convert_dfrow
         df2[['artist', 'performer', 'albumartist', 'composer']] = df2[['artist', 'performer', 'albumartist', 'composer']].apply(convert_dfrow)
-        print(df2.info(verbose=True))
+        df2.info(verbose=True)
         df3 = compare_large_dataframes(df1, df2)
-        print(df3.info(verbose=True))  
+        print(f'\nStats relating to records changed through disambiguation and homoginisation process:\n')
+        df3.info(verbose=True)
 
 
         # now write changes back to db
@@ -3542,11 +3567,11 @@ def disambiguate_contributors():
                                        composer = disambiguation_updates.composer
                                   FROM disambiguation_updates
                                  WHERE disambiguation_updates.alib_rowid = alib.rowid;''')
-
-
+            print(f'\nArtist, performer, album, albumartist and composer records relating to {df3.shape[0]} records have been disambiguated and homoginised.')
 
             # update disambiguation table to mark changes to alib_updated.  This should be called only after the database update
             dbcursor.execute('''UPDATE disambiguation set alib_updated = TRUE WHERE alib_updated = FALSE ;''')
+            dbcursor.execute('''DROP TABLE disambiguation_updates''')
             conn.commit()
 
 
@@ -3725,9 +3750,13 @@ def update_tags():
     # build the tables required as input into string-grouper
     # string_groups()
 
-    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    disambiguate_contributors_df() # this only does something if there are records in the disambiguation table that have not yet been processed
+    # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
+    # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  Tthe outputs 
+    # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
+    # generate_string_grouper_input()
     
+    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
