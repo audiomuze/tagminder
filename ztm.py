@@ -3155,7 +3155,8 @@ def add_musicbrainz_identifiers():
     dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_albumartists on alib(albumartist);''')
     dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_artists on alib(artist);''')
     dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_composers on alib(composer);''')
-
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS contributors on contributor_with_mbid (contributor);''')
+        
     print(f"\nAdding musicbrainz identifiers to artists & albumartists")
     opening_tally = tally_mods()
 
@@ -3324,63 +3325,63 @@ def find_duplicate_flac_albums():
         print(f"|\n{duplicated_flac_albums[0]} duplicated FLAC albums present - see table __dirpaths_with_same_content for a listing")
 
 
-def string_groups():
-    ''' Function to generate a unique list of:
-    contributors by merging artist, performer, albumartist and composer entries from alib into a single file for parsing by string-grouper in order to identify potential duplicates
-    titles by selecting distinct tracks from alib'''
+# def string_groups():
+#     ''' Function to generate a unique list of:
+#     contributors by merging artist, performer, albumartist and composer entries from alib into a single file for parsing by string-grouper in order to identify potential duplicates
+#     titles by selecting distinct tracks from alib'''
 
-    dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
+#     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
 
-    dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')
-    dbcursor.execute('''CREATE TABLE ct AS SELECT DISTINCT artist
-                                             FROM alib
-                                            WHERE artist IS NOT NULL AND 
-                                                  artist NOT LIKE '%\\%' AND 
-                                                  artist NOT LIKE '%, %'
-                                            ORDER BY artist;''')
+#     dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')
+#     dbcursor.execute('''CREATE TABLE ct AS SELECT DISTINCT artist
+#                                              FROM alib
+#                                             WHERE artist IS NOT NULL AND 
+#                                                   artist NOT LIKE '%\\%' AND 
+#                                                   artist NOT LIKE '%, %'
+#                                             ORDER BY artist;''')
 
-    dbcursor.execute('''INSERT INTO ct (
-                                           artist
-                                       )
-                                       SELECT albumartist
-                                         FROM alib
-                                        WHERE albumartist IS NOT NULL AND 
-                                              albumartist NOT LIKE '%\\%' AND 
-                                                  albumartist NOT LIKE '%, %'
-                                        ORDER BY albumartist;''')
+#     dbcursor.execute('''INSERT INTO ct (
+#                                            artist
+#                                        )
+#                                        SELECT albumartist
+#                                          FROM alib
+#                                         WHERE albumartist IS NOT NULL AND 
+#                                               albumartist NOT LIKE '%\\%' AND 
+#                                                   albumartist NOT LIKE '%, %'
+#                                         ORDER BY albumartist;''')
 
-    dbcursor.execute('''INSERT INTO ct (
-                                           artist
-                                       )
-                                       SELECT performer
-                                         FROM alib
-                                        WHERE performer IS NOT NULL AND 
-                                              performer NOT LIKE '%\\%' AND 
-                                                  performer NOT LIKE '%, %'
-                                        ORDER BY performer;''')
+#     dbcursor.execute('''INSERT INTO ct (
+#                                            artist
+#                                        )
+#                                        SELECT performer
+#                                          FROM alib
+#                                         WHERE performer IS NOT NULL AND 
+#                                               performer NOT LIKE '%\\%' AND 
+#                                                   performer NOT LIKE '%, %'
+#                                         ORDER BY performer;''')
 
-    dbcursor.execute('''INSERT INTO ct (
-                                           artist
-                                       )
-                                       SELECT composer
-                                         FROM alib
-                                        WHERE composer IS NOT NULL AND 
-                                              composer NOT LIKE '%\\%' AND 
-                                                  composer NOT LIKE '%, %'
-                                        ORDER BY composer;''')
+#     dbcursor.execute('''INSERT INTO ct (
+#                                            artist
+#                                        )
+#                                        SELECT composer
+#                                          FROM alib
+#                                         WHERE composer IS NOT NULL AND 
+#                                               composer NOT LIKE '%\\%' AND 
+#                                                   composer NOT LIKE '%, %'
+#                                         ORDER BY composer;''')
 
-    dbcursor.execute('''CREATE TABLE sg_contributors AS SELECT DISTINCT artist
-                                                         FROM ct
-                                                        ORDER BY artist;''')
-    dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
+#     dbcursor.execute('''CREATE TABLE sg_contributors AS SELECT DISTINCT artist
+#                                                          FROM ct
+#                                                         ORDER BY artist;''')
+#     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
 
-    dbcursor.execute('''DROP TABLE IF EXISTS sg_tracks;''')
+#     dbcursor.execute('''DROP TABLE IF EXISTS sg_tracks;''')
 
-    dbcursor.execute('''CREATE TABLE sg_tracks AS SELECT DISTINCT title
-                                                    FROM alib
-                                                   WHERE title IS NOT NULL AND 
-                                                         genre NOT LIKE '%Classical%'
-                                                   ORDER BY title;''')
+#     dbcursor.execute('''CREATE TABLE sg_tracks AS SELECT DISTINCT title
+#                                                     FROM alib
+#                                                    WHERE title IS NOT NULL AND 
+#                                                          genre NOT LIKE '%Classical%'
+#                                                    ORDER BY title;''')
 
 
 
@@ -3409,10 +3410,11 @@ def generate_string_grouper_input():
    
     print('Generating sg_contributors table which holds distinct list of artist, performers, albumartits and composers present in your tags')
     dbcursor.execute('''DROP TABLE IF EXISTS disambiguator_landing;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')    
     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
     dbcursor.execute('''DROP TABLE IF EXISTS string_grouper;''')
 
-    dbcursor.execute('''CREATE TABLE disambiguator_landing (
+    dbcursor.execute('''CREATE TABLE IF NOT EXISTS disambiguator_landing (
                             existing_contributor    TEXT,
                             replacement_contributor TEXT
                         );''')
@@ -3428,7 +3430,7 @@ def generate_string_grouper_input():
     dbcursor.execute('''INSERT INTO ct (
                                            artist
                                        )
-                                       SELECT albumartist
+                                       SELECT DISTINCT albumartist
                                          FROM alib
                                         WHERE albumartist IS NOT NULL AND 
                                               albumartist NOT LIKE '%\\%' AND 
@@ -3438,7 +3440,7 @@ def generate_string_grouper_input():
     dbcursor.execute('''INSERT INTO ct (
                                            artist
                                        )
-                                       SELECT performer
+                                       SELECT DISTINCT performer
                                          FROM alib
                                         WHERE performer IS NOT NULL AND 
                                               performer NOT LIKE '%\\%' AND 
@@ -3448,7 +3450,7 @@ def generate_string_grouper_input():
     dbcursor.execute('''INSERT INTO ct (
                                            artist
                                        )
-                                       SELECT composer
+                                       SELECT DISTINCT composer
                                          FROM alib
                                         WHERE composer IS NOT NULL AND 
                                               composer NOT LIKE '%\\%' AND 
@@ -3457,11 +3459,10 @@ def generate_string_grouper_input():
 
     dbcursor.execute('''CREATE TABLE string_grouper AS SELECT DISTINCT artist
                                                          FROM ct
-                                                        WHERE artist IS NOT NULL AND artist != ''
+                                                        WHERE artist IS NOT NULL AND artist != '' 
                                                         ORDER BY artist;''')
 
     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
-    dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')
     dbcursor.execute('''ALTER TABLE string_grouper RENAME TO sg_contributors;''')
 
     dbcursor.execute('''select count(*) from sg_contributors''')
@@ -3560,6 +3561,7 @@ def disambiguate_contributors():
             df3.to_sql('disambiguation_updates', conn, if_exists='replace', index=False)
 
             # process the updates back to alib
+
             dbcursor.execute('''UPDATE alib
                                    SET artist = disambiguation_updates.artist,
                                        performer = disambiguation_updates.performer,
@@ -3625,6 +3627,8 @@ def show_stats_and_log_changes():
         ''' write changed records to changed_tags table '''
         ''' Create an export database and write out alib containing changed records with sqlmodded set to NULL for writing back to underlying file tags '''
         dbcursor.execute("create index if not exists filepaths on alib(__path)")
+
+        #############################################temporarily blocked code###############################
         export_db = '/tmp/export.db'
         # print(f"\nGenerating changed_tags table: {export_db}")
         dbcursor.execute(f"ATTACH DATABASE '{export_db}' AS alib2")
@@ -3634,14 +3638,15 @@ def show_stats_and_log_changes():
         dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib_rollback")
         dbcursor.execute("CREATE TABLE IF NOT EXISTS alib2.alib_rollback AS SELECT * FROM alib_rollback ORDER BY __path")
         dbcursor.execute("DROP TABLE IF EXISTS alib_rollback")
+        ##############################################temporarily blocked code###############################
         conn.commit()
-        
+        ##############################################temporarily blocked code###############################        
         print(f"Affected folders have been written out to text file: {dirlist}")
         print(f"\nChanged tags have been written to a database: {export_db} in table alib.\nalib contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
         print(f"You can now directly export from this database to the underlying files using tagfromdb3.py.\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {export_db}\n")
         percent_affected = (records_changed / library_size())*100
         print(f"{'%.2f' % percent_affected}% of records in table (corresponding to tracks in library) have been modified.")
-
+        ##############################################temporarily blocked code###############################
     else:
         print("- No changes were processed\n")
 
@@ -3733,7 +3738,7 @@ def update_tags():
     # establish_contributors()
 
     # # adds musicbrainz identifiers to artists, albumartists & in future composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    # add_musicbrainz_identifiers()
+    # # add_musicbrainz_identifiers()
 
     # # add a uuid4 tag to every record that does not have one
     # add_tagminder_uuid()
@@ -3747,15 +3752,15 @@ def update_tags():
     # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
     # add_genres_and_styles()
 
-    # build the tables required as input into string-grouper
-    # string_groups()
+    # # build the tables required as input into string-grouper
+    # string_groups()  #this is rendered defunct by generate_string_grouper_input()
 
-    # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
-    # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  Tthe outputs 
-    # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
-    # generate_string_grouper_input()
+    # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
+    # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
+    # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
+    generate_string_grouper_input()
     
-    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
     # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
 
@@ -3793,8 +3798,8 @@ if __name__ == '__main__':
     conn.commit()
     elapsed_time = time.time() - start_time
     print(f'It took {elapsed_time / 60 } minutes to update library')
-    print(f"Compacting database {dbfile}")
-    dbcursor.execute("VACUUM")
+    # print(f"Compacting database {dbfile}")
+    # dbcursor.execute("VACUUM")
     dbcursor.close()
     conn.close()
     print(f"\n{'─' * 5}\nDone!\n")
