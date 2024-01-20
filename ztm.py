@@ -3435,7 +3435,7 @@ def find_duplicate_flac_albums():
     print(f'\nChecking for FLAC files that do not have an md5sum in the tag header')
 
     dbcursor.execute("DROP TABLE IF EXISTS nonstandard_FLACS;")
-    dbcursor.execute("CREATE TABLE IF NOT EXISTS nonstandard_FLACS AS SELECT DISTINCT __dirpath FROM alib WHERE __md5sig = '' OR __md5sig = '0' OR __md5sig is null ORDER BY __path;")
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS nonstandard_FLACS AS SELECT DISTINCT __dirpath FROM alib WHERE (__filetype = 'FLAC' AND (__md5sig = '' OR __md5sig = '0' OR __md5sig is null)) ORDER BY __path;")
     dbcursor.execute("SELECT __dirpath from nonstandard_FLACS")
     invalid_flac_albums = dbcursor.fetchall()
     if invalid_flac_albums:
