@@ -112,13 +112,13 @@ At present it does the following:
 
 - modularise code, a single file is fast becomeing unmanageable
 
-- ~~fix update failure bug in live_in_subtitle_means_live()~~
+- ~~fix update failure bug in live_in_subtitle_means_live()~~  Completed!
 
-- incorporate metadata normalisation routines to standardise case of track TITLE, PERFORMER, COMPOSER & LABEL metadata.  Investigate whether MBID obviates this need in Logitechmediaserver
+- incorporate metadata normalisation routines to standardise case of track TITLE, ~~PERFORMER~~, ~~COMPOSER~~ & LABEL metadata.  ~~Investigate whether MBID obviates this need in Logitechmediaserver~~
 
-- leverage cosine similarity to generate potential duplicates/ variations on performer name in contributor metadata requiring manual tagging intervention.  ~~~In progress!~~~ Now completed!
+- ~~leverage cosine similarity to generate potential duplicates/ variations on performer name (ARTIST, PERFORMER, COMPOSER, ALBUMARTIST)  in contributor metadata requiring manual tagging intervention.~~ Completed!
 
-- add MusicBrainz identifiers to all ARTIST, PERFORMER, COMPOSER, LYRICIST, WRITER, LABEL, WORK, PART and ALBUMARTIST tags leveraging a download of tables from the MusicBrainz database
+- add MusicBrainz identifiers to all ~~ARTIST~~, PERFORMER, ~~COMPOSER~~, LYRICIST, WRITER, LABEL, WORK, PART and ~~ALBUMARTIST~~ tags leveraging a download of tables from the MusicBrainz database.  Code now enriches from existing metadata in alib or leverages musicbrainz table if present
 
 - remember to search for ARTIST and ALBUMARTIST with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional MBID’s are added where appropriate
 
@@ -129,7 +129,7 @@ At present it does the following:
 - ~~cleanup and standardise genres to eliminate unsanctioned GENRE entries~~ Completed!
 
 - ~~Adding Genres and Styles to albums without, based on amalgamation of albumartist's genres and styles from their other works in database~~ Completed!
-  NOTE, THIS HAS POTENTIAL TO POISON THE WELL SO DON'T USE LIGHTLY ... this would be the case where an artist is switches genres between albums.
+  NOTE, THIS HAS POTENTIAL TO POISON THE WELL SO DON'T USE LIGHTLY ... this would be the case where an artist switches genres between albums.
 
 - ~~enrich "Pop/Rock", "Pop", "Jazz" & "Classical" only genre assignments with artist based GENRE and STYLE entries leveraging that artist's work in your collection~~ Completed!
 
