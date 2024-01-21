@@ -3427,6 +3427,98 @@ def add_mbrainz_mbid():
         print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
+
+def add_multiartist_mbrainz_mbid():
+    ''' if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use) '''
+
+    # check if the mbrainz_mbid_distinct_names table exists.  If it's present then populate mbid's from it where records are currently without
+    
+    if table_exists('mbrainz_mbid_distinct_names'):
+
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_albumartists on alib(albumartist);''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_artists on alib(artist);''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_composers on alib(composer);''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS mbrainz_artists on mbrainz_mbid_distinct_names(artist);''')
+
+        # create a union of all unique combinations of artists, performers, albumartists and composers
+
+        dbcursor.execute('''DROP TABLE IF EXISTS multi_contributors;''')
+        dbcursor.execute('''CREATE TABLE multi_contributors AS SELECT artist AS contributor,
+                                                                      musicbrainz_artistid AS mbid
+                                                                 FROM alib
+                                                                WHERE artist IS NOT NULL
+                            UNION
+                            SELECT performer AS contributor,
+                                   NULL AS mbid
+                              FROM alib
+                             WHERE performer IS NOT NULL
+                            UNION
+                            SELECT albumartist AS contributor,
+                                   musicbrainz_albumartistid AS mbid
+                              FROM alib
+                             WHERE albumartist IS NOT NULL
+                            UNION
+                            SELECT composer AS contributor,
+                                   musicbrainz_composerid AS mbid
+                              FROM alib
+                             WHERE composer IS NOT NULL
+                             ORDER BY contributor;''')
+
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS multi_contributor_index ON multi_contributors (
+                                contributor
+                            );''')
+
+        # update all MBIDs that re readilyu matchable to a contributor and correct any legacy mismatch of mbid
+        dbcursor.execute('''UPDATE multi_contributors
+                               SET mbid = mbrainz_mbid_distinct_names.mbid
+                              FROM mbrainz_mbid_distinct_names
+                             WHERE (mbrainz_mbid_distinct_names.artist = multi_contributors.contributor AND 
+                                    multi_contributors.mbid != mbrainz_mbid_distinct_names.mbid);''')
+
+        # now process all multi-contributor entries, building up the concatenated MBID string then applying it to all matching records in alib
+        dbcursor.execute('''SELECT contributor,
+                                   mbid
+                              FROM multi_contributors
+                             WHERE INSTR(contributor, '\\');''')
+
+        records = dbcursor.fetchall()
+        population = len(records)
+        if population > 0:
+
+            loop_iterator = 0
+            loop_mods = tally_mods()
+
+            #iterate through every record
+            for record in records:
+
+                #increment loop counter and tally number changes as baseline
+                loop_iterator += 1
+
+                # set update_trigger to FALSE.  This trigger is used to determine whether a table update is required.  It's set to TRUE when either style or genre needs an update
+                update_triggered = False
+
+                #store the baseline values which would serve as the replacement criteria where a table update is required
+                baseline_contributor = record[0]
+                baseline_mbid = record[1]
+                derived_mbid = []
+
+                # generate a list from the delimited contributors string retrieved from the Sqlite table
+                contributors = delimited_string_to_list(baseline_contributor)
+
+                # now retrieve mbid for the individual contributor and append it to derived_mbid
+                for contributor in contributors:
+                    dbcursor.execute('''SELECT mbid from mbrainz_mbid_distinct_names where mbrainz_mbid_distinct_names.artist == (?);''', (contributor,))
+
+                    retrieved_mbid = dbcursor.fetchone()
+
+                    if retrieved_mbid:
+                        derived_mbid.append(retrieved_mbid)
+                derived_mbid = list_to_delimited_string(derived_mbid)
+                print(baseline_contributor,  derived_mbid)
+
+
+
+
 def find_duplicate_flac_albums():
     ''' this is based on records in the alib table as opposed to file based metadata imported using md5sum.  The code relies on the md5sum embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
     from the sorted md5sum of al tracks in a folder and compares that against the same for all other folders.  If the strings match you have a 100% match of the audio stream and thus duplicate album, irrespective of tags.
@@ -3891,96 +3983,96 @@ def update_tags():
 
     ''' here you add whatever update and enrichment queries you want to run against the table '''
 
-    #transfer any unsynced lyrics to LYRICS tag
-    unsyncedlyrics_to_lyrics()
+    # #transfer any unsynced lyrics to LYRICS tag
+    # unsyncedlyrics_to_lyrics()
 
-    #merge [recording location] with RECORDINGLOCATION
-    merge_recording_locations()
+    # #merge [recording location] with RECORDINGLOCATION
+    # merge_recording_locations()
 
-    #merge release tag to VERSION tag
-    release_to_version()
+    # #merge release tag to VERSION tag
+    # release_to_version()
 
-    #get rid of tags we don't want to store
-    kill_badtags()
+    # #get rid of tags we don't want to store
+    # kill_badtags()
 
-    #set all empty tags ('') to NULL
-    nullify_empty_tags()
+    # #set all empty tags ('') to NULL
+    # nullify_empty_tags()
 
-    #remove CR & LF from text tags (excluding lyrics & review tags)
-    trim_and_remove_crlf()
+    # #remove CR & LF from text tags (excluding lyrics & review tags)
+    # trim_and_remove_crlf()
 
-    #get rid of on-standard apostrophes
-    # set_apostrophe()
+    # #get rid of on-standard apostrophes
+    # # set_apostrophe()
 
-    #strip Feat in its various forms from track title and append to ARTIST tag
-    title_feat_to_artist()
+    # #strip Feat in its various forms from track title and append to ARTIST tag
+    # title_feat_to_artist()
 
-    #remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    feat_artist_to_artist()
+    # #remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    # feat_artist_to_artist()
 
-    #set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    nullify_performers_matching_artists()
+    # #set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    # nullify_performers_matching_artists()
 
-    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
-    #iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    strip_live_from_titles()
+    # #iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    # strip_live_from_titles()
 
-    #moves known keywords in brackets to subtitle
-    title_keywords_to_subtitle()
+    # #moves known keywords in brackets to subtitle
+    # title_keywords_to_subtitle()
 
-    #last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    square_brackets_to_subtitle()
+    # #last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    # square_brackets_to_subtitle()
 
-    #strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    strip_live_from_album_name()
+    # #strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    # strip_live_from_album_name()
 
-    #ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    live_in_subtitle_means_live()
+    # #ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    # live_in_subtitle_means_live()
 
-    #ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    live_means_live_in_subtitle()
+    # #ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    # live_means_live_in_subtitle()
 
-    #set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    kill_singular_discnumber()
+    # #set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    # kill_singular_discnumber()
 
-    #merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    merge_album_version()
+    # #merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # merge_album_version()
 
-    #set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    set_compilation_flag()
+    # #set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # set_compilation_flag()
 
-    #set albumartist to NULL for all compilation albums where they are not NULL
-    nullify_albumartist_in_va()
+    # #set albumartist to NULL for all compilation albums where they are not NULL
+    # nullify_albumartist_in_va()
 
-    #Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    capitalise_releasetype()
+    # #Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    # capitalise_releasetype()
 
-    #Determines releasetype  to each album if not already populated
-    add_releasetype()
+    # #Determines releasetype  to each album if not already populated
+    # add_releasetype()
 
     # #adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use) based on data already in alib
     # # merged this with add_mbrainz_mbid() to update using mbrainz_mbid_distinct_names if it exists, otherwise enrich from existing mbid's in alib
     # add_musicbrainz_identifiers()
 
-    #if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    add_mbrainz_mbid()
+    # #if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    # add_mbrainz_mbid()
 
-    #Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    dedupe_fields()
+    # #Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # dedupe_fields()
 
-    #add a uuid4 tag to every record that does not have one
-    add_tagminder_uuid()
+    # #add a uuid4 tag to every record that does not have one
+    # add_tagminder_uuid()
 
-    #runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    find_duplicate_flac_albums()
+    # #runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    # find_duplicate_flac_albums()
 
-    #remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
-    cleanse_genres_and_styles()
+    # #remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    # cleanse_genres_and_styles()
 
-    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
-    add_genres_and_styles()
+    # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
+    # add_genres_and_styles()
 
     # #build the tables required as input into string-grouper
     # string_groups()  #this is rendered defunct by generate_string_grouper_input()
@@ -3990,6 +4082,8 @@ def update_tags():
     # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
     # generate_string_grouper_input()
     
+    # print compiled mbid's for multi-entry artists
+    add_multiartist_mbrainz_mbid()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
@@ -4025,7 +4119,7 @@ if __name__ == '__main__':
 
     conn.commit()
     elapsed_time = time.time() - start_time
-    print(f"It took{'%.2f' % (elapsed_time / 60) } minutes to update library")
+    print(f"It took {'%.2f' % elapsed_time } seconds or {'%.2f' % (elapsed_time / 60) } minutes to update library")
 
 
 
