@@ -1684,14 +1684,16 @@ def trim_and_remove_crlf():
     print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
+
 def set_apostrophe():
 
     all_text_tags = ["_releasecomment", "album", "albumartist", "arranger", "artist", "asin", "barcode", "catalog", "catalognumber", "composer", "conductor", "country", "discsubtitle", 
     "engineer", "ensemble", "genre", "isrc", "label", "lyricist", "mixer", "mood", "movement", "part", "performer", "personnel", "producer", "recordinglocation", "releasetype", 
     "remixer", "style", "subtitle", "theme", "title", "upc", "version", "work", "writer"]
 
-    wrong_apostrophe = " ́"
-    right_apostrophe = "'"
+    wrong_apostrophe1 =r'’'
+    wrong_apostrophe2 =  r' ́'
+    right_apostrophe = "\'"
 
     ''' narrow it down to the list that's actually present in alib table - based on what's been imported '''
     text_tags = texttags_in_alib(all_text_tags)
@@ -1699,13 +1701,15 @@ def set_apostrophe():
 
     for text_tag in text_tags:
         dbcursor.execute(f"CREATE INDEX IF NOT EXISTS apostrophe ON alib ({text_tag}) WHERE {text_tag} IS NOT NULL;")
-        print(f"\nReplacing {wrong_apostrophe} with {right_apostrophe} for tag: {text_tag}")
+        print(f"\nStasndardising apostrophes: replacing instances of '{wrong_apostrophe1}' and '{wrong_apostrophe2}' with '{right_apostrophe}' for tag: {text_tag}")
 
         ''' replace wrong apostrophes '''
-        dbcursor.execute('''UPDATE alib
-                               SET (?) = replace( (?), (?), (?) ) 
-                             WHERE (?) IS NOT NULL AND 
-                                   (?) != replace( (?), (?), (?) );'''), ({text_tag}, text_tag, wrong_apostrophe, right_apostrophe, text_tag, text_tag, text_tag, wrong_apostrophe, right_apostrophe)
+        dbcursor.execute(
+            f"UPDATE alib SET {text_tag} = replace({text_tag}, (?), (?) ) WHERE {text_tag} IS NOT NULL AND {text_tag} != replace({text_tag}, (?), (?) );", (wrong_apostrophe1, right_apostrophe, wrong_apostrophe1, right_apostrophe))
+
+        dbcursor.execute(
+            f"UPDATE alib SET {text_tag} = replace({text_tag}, (?), (?) ) WHERE {text_tag} IS NOT NULL AND {text_tag} != replace({text_tag}, (?), (?) );", (wrong_apostrophe2, right_apostrophe, wrong_apostrophe2, right_apostrophe))
+
 
         dbcursor.execute(f"drop index if exists apostrophe")
 
@@ -3440,9 +3444,9 @@ def add_multiartist_mbrainz_mbid():
         dbcursor.execute('''CREATE INDEX IF NOT EXISTS role_composers on alib(composer);''')
         dbcursor.execute('''CREATE INDEX IF NOT EXISTS mbrainz_artists on mbrainz_mbid_distinct_names(artist);''')
 
-        # firstly update all MBIDs im table alib that are readily matchable to a contributor, correcting any legacy mismatch of mbids that might be present in alib
+        # firstly update all MBIDs in table alib that are readily matchable to a contributor, correcting any legacy mismatch of mbids that might be present in alib
         # (e.g. where a tagger has previously selected the wrong artist for whatever reason)
-        # only write changes if the current value does not  correspnd with the value in mbrainz_mbid_distinct_names
+        # only write changes if the current mbid value does not correspond with the mbid value in mbrainz_mbid_distinct_names which is pulled directly from the MusicBrainz official dataset
 
         # process alib.musicbrainz_artistid
         dbcursor.execute('''UPDATE alib
@@ -3506,14 +3510,8 @@ def add_multiartist_mbrainz_mbid():
         population = len(records)
         if population > 0:
 
-            loop_iterator = 0
-            loop_mods = tally_mods()
-
             #iterate through every record
             for record in records:
-
-                #increment loop counter and tally number changes as baseline
-                loop_iterator += 1
 
                 # set update_trigger to FALSE.  This trigger is used to determine whether a table update is required.  It's set to TRUE when either style or genre needs an update
                 update_triggered = False
@@ -3539,6 +3537,10 @@ def add_multiartist_mbrainz_mbid():
                 #print(baseline_contributor, '|', derived_mbid)
 
                 # now write updates to alib where current MBID for baseline_contributor does not correspond with that we've derived:
+
+                # print what we're doing to visually show what's being updated
+                print(f'Baseline contributor: {baseline_contributor}\nBaseline MBID.......: {baseline_mbid}\nDerived MBID........: {derived_mbid}\n')
+
                 # process artists
                 dbcursor.execute('''
                                     UPDATE alib
@@ -3559,8 +3561,6 @@ def add_multiartist_mbrainz_mbid():
                                        SET musicbrainz_composerid = (?) 
                                      WHERE composer == (?) AND 
                                            musicbrainz_composerid != (?);''', (derived_mbid, baseline_contributor, derived_mbid))
-
-
 
 
 def find_duplicate_flac_albums():
@@ -4045,8 +4045,8 @@ def update_tags():
     # #remove CR & LF from text tags (excluding lyrics & review tags)
     # trim_and_remove_crlf()
 
-    # #get rid of on-standard apostrophes
-    # # set_apostrophe()
+    #get rid of on-standard apostrophes
+    set_apostrophe()
 
     # #strip Feat in its various forms from track title and append to ARTIST tag
     # title_feat_to_artist()
