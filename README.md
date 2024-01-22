@@ -73,6 +73,8 @@ At present it does the following:
 
 - removes all spurious CR/LF occurrences in text tags. It does not process the LYRICS or REVIEW tags
 
+-  replaces all grave accent apostrophes with ASCII and ISO 8859 compliant apostrophe: "  '  "
+
 - removes PERFORMER tags where they match or are already present in the ARTIST tag
 
 - sorts and eliminates duplicate entries in tags
@@ -114,7 +116,7 @@ At present it does the following:
 
 - ~~fix update failure bug in live_in_subtitle_means_live()~~  Completed!
 
-- incorporate metadata normalisation routines to standardise case of track TITLE, ~~PERFORMER~~, ~~COMPOSER~~ & LABEL metadata.  ~~Investigate whether MBID obviates this need in Logitechmediaserver~~
+- incorporate metadata normalisation routines to standardise case of track TITLE, ~~PERFORMER~~, ~~COMPOSER~~ & LABEL metadata.  ~~Investigate whether MBID obviates this need in Logitechmediaserver (it doesn't!~~
 
 - ~~leverage cosine similarity to generate potential duplicates/ variations on performer name (ARTIST, PERFORMER, COMPOSER, ALBUMARTIST)  in contributor metadata requiring manual tagging intervention.~~ Completed!
 
