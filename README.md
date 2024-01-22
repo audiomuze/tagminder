@@ -89,7 +89,7 @@ At present it does the following:
 
 - normalises RELEASETYPE entries for using `First Letter Caps` for better presentation in music server front-ends that leverage RELEASETYPE (this was recently added to Logitechmediaserver)
 
-- adds MusicBrainz identifiers to artists and albumartists leveraging what already exists in your file tags. Where a performer name is associated with > 1 MBIDin your tags these performers are ignored so as not to conflate performers.  Check tables namesakes_* for contributors requiring manual disambiguation
+- adds MusicBrainz identifiers to artists and albumartists leveraging what already exists in your file tags or where a master table of MBID's exists it leverages that. Where a performer name is associated with > 1 MBID in your tags these performers are ignored so as not to conflate performers.  Check tables namesakes_* for contributors requiring manual disambiguation
 
 #### Handling of ‘Live’ in album names and track titles
 
@@ -101,7 +101,7 @@ At present it does the following:
 
 #### Handling of Feat. in track title and artist tags
 
-- removes all instances and variations of Feat. entries from ARTIST and TITLE tags and appends the delimited performer names to the ARTIST tag
+- removes most instances and variations of Feat. entries from ARTIST and TITLE tags and appends the delimited performer names to the ARTIST tag
 
 #### Identifying duplicated FLAC audio content
 
@@ -120,7 +120,7 @@ At present it does the following:
 
 - add MusicBrainz identifiers to all ~~ARTIST~~, PERFORMER, ~~COMPOSER~~, LYRICIST, WRITER, LABEL, WORK, PART and ~~ALBUMARTIST~~ tags leveraging a download of tables from the MusicBrainz database.  Code now enriches from existing metadata in alib or leverages musicbrainz table if present
 
-- remember to search for ARTIST and ALBUMARTIST with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional MBID’s are added where appropriate
+- ~~remember to search for ARTIST and ALBUMARTIST with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional MBID’s are added where appropriate~~ Multi-tag entries now catered for.  Completed!
 
 - incorporate metadata enrichment leveraging MusicBrainz and inferences based on existing track related metadata in table
 
