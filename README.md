@@ -110,7 +110,8 @@ At present it does the following:
 - identifies all duplicated albums based on records in the alib table. The code assumes every folder contains an album and relies on the md5sum embedded in properly-encoded FLAC files. – It basically creates a concatenated string from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders. If the strings match you have a 100% match of the audio stream and thus a duplicate album, irrespective of what tags / metadata might tell you. You can confidently remove all but one of the matched folders.
 - If any FLAC files are missing the md5sum or the md5sum is zero then a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```.  Be careful not to delete duplicates where the concatenated md5sum is a bunch of zeroes or otherwise empty
 
-## TODO: refer Issues
+## TODO: 
+Refer issues list, filter o enhancements.
 
 ## USAGE:
 
