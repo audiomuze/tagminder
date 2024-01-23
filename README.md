@@ -110,38 +110,7 @@ At present it does the following:
 - identifies all duplicated albums based on records in the alib table. The code assumes every folder contains an album and relies on the md5sum embedded in properly-encoded FLAC files. – It basically creates a concatenated string from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders. If the strings match you have a 100% match of the audio stream and thus a duplicate album, irrespective of what tags / metadata might tell you. You can confidently remove all but one of the matched folders.
 - If any FLAC files are missing the md5sum or the md5sum is zero then a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```.  Be careful not to delete duplicates where the concatenated md5sum is a bunch of zeroes or otherwise empty
 
-## TODO:
-
-- modularise code, a single file is fast becomeing unmanageable
-
-- ~~fix update failure bug in live_in_subtitle_means_live()~~  Completed!
-
-- incorporate metadata normalisation routines to standardise case of track TITLE, ~~PERFORMER~~, ~~COMPOSER~~ & LABEL metadata.  ~~Investigate whether MBID obviates this need in Logitechmediaserver (it doesn't!~~
-
-- ~~leverage cosine similarity to generate potential duplicates/ variations on performer name (ARTIST, PERFORMER, COMPOSER, ALBUMARTIST)  in contributor metadata requiring manual tagging intervention.~~ Completed!
-
-- add MusicBrainz identifiers to all ~~ARTIST~~, PERFORMER, ~~COMPOSER~~, LYRICIST, WRITER, LABEL, WORK, PART and ~~ALBUMARTIST~~ tags leveraging a download of tables from the MusicBrainz database.  Code now enriches from existing metadata in alib or leverages musicbrainz table if present
-
-- ~~remember to search for ARTIST and ALBUMARTIST with \\ where musicbrainz_artistid and musicbrainz_albumartistid not like \\ to ensure additional MBID’s are added where appropriate~~ Multi-tag entries now catered for.  Completed!
-
-- incorporate metadata enrichment leveraging MusicBrainz and inferences based on existing track related metadata in table
-
-- ~~merge GENRE and STYLE tags to GENRE tag and dedupe~~ Completed!
-
-- ~~cleanup and standardise genres to eliminate unsanctioned GENRE entries~~ Completed!
-
-- ~~Adding Genres and Styles to albums without, based on amalgamation of albumartist's genres and styles from their other works in database~~ Completed!
-  NOTE, THIS HAS POTENTIAL TO POISON THE WELL SO DON'T USE LIGHTLY ... this would be the case where an artist switches genres between albums.
-
-- ~~enrich "Pop/Rock", "Pop", "Jazz" & "Classical" only genre assignments with artist based GENRE and STYLE entries leveraging that artist's work in your collection~~ Completed!
-
-- ensure completeness of various tags across all tracks in a folder/album e.g. all tracks have DATE and GENRE assignments and that they're the same (albeit some users will not want track genres homogenised for an album), so keep the code separate
-
-- write out __dirpaths for various queries to additional tables users can use to focus on manual adjustments e.g. adding DATE tag to albums without dates, GENRE tag to albums without genres etc, ~~variations on artist names that are likely the same performer~~
-
-- fill in the blanks on ALBUMARTIST, GENRE, STYLE, MOOD & THEME tags where not all tracks in an album have these entries
-
-- implement argv to enable passing of switches determining which metadata enhancement routines are run and to enable pointing to source/target root folder
+## TODO: refer Issues
 
 ## USAGE:
 
