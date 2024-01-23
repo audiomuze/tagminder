@@ -137,7 +137,7 @@ At present it does the following:
 
 - ensure completeness of various tags across all tracks in a folder/album e.g. all tracks have DATE and GENRE assignments and that they're the same (albeit some users will not want track genres homogenised for an album), so keep the code separate
 
-- write out __dirpaths for various queries to additional tables users can use to focus on manual adjustments e.g. adding DATE tag to albums without dates, GENRE tag to albums without genres etc, ~~~variations on artist names that are likely the same performer~~~
+- write out __dirpaths for various queries to additional tables users can use to focus on manual adjustments e.g. adding DATE tag to albums without dates, GENRE tag to albums without genres etc, ~~variations on artist names that are likely the same performer~~
 
 - fill in the blanks on ALBUMARTIST, GENRE, STYLE, MOOD & THEME tags where not all tracks in an album have these entries
 
