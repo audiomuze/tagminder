@@ -111,7 +111,7 @@ At present it does the following:
 - If any FLAC files are missing the md5sum or the md5sum is zero then a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```.  Be careful not to delete duplicates where the concatenated md5sum is a bunch of zeroes or otherwise empty
 
 ## TODO: 
-Refer issues list, filter o enhancements.
+Refer issues list, filter on enhancements.
 
 ## USAGE:
 
