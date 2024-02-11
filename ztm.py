@@ -1,3 +1,4 @@
+import argparse
 import csv
 import os
 from os.path import exists, dirname
@@ -77,7 +78,7 @@ def list_to_delimited_string(input_list: list, delimiter=r'\\'):
 
 def tally_mods():
     ''' start and stop counter that returns how many changes have been triggered at the point of call - will be >= 0 '''
-    dbcursor.execute('SELECT sum(CAST (sqlmodded AS INTEGER) ) FROM alib WHERE sqlmodded IS NOT NULL;')
+    dbcursor.execute('SELECT SUM(sqlmodded) FROM alib WHERE sqlmodded IS NOT NULL;')
     matches = dbcursor.fetchone()
 
     if matches[0] == None:
@@ -266,7 +267,7 @@ def establish_environment():
     dbcursor.execute('''create index if not exists writers on alib (writer);''')
     dbcursor.execute('''create index if not exists titles on alib (title);''')
     dbcursor.execute('''create index if not exists alib_entries on alib (__path);''')
-    dbcursor.execute('''create index if not exists mbrainz on mbrainz_mbid_distinct_names(artist);''')
+    # dbcursor.execute('''create index if not exists mbrainz on mbrainz_mbid_distinct_names(artist);''')
 
 
     ''' ensure trigger is in place to record incremental changes until such time as tracks are written back '''
@@ -1762,10 +1763,9 @@ def title_feat_to_artist():
                                title LIKE '% ft. %' OR 
                                title LIKE '% With: %';''')
 
-
     records_to_process = dbcursor.fetchall()
     
-    feats = ['Feat ', 'Feat:', 'Feat.', 'Feat-', 'Feat -', 'Featuring ', 'Featuring:', 'Featuring.', 'Featuring-',  'Featuring -', 'ft. ', 'With:' ]
+    feats = ['Feat ', 'Feat:', 'Feat.', 'Feat-', 'Feat -', 'Featuring ', 'Featuring:', 'Featuring.', 'Featuring-',  'Featuring -', 'Ft.', 'ft. ', 'With:' ]
 
     ''' now process each in sequence '''
     for record in records_to_process:
@@ -3492,14 +3492,6 @@ def add_multiartist_mbrainz_mbid():
                                 contributor
                             );''')
 
-        # THIS IS NOW DEFUNCT BECAUSE IT'S DERIVED FROM an UPDATED alib DATASET
-        # # update all MBIDs that are readily matchable to a contributor and correct any legacy mismatch of mbids that might be present in alib
-        # dbcursor.execute('''UPDATE multi_contributors
-        #                        SET mbid = mbrainz_mbid_distinct_names.mbid
-        #                       FROM mbrainz_mbid_distinct_names
-        #                      WHERE (mbrainz_mbid_distinct_names.artist = multi_contributors.contributor AND 
-        #                             multi_contributors.mbid != mbrainz_mbid_distinct_names.mbid);''')
-
         # now process all multi-contributor entries, building up the concatenated MBID string then applying it to all matching records in alib
         dbcursor.execute('''SELECT contributor,
                                    mbid
@@ -3805,10 +3797,11 @@ def generate_string_grouper_input():
                                                   composer NOT LIKE '%, %'
                                         ORDER BY composer;''')
 
-    dbcursor.execute('''CREATE TABLE string_grouper AS SELECT DISTINCT artist
+    dbcursor.execute('''CREATE TABLE string_grouper AS SELECT DISTINCT artist AS contributor
                                                          FROM ct
                                                         WHERE artist IS NOT NULL AND artist != '' 
                                                         ORDER BY artist;''')
+    dbcursor.execute('''ALTER TABLE string_grouper ADD COLUMN processed INTEGER;''')
 
     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
     dbcursor.execute('''ALTER TABLE string_grouper RENAME TO sg_contributors;''')
@@ -3887,14 +3880,14 @@ def disambiguate_contributors():
         disambiguation_dict = {key: value for key, value in disambiguation_records}
 
         # load all artist, performer, albumartist and composer records in alib into a df then process the dataframe
-        df1 = pd.read_sql_query('SELECT rowid AS alib_rowid, artist, performer, albumartist, composer from alib order by __path', conn)
+        df1 = pd.read_sql_query('SELECT rowid AS alib_rowid, artist, performer, albumartist, composer, writer, lyricist from alib order by __path', conn)
 
         # make a copy against which to apply changes which we'll subsequently compare with df1 to isolate changes
         df2 = df1.copy()
         print(f'Stats relating to records imported from alib table for processing:\n')
 
         # transform the columns of interest by calling innner function convert_dfrow
-        df2[['artist', 'performer', 'albumartist', 'composer']] = df2[['artist', 'performer', 'albumartist', 'composer']].apply(convert_dfrow)
+        df2[['artist', 'performer', 'albumartist', 'composer', 'writer', 'lyricist']] = df2[['artist', 'performer', 'albumartist', 'composer', 'writer', 'lyricist']].apply(convert_dfrow)
         df2.info(verbose=True)
         df3 = compare_large_dataframes(df1, df2)
         print(f'\nStats relating to records changed through disambiguation and homoginisation process:\n')
@@ -3910,14 +3903,6 @@ def disambiguate_contributors():
 
             # process the updates back to alib
 
-            # dbcursor.execute('''UPDATE alib
-            #                        SET artist = disambiguation_updates.artist,
-            #                            performer = disambiguation_updates.performer,
-            #                            albumartist = disambiguation_updates.albumartist,
-            #                            composer = disambiguation_updates.composer
-            #                       FROM disambiguation_updates
-            #                      WHERE disambiguation_updates.alib_rowid = alib.rowid;''')
-
             # replaced from example from Keith Metcalfe on SQLite forum.  Essentially same as above but using aliases to improve readability
             dbcursor.execute('''UPDATE 
                                   alib AS target 
@@ -3931,7 +3916,7 @@ def disambiguate_contributors():
                                 WHERE 
                                   source.alib_rowid == target.rowid;''')
 
-            print(f'\nArtist, performer, album, albumartist and composer records relating to {df3.shape[0]} records have been disambiguated and homoginised.')
+            print(f'\nArtist, performer, album, albumartist, composer, writer & lyricist records relating to {df3.shape[0]} records have been disambiguated and homoginised.')
 
             # update disambiguation table to mark changes to alib_updated.  This should be called only after the database update
             dbcursor.execute('''UPDATE disambiguation set status = TRUE WHERE status = FALSE ;''')
@@ -3951,6 +3936,8 @@ def trim_whitespace():
 
 def show_stats_and_log_changes():
 
+    ''' count number of changes that were written across the popultion of changes '''
+    metadata_changes = tally_mods()
     ''' count number of records changed '''
     records_changed = changed_records()
     
@@ -3958,10 +3945,10 @@ def show_stats_and_log_changes():
     dir_count = affected_dircount()
 
 
-    messagelen = len(f"Updates have been processed against {records_changed} records, affecting {dir_count} albums")
+    messagelen = len(f"{metadata_changes} updates have been processed against {records_changed} records, affecting {dir_count} albums")
     print(f"\n")
     print('─' * messagelen)
-    print(f"Updates have been processed against {records_changed} records, affecting {dir_count} albums")
+    print(f"{metadata_changes} updates have been processed against {records_changed} records, affecting {dir_count} albums")
     print('─' * messagelen)
 
 
@@ -4002,6 +3989,7 @@ def show_stats_and_log_changes():
         dbcursor.execute("DROP TABLE IF EXISTS alib_rollback")
         ##############################################temporarily blocked code###############################
         conn.commit()
+        dbcursor.execute("VACUUM;")        
         ##############################################temporarily blocked code###############################        
         print(f"Affected folders have been written out to text file: {dirlist}")
         print(f"\nChanged tags have been written to a database: {export_db} in table alib.\nalib contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
@@ -4025,108 +4013,101 @@ def update_tags():
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
 
 
-    ''' here you add whatever update and enrichment queries you want to run against the table '''
+    # ''' here you add whatever update and enrichment queries you want to run against the table '''
 
-    # #transfer any unsynced lyrics to LYRICS tag
+    # # transfer any unsynced lyrics to LYRICS tag
     # unsyncedlyrics_to_lyrics()
 
-    # #merge [recording location] with RECORDINGLOCATION
+    # # merge [recording location] with RECORDINGLOCATION
     # merge_recording_locations()
 
-    # #merge release tag to VERSION tag
+    # # merge release tag to VERSION tag
     # release_to_version()
 
-    # #get rid of tags we don't want to store
+    # # get rid of tags we don't want to store
     # kill_badtags()
 
-    # #set all empty tags ('') to NULL
-    # nullify_empty_tags()
-
-    # #remove CR & LF from text tags (excluding lyrics & review tags)
+    # # remove CR & LF from text tags (excluding lyrics & review tags)
     # trim_and_remove_crlf()
 
-    #get rid of on-standard apostrophes
-    set_apostrophe()
+    # # get rid of on-standard apostrophes
+    # set_apostrophe()
 
-    # #strip Feat in its various forms from track title and append to ARTIST tag
+    # # strip Feat in its various forms from track title and append to ARTIST tag
     # title_feat_to_artist()
 
-    # #remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
     # feat_artist_to_artist()
 
-    # #set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    # # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    # # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+
+    # # set all empty tags ('') to NULL
+    nullify_empty_tags()
+
+    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
     # nullify_performers_matching_artists()
 
-    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
-
-    # #iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
     # strip_live_from_titles()
 
-    # #moves known keywords in brackets to subtitle
+    # # moves known keywords in brackets to subtitle
     # title_keywords_to_subtitle()
 
-    # #last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
     # square_brackets_to_subtitle()
 
-    # #strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
     # strip_live_from_album_name()
 
-    # #ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
     # live_in_subtitle_means_live()
 
-    # #ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
     # live_means_live_in_subtitle()
 
-    # #set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
     # kill_singular_discnumber()
 
-    # #merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
     # merge_album_version()
 
-    # #set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
     # set_compilation_flag()
 
-    # #set albumartist to NULL for all compilation albums where they are not NULL
+    # # set albumartist to NULL for all compilation albums where they are not NULL
     # nullify_albumartist_in_va()
 
-    # #Applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    # # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
     # capitalise_releasetype()
 
-    # #Determines releasetype  to each album if not already populated
+    # # determines releasetype for each album if not already populated
     # add_releasetype()
 
-    # #adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use) based on data already in alib
-    # # merged this with add_mbrainz_mbid() to update using mbrainz_mbid_distinct_names if it exists, otherwise enrich from existing mbid's in alib
-    # add_musicbrainz_identifiers()
-
-    # #if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    # add_mbrainz_mbid()
-
-    # #Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    # dedupe_fields()
-
-    # #add a uuid4 tag to every record that does not have one
+    # # add a uuid4 tag to every record that does not have one
     # add_tagminder_uuid()
 
-    # #runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    # # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # dedupe_fields()
+
+    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
     # find_duplicate_flac_albums()
 
-    # #remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
     # cleanse_genres_and_styles()
 
     # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
     # add_genres_and_styles()
 
-    # #build the tables required as input into string-grouper
-    # string_groups()  #this is rendered defunct by generate_string_grouper_input()
+    # # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
+    # # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
+    # # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
+    # # generate_string_grouper_input()
 
-    # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
-    # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
-    # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
-    # generate_string_grouper_input()
-    
-    # print compiled mbid's for multi-entry artists
+    # # if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    add_mbrainz_mbid()
+
+    # add mbid's for multi-entry artists
     add_multiartist_mbrainz_mbid()
 
 
