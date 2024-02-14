@@ -3748,7 +3748,7 @@ def generate_string_grouper_input():
 #    over until such time that the user is satisfied dimininshing returns have set in such that
 #    it no longer warrants further pursuit.
    
-    print('Generating sg_contributors table which holds distinct list of artist, performers, albumartits and composers present in your tags')
+    print('Generating sg_contributors table which holds distinct list of artist, performers, albumartists and composers present in your tags')
     dbcursor.execute('''DROP TABLE IF EXISTS disambiguator_landing;''')
     dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')    
     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
@@ -4039,10 +4039,10 @@ def update_tags():
     # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
     # feat_artist_to_artist()
 
-    # # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    # # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
-    # # set all empty tags ('') to NULL
+    # set all empty tags ('') to NULL
     nullify_empty_tags()
 
     # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
@@ -4088,7 +4088,7 @@ def update_tags():
     # add_tagminder_uuid()
 
     # # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    # dedupe_fields()
+    dedupe_fields()
 
     # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
     # find_duplicate_flac_albums()
@@ -4099,16 +4099,16 @@ def update_tags():
     # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
     # add_genres_and_styles()
 
-    # # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
-    # # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
-    # # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
-    # # generate_string_grouper_input()
+    # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
+    # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
+    # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
+    generate_string_grouper_input()
 
     # # if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    add_mbrainz_mbid()
+    # add_mbrainz_mbid()
 
-    # add mbid's for multi-entry artists
-    add_multiartist_mbrainz_mbid()
+    # # add mbid's for multi-entry artists
+    # add_multiartist_mbrainz_mbid()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
