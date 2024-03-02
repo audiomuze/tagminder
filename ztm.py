@@ -3431,6 +3431,57 @@ def add_multiartist_mbrainz_mbid():
                                            musicbrainz_composerid != (?);''', (derived_mbid, baseline_contributor.lower(), derived_mbid))
 
 
+
+def standardise_album_tags(tag):
+    ''' this function takes a tagname as parameter, runs a query against alib using the tagname as criteria then, finds __dirnames where contents across files in __dirname are inconsisent, merges
+    all strings from each matching record into a consolidated string, dedupes and sorts it and writes the result back to all records associated with the __dirname where any record's contents does not 
+    correspond with the derived value.
+
+    It's purpose is to ensure consistent genre, style, moood and theme metadata across all tracks in an album.
+    Ideally it should only be called after vetting genres and styles, but in the grand scheme of things the order doesn't matter as it'll yield the identical outcome after both have run '''
+
+    tagname = tag
+
+    print(f'Standardising {tagname} consistency for all albums in alib...')
+
+    # first get a list of all __dirpath's that have more than one unique value associated with the tag being processed
+    # at some point investigate why passing tagname through using (?) results in a null result search
+    dbcursor.execute(f'SELECT __dirpath FROM (SELECT DISTINCT __dirpath, {tagname} FROM alib) GROUP BY __dirpath HAVING count( * ) > 1 ORDER BY __dirpath;')
+
+    affected_dirpaths = dbcursor.fetchall()
+
+    if affected_dirpaths is not None:
+
+        # Now process the contents of each of the affected_dirpath's in turn
+        # get all distinct tag entries associated with that __dirpath from the alib table
+        # concatenate them into a long list
+        # dedupe and sort the resulting string
+        # write back the deduped, sorted concatenated result to all records associated with that __dirpath where the existing value doesn't match that we've derived
+
+        for dirpath in affected_dirpaths:
+
+            # reset concatenated_list to ensure we're not carring over any remnants of previous iterations
+            concatenated_list = []
+            # pickup the query results one at a time and process the associated {tagname} values
+            dp = dirpath[0]
+            print(f"Processing: {dirpath[0]}")
+
+            dbcursor.execute(f"SELECT DISTINCT {tagname} FROM alib WHERE __dirpath = (?);", (dp,))
+            distinct_tag_entries = dbcursor.fetchall()
+            if distinct_tag_entries is not None:
+
+                # build up the concatenated list, making sure to not to incorporate None
+                for distinct_tag in distinct_tag_entries:
+
+                    if distinct_tag[0] is not None:
+                        concatenated_list.append(distinct_tag[0])
+            # now convert it to a string, dedupe and sort it
+            concatenated_string = dedupe_and_sort(list_to_delimited_string(concatenated_list))
+            # write back the updte to alib
+            dbcursor.execute(f"UPDATE alib SET {tagname} = (?) WHERE __dirpath = (?);", (concatenated_string, dp))
+            print(f"Setting {tagname} to: {concatenated_string}\n")
+
+
 def find_duplicate_flac_albums():
     ''' this is based on records in the alib table as opposed to file based metadata imported using md5sum.  The code relies on the md5sum embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
     from the sorted md5sum of al tracks in a folder and compares that against the same for all other folders.  If the strings match you have a 100% match of the audio stream and thus duplicate album, irrespective of tags.
@@ -3901,7 +3952,7 @@ def update_tags():
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
 
 
-    # ''' here you add whatever update and enrichment queries you want to run against the table '''
+    ''' here you add whatever update and enrichment queries you want to run against the table '''
 
     # transfer any unsynced lyrics to LYRICS tag
     unsyncedlyrics_to_lyrics()
@@ -3998,6 +4049,11 @@ def update_tags():
     # add mbid's for multi-entry artists
     add_multiartist_mbrainz_mbid()
 
+    # # standardise genres, styles, moods, themes, recordinglocation
+    # standardise_album_tags('genre')
+    # standardise_album_tags('style')
+    # standardise_album_tags('mood')
+    # standardise_album_tags('theme')
 
     ''' return case sensitivity for LIKE to SQLite default '''
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
