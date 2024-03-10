@@ -59,7 +59,9 @@ You do not need a functioning puddletag with all dependencies installed to be ab
 
 Does the heavy lifting where metadata is concerned, handling the cleanup of tags in the SQL table 'alib'. A SQL trigger flags any changed records, whether they're changed by way of a SQL update or a manual edit (the trigger field 'sqlmodded' is incremented every time a tag value in a record is updated).
 
-This enables tagminder to generate a database 'export.db' containing only changed records, ensuring that only those files that pertain to modified metadata are written to when updating tags.
+This enables tagminder to generate a database 'export.db' containing only changed records, enabling you to write changes only to those files that have had their metadata modified by tagminder.
+As a bonus tagminder creates a text file called affected_files.csv every time it is run, listing the individual files that have been upated.
+A user executed bash shell script addsec2modtime.sh reads that file and adds 1 second to the last modified date of every file listed therein.  This ensures that any update scan by a music server (whether batch or real-time) is able to detect that the underlying files that need rescanning as opposed to rescanning all directories containing music.
 
 
 
@@ -83,19 +85,21 @@ At present it does the following:
 
 - merges ALBUM and VERSION tags into ALBUM tag to get around Logitechmediaserver (LMS), Navidrome and other music servers merging different versions of an album into a single album.  VERSION is left intact making it simple to reverse with an UPDATE query
 
-- sets COMPILATION = 1 for all Various Artists albums and 0 for all others. Tests for presence or otherwise of ALBUMARTIST and whether __dirname of album begins with ‘VA -’  to make its determination
+- adds [bit depth/sampling rate kHz], [Mixed Res] or [DSD] to end of all album names where an album is not redbook (16/44.1).  This is because very few music servers differentiate different releases properly if they share exactly the same name, and the dev's typically don't see getting this right as a priority, and if they do they completely overengineer their solution rather than use tags
+
+- sets COMPILATION = 1 for all Various Artists albums and 0 for all others. Tests for presence or otherwise of ALBUMARTIST and whether __dirname of album begins with ‘VA -’  to make its determination.  Does the same for all albums where the __dirname begins with ‘OST - ’.
 
 - removes 'Various Artists' from ALBUMARTIST
 
-- writes out multiple TAGNAME=value entries rather than TAGNAME=value1\\value2 delimited tag entries
+- writes out multiple TAGNAME=value entries rather than TAGNAME=value1\\value2 delimited tag entries, and in doing so respects the underlying file type's tagging 'specification' (I use the term loosely).
 
-- normalises RELEASETYPE entries for using `First Letter Caps` for better presentation in music server front-ends that leverage RELEASETYPE (this was recently added to Logitechmediaserver)
+- normalises RELEASETYPE entries for using `First Letter Caps` for better presentation in music server front-ends that leverage RELEASETYPE (Support for RELEASETYPE this was recently added to Logitechmediaserver massively improving its ability to list an artist's work in a meanigful manner)
 
 - adds MusicBrainz identifiers to artists and albumartists leveraging what already exists in your file tags or where a master table of MBID's exists it leverages that. Where a performer name is associated with > 1 MBID in your tags these performers are ignored so as not to conflate performers.  Check tables namesakes_* for contributors requiring manual disambiguation
 
 #### Handling of ‘Live’ in album names and track titles
 
-- removes all instances and variations of Live entries from track titles and moves or appends that to the SUBTITLE tag as appropriate and ensures that the LIVE tag is set to 1 where this is not already the case.  It does not corrupt track names where the word ‘Live’ is part of a song title.
+- removes all instances and variations of Live entries from track titles and moves or appends that to the SUBTITLE tag as appropriate and ensures that the LIVE tag is set to 1 where this is not already the case.  It does not corrupt track names where the word ‘Live’ is part of a song title
 
 - removes (live) from end of all album names, sets LIVE = '1' where it's not already set to '1' and appends (Live) to SUBTITLE tag where this is not already the case
 
@@ -108,7 +112,7 @@ At present it does the following:
 #### Identifying duplicated FLAC audio content
 
 - identifies all duplicated albums based on records in the alib table. The code assumes every folder contains an album and relies on the md5sum embedded in properly-encoded FLAC files. – It basically creates a concatenated string from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders. If the strings match you have a 100% match of the audio stream and thus a duplicate album, irrespective of what tags / metadata might tell you. You can confidently remove all but one of the matched folders.
-- If any FLAC files are missing the md5sum or the md5sum is zero then a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```.  Be careful not to delete duplicates where the concatenated md5sum is a bunch of zeroes or otherwise empty
+- If any FLAC files are missing the md5sum or the md5sum is zero then a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```.  Be careful not to delete duplicates where the concatenated md5sum is a bunch of zeroes or otherwise empty - re-encode these files and re-run tagminder.
 
 ## TODO: 
 Refer issues list, filter on enhancements.
