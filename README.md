@@ -1,6 +1,6 @@
 # Introduction
 
-tagminder is comprised of two Python scripts.  One imports audio metadata from underlying audio files into a dynamically created SQLite database and can export metadata back to the underlying files.  The other processes the imported metadata in order to correct anomalies and enrich the metadata where possible.
+tagminder is comprised of two Python scripts.  One imports audio metadata from underlying audio files into a dynamically created SQLite database and can export metadata back to the underlying files.  The other processes the imported metadata in the SQLite database in order to correct anomalies and enrich the metadata where possible.
 
 It enables you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files. It leverages the [puddletag](https://github.com/puddletag/puddletag) codebase to read/write tags so you need to either install puddletag, or at least pull it from the git repo to be able to access its code, specifically puddletag/puddlestuff/audioinfo. 
 
