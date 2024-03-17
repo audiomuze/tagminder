@@ -19,6 +19,35 @@ def firstlettercaps(s):
     return re.sub(r"[A-Za-z]+('[A-Za-z]+)?", lambda mo: mo.group(0)[0].upper() + mo.group(0)[1:].lower(), s)
 
 
+def trim_whitespace(string):
+    ''' get rid of multiple spaces between characters in strings '''
+    return " ".join(string.split())
+
+def sanitize_filename(filename):
+    """
+    Sanitize a file path by removing illegal characters.
+    """
+    illegal_chars = '#%&{}\\<>*?/$!":@+`|='
+    sanitized_filename = ''.join(char if char not in illegal_chars else '_' for char in filename)
+    return sanitized_filename
+
+
+def sanitize_filepath(filepath):
+    """
+    Sanitize a file path by removing illegal characters.
+    """
+    illegal_chars = '#%&{}\\<>*?$!":@+`|='
+    sanitized_filepath = ''.join(char if char not in illegal_chars else '_' for char in filepath)
+    return sanitized_filepath
+
+
+def pad_text(text, pad_len = 2):
+    ''' pad incoming text to padlen '''
+    padding_prefix = '0'
+    if len(text) < pad_len:
+        text = padding_prefix * ((pad_len - len(text)) // len(padding_prefix)) + text
+    return text
+
 
 def table_exists(table_name):
     ''' test whether table exists in a database '''
@@ -3504,7 +3533,11 @@ def add_multiartist_mbrainz_mbid():
         if population > 0:
 
             # Create an mbid_updates table
-            dbcursor.execute('''CREATE TABLE mbid_updates (contributor text, mbid text);''')
+            #
+            # NNNNNNB - Review logic to ensure it's ok to persist tale as opposed to augment it
+            #
+
+            dbcursor.execute('''CREATE TABLE IF NOT EXISTS mbid_updates (contributor text, mbid text);''')
 
             print(f'{population} distinct multi-artist entries to process')
             #iterate through every record
@@ -3620,7 +3653,7 @@ def standardise_album_tags(tag):
             print(f"Setting {tagname} to: {concatenated_string}\n")
 
 
-def set_mixed_res():
+def tag_mixed_res_albums():
     ''' Add [Mixed Res] to end of all album names where file bit depth and/or sample rates differ - ensuring we don't add the string if it's already present '''
 
     print(f"\nIdentifying all albums where bit depth and/or sample rates differs between files and appending ' [Mixed Res]'' to end of all album name if not already present")
@@ -3642,9 +3675,14 @@ def set_mixed_res():
                          WHERE __dirpath IN cte and album NOT LIKE '% [Mixed Res]';''')
 
 
-def set_album_res():
+def tag_album_resolution():
     ''' Add album res to end of all album names where file bit depth and/or sample rates > 16/44.1 respectively - ensuring we don't add the string if it's already present or is a [Mixed Res] album '''
 
+    ''' first deal with mixed resolution albums '''
+    tag_mixed_res_albums()
+
+
+    ''' Now deal with any > redbook '''
     print(f"\nAdding bit_depth and sampling rate to end of all album names where file bit depth and/or sample rates > 16/44.1 respectively whilst ensuring we don't add the string if it's already present or the album is a [Mixed Res] album")
 
     dbcursor.execute('''WITH cte AS (
@@ -4054,11 +4092,194 @@ def add_resolution_to_album():
     dbcursor.execute('''UPDATE alib
                            SET album = album || ' [' || __bitspersample || __frequency || ']'
                          WHERE __frequency > '44.1 kHz' AND 
-                               instr(album, __bitspersample || __frequency) = 0;''')    
+                               instr(album, __bitspersample || __frequency) = 0;''')
 
 
-def trim_whitespace():
-    ''' get rid of multiple spaces between characters in strings '''
+
+def rename_tunes():
+    ''' rename all tunes in alib table leveraging the metadta in alib.  Relies on compilation = 0 to detect VA and OST albums
+    DO NOT DEPLOY THIS LIGHTLY YET '''
+
+
+    # get list of all tunes and metadata relevant to naming files
+    dbcursor.execute('''SELECT rowid,
+                               __path,
+                               __filename,
+                               __dirpath,
+                               __filename_no_ext,
+                               __ext,
+                               __dirname,
+                               discnumber,
+                               track,
+                               title,
+                               subtitle,
+                               artist,
+                               albumartist,
+                               compilation
+                          FROM alib
+                         ORDER BY __path;''')
+
+    tunes = dbcursor.fetchall()
+
+    print("\nRenaming files based on metadata...")
+
+    for tune in tunes:
+
+        # grab mtadata related to the track in question, ensure all file related metadata is read in as literals
+        tune_rowid = tune[0]
+        tune_path = bytes(tune[1], "utf-8").decode("unicode_escape")
+        tune_filename = bytes(tune[2], "utf-8").decode("unicode_escape")
+        tune_dirpath = bytes(tune[3], "utf-8").decode("unicode_escape")
+        tune_filename_no_ext = bytes(tune[4], "utf-8").decode("unicode_escape")
+        tune_ext = tune[5]
+        tune_dirname = tune[6]
+        tune_discnumber = tune[7]
+        tune_track = tune[8]
+        tune_title = tune[9]
+        tune_subtitle = tune[10]
+        tune_artist = tune[11]
+        tune_albumartist = tune[12]
+        tune_compilation = tune[13]
+
+        new_tune_path = tune_dirpath
+
+        # derive new filename
+        if tune_compilation == 0:
+
+            tune_filename = (pad_text(str(int(tune_discnumber))) + '-') if tune_discnumber is not None else ''.strip()
+            tune_filename = tune_filename + (pad_text(str(int(tune_track))) + ' - ') if tune_track is not None else ''.strip()
+            tune_filename = tune_filename + (tune_artist + ' - ') if tune_artist is not None else ''.strip()
+            tune_filename = tune_filename + tune_title if tune_artist is not None else ''.strip()
+            tune_filename = tune_filename + ('.' + tune_ext) if tune_ext is not None else ''.strip()
+            tune_filename = tune_filename.replace(' )', ')')
+
+        else:
+
+            tune_filename = (pad_text(str(int(tune_discnumber))) + '-') if tune_discnumber is not None else ''.strip()
+            tune_filename = tune_filename + (pad_text(str(int(tune_track))) + ' - ') if tune_track is not None else ''.strip()
+            tune_filename = tune_filename + tune_title if tune_artist is not None else ''.strip()
+            tune_filename = tune_filename + ('.' + tune_ext) if tune_ext is not None else ''.strip()
+            tune_filename = tune_filename.replace(' )', ')')
+        
+        new_tune_path = tune_dirpath + r'/' + sanitize_filepath(tune_filename)
+        
+
+        print(f'old: {tune_path}\nnew: {new_tune_path}')
+        # attempt to rename the file
+        try:
+            os.rename(tune_path, new_tune_path)
+            # if the rename was successful update the alib table to reflect the new filenames
+            dbcursor.execute('''UPDATE alib SET __filename = (?), __filename_no_ext = substr((?), 1, instr((?), __ext) - 2) WHERE rowid = (?);''', (tune_filename, tune_filename, tune_filename, tune_rowid))
+
+        except OSError as e:
+            print(f"{e}\n", file=sys.stderr)
+
+
+
+
+def rename_dirs():
+    ''' rename all dirs holding tunes in alib table leveraging the metadata in alib.  Relies on compilation = 0 to detect VA and OST albums
+    DO NOT DEPLOY THIS LIGHTLY YET '''
+
+
+    # get list of all dirs and metadata relevant to naming them.  Important to order by deepest part of tree descending so we work from furthest branch back to root folder to ensure we're not
+    # trying to rename orphaned children after a parent has been renamed
+
+        # counts the number of occurences of '/' in __dirpath:
+        # SELECT DISTINCT (LENGTH(__dirpath) - LENGTH(REPLACE(__dirpath, '/', '') ) ) / LENGTH('/') AS counter,
+        #                 __dirpath
+        #   FROM alib
+        #  ORDER BY counter DESC,
+        #           __dirpath;
+
+    dbcursor.execute('''SELECT DISTINCT ((LENGTH(__dirpath) - LENGTH(REPLACE(__dirpath, '/', '') ) ) / 1) AS counter,
+                                        __dirpath,
+                                        __dirname,
+                                        albumartist,
+                                        album,
+                                        version,
+                                        compilation,
+                                        __bitspersample,
+                                        __frequency_num,
+                                        __frequency
+                          FROM alib
+                         ORDER BY counter DESC,
+                                  __dirpath;''')
+
+    releases = dbcursor.fetchall()
+
+    print("\nRenaming files based on metadata...")
+
+    for release in releases:
+
+        # grab metadata related to the track in question, ensure all file related metadata is read in as literals.  We're not interested in counter, so don't bother retrieving it
+
+        release_dirpath = release[1]
+        release_dirname = release[2]
+        release_albumartist = release[3]
+        release_album = release[4]
+        release_version = release[5]
+        release_compilation = release[6]
+        release_bitspersample = release[7]
+        release_frequency_num = release[8]
+        release_frequency = release[9]
+
+
+        #start buildiing new dirpath by stripping __dirname from __dirpath
+
+        print(f'release_dirpath..........................: {release_dirpath}')
+        print(f'release_dirname..........................: {release_dirname}')
+        print(f'release_dirpath.rstrip(release_dirname)..: {release_dirpath.rstrip(release_dirname)}')
+
+
+        # first seed target release_dirpath with the parent directory
+        target_release_path = release_dirpath.rstrip(release_dirname)
+        
+        # derive new filename
+        if release_compilation == '1':
+
+            target_release_path = target_release_path + 'VA'
+
+        else:
+
+            # get albumartist, but don't count on there being one
+            if release_albumartist is not None:
+                target_release_path = target_release_path + release_albumartist
+            else:
+
+                print(f'No albumartist associated with album: {release_dirpath}')
+                target_release_path = target_release_path + '- zMISSING ALBUMARTIST'
+
+
+        target_release_path = target_release_path + ' - ' + release_album
+
+        if release_version:
+
+            target_release_path = target_release_path  + ' ' +  release_version
+
+        # test for [Mixed Res] albums
+        if '[Mixed Res]' not in release_album:
+
+            # if not [Mixed Res] test for > redbook
+            if int(release_bitspersample) > 16 or float(release_frequency_num) > 44.1:
+
+                # if > redbook append bitrate and sampling frequency to folder name
+                target_release_path = target_release_path + ' ' +  '['  + release_bitspersample + release_frequency + ']'
+
+        # strip illegal chars from target_release_path
+        target_release_path = sanitize_filepath(target_release_path)
+        print(f'target_release_path......................: {target_release_path}')
+
+        # attempt to rename the directory
+        try:
+            os.rename(release_dirpath, target_release_path)
+            # # if the rename was successful update the alib table to reflect the new filenames
+            # dbcursor.execute('''UPDATE alib SET __dirname = (?), __filename_no_ext = substr((?), 1, instr((?), __ext) - 2) WHERE rowid = (?);''', (target_release_path, album_dirname, album_dirname, album_rowid))
+
+        except OSError as e:
+            print(f"{e}\n", file=sys.stderr)
+
+
 
 
 
@@ -4245,8 +4466,14 @@ def update_tags():
     standardise_album_tags('theme')
 
     # add resolution info to all > 16/44.1 and mixed resolution albums
-    set_mixed_res()
-    set_album_res()
+    tag_album_resolution()
+
+
+    # rename files leveraging metadata in the database
+    rename_tunes()
+
+    # rename folders contaning albums
+    rename_dirs()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
