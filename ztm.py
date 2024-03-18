@@ -1,4 +1,5 @@
 import argparse
+from collections import OrderedDict
 import csv
 import os
 from os.path import exists, dirname
@@ -26,9 +27,10 @@ def trim_whitespace(string):
 def sanitize_filename(filename):
     """
     Sanitize a file path by removing illegal characters.
+    ''.strip() basically means that nothing is returned to replace the illegal char
     """
     illegal_chars = '#%&{}\\<>*?/$!":@+`|='
-    sanitized_filename = ''.join(char if char not in illegal_chars else '_' for char in filename)
+    sanitized_filename = ''.join(char if char not in illegal_chars else ''.strip() for char in filename)
     return sanitized_filename
 
 
@@ -76,6 +78,38 @@ def dedupe_and_sort(input_string, delimiter=r'\\'):
     ''' get a list items that contains a delimited string, dedupe and sort it and pass it back '''
     distinct_items = set(x.strip() for x in input_string.split(delimiter))
     return delimiter.join(sorted(distinct_items))
+
+
+def eliminate_duplicates_ordered_dict(input_string):
+    ''' utility function to elimiate duplicate words from a string whilst preserving the order of the string.  If order wasn't important set() would be faster '''
+
+    word_list = input_string.split()
+    unique_words = list(OrderedDict.fromkeys(word_list))
+    return ' '.join(unique_words)    
+
+
+def eliminate_duplicate_phrase(input_string, target_phrase):
+    ''' utility to remove a duplicated phrase from a string. Useful for removing duplicate version and resolution metadata from __dirname '''
+
+    # Split the input string into sentences
+    sentences = input_string.split('.')
+    
+    # Remove leading and trailing whitespace from each sentence
+    sentences = [sentence.strip() for sentence in sentences]
+    
+    # Create a set to store unique sentences
+    unique_sentences = set()
+    
+    # Add non-duplicate sentences to the set
+    for sentence in sentences:
+        if sentence != target_phrase:
+            unique_sentences.add(sentence)
+    
+    # Reconstruct the string
+    result = '.'.join(unique_sentences)
+    
+    return result
+
 
 
 def get_spurious_items(source, target):
@@ -3708,7 +3742,6 @@ def tag_album_resolution():
 
 
 
-
 def find_duplicate_flac_albums():
     ''' this is based on records in the alib table as opposed to file based metadata imported using md5sum.  The code relies on the md5sum embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
     from the sorted md5sum of al tracks in a folder and compares that against the same for all other folders.  If the strings match you have a 100% match of the audio stream and thus duplicate album, irrespective of tags.
@@ -4014,7 +4047,29 @@ def disambiguate_contributors():
 
     # first define an inner function convert_dfrow to transform every row in every in-scope column in the df
     ''' Here we begin utilising Pandas DFs capabilities to make mass updates made to artist, performer, composer and albumartist data'''
+
     def convert_dfrow(row, delim: str = r"\\"):
+
+        '''
+        convert_dfrow takes a row from a DataFrame as input and processes each item in the row. Here's a breakdown of what it does:
+
+        Parameters:
+        row: The input row, typically a list or Series representing a row from a DataFrame.
+        delim: The delimiter used to split and join items in the row. Default value is "\\", which is a regular expression representing a backslash. This delimiter is used to split and join strings within the row.
+        Functionality:
+
+        The function initializes an empty list result to store the processed items.
+        It iterates over each item in the input row.
+
+        For each item, it checks if the item is not null (pd.isna(item) checks if the item is NaN using pandas library). If the item is not null, it splits the item using the specified delimiter (delim) and applies a transformation
+        using a dictionary (disambiguation_dict) to each element obtained after the split.  If the dictionary (disambiguation_dict) contains a key corresponding to the split element, it replaces the split element with the corresponding
+        value from the dictionary. This transformation occurs using a generator expression (disambiguation_dict.get(x, x) for x in item.split(delim)). This essentially maps each element to its disambiguated version if available in the dictionary.
+        
+        The transformed item is then appended to the result list.
+        Finally, the function returns the list result containing the processed items from the row.
+        In summary, this function takes a DataFrame row, splits each item using a specified delimiter, applies a transformation to each split element based on a dictionary lookup, and returns the list of processed items.
+        '''
+
         result = []
 
         for item in row:
@@ -4176,7 +4231,6 @@ def rename_tunes():
 
 
 
-
 def rename_dirs():
     ''' rename all dirs holding tunes in alib table leveraging the metadata in alib.  Relies on compilation = 0 to detect VA and OST albums
     DO NOT DEPLOY THIS LIGHTLY YET '''
@@ -4253,18 +4307,27 @@ def rename_dirs():
 
         target_release_path = target_release_path + ' - ' + release_album
 
+        # check if there's VERSION metadata and append it if it's not already in the target dirname
         if release_version:
 
-            target_release_path = target_release_path  + ' ' +  release_version
+            target_release_path = eliminate_duplicate_phrase(target_release_path, release_version)
+            if release_version and release_version not in target_release_path:
+
+                target_release_path = target_release_path  + ' ' +  release_version
 
         # test for [Mixed Res] albums
         if '[Mixed Res]' not in release_album:
 
             # if not [Mixed Res] test for > redbook
-            if int(release_bitspersample) > 16 or float(release_frequency_num) > 44.1:
 
-                # if > redbook append bitrate and sampling frequency to folder name
-                target_release_path = target_release_path + ' ' +  '['  + release_bitspersample + release_frequency + ']'
+            if int(release_bitspersample) > 16 or float(release_frequency_num) > 44.1:
+                # if > redbook append bitrate and sampling frequency to folder name when not already present
+                release_resolution = '['  + release_bitspersample + release_frequency + ']'
+                target_release_path = eliminate_duplicate_phrase(target_release_path, release_resolution)
+
+                if release_resolution not in target_release_path:
+
+                    target_release_path = target_release_path + ' ' +  '['  + release_bitspersample + release_frequency + ']'
 
         # strip illegal chars from target_release_path
         target_release_path = sanitize_filepath(target_release_path)
@@ -4278,8 +4341,6 @@ def rename_dirs():
 
         except OSError as e:
             print(f"{e}\n", file=sys.stderr)
-
-
 
 
 
