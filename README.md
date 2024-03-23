@@ -119,8 +119,10 @@ At present it does the following:
 #### Renaming of music files and directories based on tag metadata and file attributes
 
 Renames audio files as follows:
-- if compilation is set to 1: file renaming: 'discnumber-track - artist - title.ext' ; folder renaming: 'VA - album [release] [bit depthsample rate]'.
-- if compilation is set to 0: file renaming: 'discnumber-track - title.ext' ; folder renaming: 'albumartist - album [release] [bit depthsample rate]'
+- if compilation is set to 1: file renaming: 'discnumber-track - artist - title.ext' ; folder renaming: 'VA - album [release] [bit depth sample rate]'.
+- if compilation is set to 0: file renaming: 'discnumber-track - title.ext' ; folder renaming: 'albumartist - album [release] [bit depth sample rate]'
+
+Files and directories are renamed in-situ rather than being moved elsewhere in directory tree.  This means all other files associated with an album remain in the renamed folders.
 
 
 
@@ -128,6 +130,8 @@ Renames audio files as follows:
 Refer issues list, filter on enhancements.
 
 ## USAGE:
+
+I generally tag with Picard or another semi-automted metadata source, then run the lot though tagminder, then use Puddletag for fine tuning, then re-process the lot through tagminder to ensure I've not introduced any inconsistencies through manual tagging.
 
 I strongly suggest writing the SQLite database to /tmp as its 'alib' table is dynamically modified every time a new tag is encountered when tags are being imported from audio files. 
 
