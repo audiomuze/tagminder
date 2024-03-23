@@ -118,7 +118,9 @@ At present it does the following:
 
 #### Renaming of music files and directories based on tag metadata and file attributes
 
-- renames audio files as follows: if compilation is set to 1: file renaming: 'discnumber-track - artist - title.ext' folder renaming: 'VA - album [release] [bit depthsample rate]'.  if compilation is set to 0: file renaming: 'discnumber-track - title.ext' folder renaming: 'albumartist - album [release] [bit depthsample rate]'
+Renames audio files as follows:
+- if compilation is set to 1: file renaming: 'discnumber-track - artist - title.ext' ; folder renaming: 'VA - album [release] [bit depthsample rate]'.
+- if compilation is set to 0: file renaming: 'discnumber-track - title.ext' ; folder renaming: 'albumartist - album [release] [bit depthsample rate]'
 
 
 
