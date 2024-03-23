@@ -2561,6 +2561,7 @@ def title_keywords_to_subtitle():
     '(Acoustic)%',
     '(Single Version)%',
     '(Album Version)%',
+    '(LP Version)%',
     '(instrumental%)%']
 
     ''' turn on case sensitivity for LIKE so that we don't inadvertently process records we don't want to '''
