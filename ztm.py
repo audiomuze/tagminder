@@ -4221,6 +4221,25 @@ def set_title_caps():
                                        SET title = (?) 
                                      WHERE title = (?);''', (capitalised_title, stored_title))
 
+def set_album_caps():
+
+    dbcursor.execute('''SELECT DISTINCT album
+                          FROM alib
+                         WHERE album IS NOT NULL
+                         ORDER BY album;''')
+    albums = dbcursor.fetchall()
+    if len(albums) > 0:
+        for album in albums:
+
+            stored_album = album[0]
+            capitalised_album = capitalise_words(stored_album)
+
+            if stored_album != capitalised_album:
+
+                dbcursor.execute('''UPDATE alib
+                                       SET album = (?) 
+                                     WHERE album = (?);''', (capitalised_album, stored_album))
+
 
 
 def rename_tunes():
@@ -4421,7 +4440,7 @@ def rename_dirs():
         # check if there's VERSION metadata and append it if it's not already in the target dirname
         if release_version:
 
-            if release_version not in target_dirname:
+            if release_version.lower() not in target_dirname.lower():
 
                 target_dirname = target_dirname + release_version
 
@@ -4438,7 +4457,7 @@ def rename_dirs():
                 # if > redbook append bitrate and sampling frequency to folder name when not already present
                 release_resolution = ' ['  + release_bitspersample + release_frequency + ']'
 
-                if release_resolution not in target_dirname:
+                if release_resolution.lower() not in target_dirname.lower():
 
                     target_dirname = target_dirname + ' ' + release_resolution
 
@@ -4667,8 +4686,11 @@ def update_tags():
     # add resolution info to all > 16/44.1 and mixed resolution albums
     tag_album_resolution()
 
-    # set capitalistion for track titles and album names
+    # set capitalistion for track titles
     set_title_caps()
+
+    # set capitalistion for album names
+    set_album_caps()
 
     # remove leading 0's from track tags
     unpad_tracks()
