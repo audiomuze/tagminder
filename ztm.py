@@ -4139,6 +4139,22 @@ def add_resolution_to_album():
                                instr(album, __bitspersample || __frequency) = 0;''')
 
 
+def unpad_tracks():
+
+    dbcursor.execute('''UPDATE alib
+                           SET track = CAST (CAST (track AS INTEGER) AS TEXT) 
+                         WHERE track IS NOT NULL AND 
+                               track != CAST (CAST (track AS INTEGER) AS TEXT);''')
+
+
+def unpad_discnumbers():
+
+    dbcursor.execute('''UPDATE alib
+                           SET discnumber = CAST (CAST (discnumber AS INTEGER) AS TEXT) 
+                         WHERE discnumber IS NOT NULL AND 
+                               discnumber != CAST (CAST (discnumber AS INTEGER) AS TEXT);''')
+
+
 
 def rename_tunes():
     ''' rename all tunes in alib table leveraging the metadta in alib.  Relies on compilation = 0 to detect VA and OST albums
@@ -4197,7 +4213,7 @@ def rename_tunes():
 
             if target_filename is not None:
 
-                target_filename = target_filename + ' - ' + pad_text(str(int(tune_track)))
+                target_filename = target_filename + '-' + pad_text(str(int(tune_track)))
 
             else:
 
@@ -4584,12 +4600,17 @@ def update_tags():
     # add resolution info to all > 16/44.1 and mixed resolution albums
     tag_album_resolution()
 
+    # remove leading 0's from track tags
+    unpad_tracks()
 
-    # # rename files leveraging processed metadata in the database
-    # rename_tunes()
+    # remove leading 0's from discnumber tags
+    unpad_discnumbers()
 
-    # # rename folders containing albums leveraging processed metadata in the database
-    # rename_dirs()
+    # rename files leveraging processed metadata in the database
+    rename_tunes()
+
+    # rename folders containing albums leveraging processed metadata in the database
+    rename_dirs()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
