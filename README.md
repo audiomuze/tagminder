@@ -97,6 +97,8 @@ At present it does the following:
 
 - adds MusicBrainz identifiers to artists and albumartists leveraging what already exists in your file tags or where a master table of MBID's exists it leverages that. Where a performer name is associated with > 1 MBID in your tags these performers are ignored so as not to conflate performers.  Check tables namesakes_* for contributors requiring manual disambiguation
 
+- removes zero padding from discnumber and track tags
+
 #### Handling of ‘Live’ in album names and track titles
 
 - removes all instances and variations of Live entries from track titles and moves or appends that to the SUBTITLE tag as appropriate and ensures that the LIVE tag is set to 1 where this is not already the case.  It does not corrupt track names where the word ‘Live’ is part of a song title
@@ -113,6 +115,12 @@ At present it does the following:
 
 - identifies all duplicated albums based on records in the alib table. The code assumes every folder contains an album and relies on the md5sum embedded in properly-encoded FLAC files. – It basically creates a concatenated string from the sorted md5sum of all tracks in a folder and compares that against the same for all other folders. If the strings match you have a 100% match of the audio stream and thus a duplicate album, irrespective of what tags / metadata might tell you. You can confidently remove all but one of the matched folders.
 - If any FLAC files are missing the md5sum or the md5sum is zero then a table is created listing all folders containing FLAC files that should be reprocessed by the official FLAC encoder using ```flac -f -8 --verify *.flac```.  Be careful not to delete duplicates where the concatenated md5sum is a bunch of zeroes or otherwise empty - re-encode these files and re-run tagminder.
+
+#### Renaming of music files and directories based on tag metadata and file attributes
+
+- renames audio files as follows: if compilation is set to 1: file renaming: 'discnumber-track - artist - title.ext' folder renaming: 'VA - album [release] [bit depthsample rate]'.  if compilation is set to 0: file renaming: 'discnumber-track - title.ext' folder renaming: 'albumartist - album [release] [bit depthsample rate]'
+
+
 
 ## TODO: 
 Refer issues list, filter on enhancements.
