@@ -20,6 +20,52 @@ def firstlettercaps(s):
     return re.sub(r"[A-Za-z]+('[A-Za-z]+)?", lambda mo: mo.group(0)[0].upper() + mo.group(0)[1:].lower(), s)
 
 
+
+def is_roman_numeral(word):
+    ''' determines whether word passed is a roman numeral within the stricter meaning of the term '''
+    return bool(re.match(r'^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$', word))
+
+def capitalise_word(word):
+    ''' loose implementation of RYM's capitalisation standards '''
+
+    if word.lower() in ['a', 'an', 'and', 'at', 'but', 'by', 'cetera ', 'et', 'etc.', 'for', 'in', 'nor', 'of', 'on', 'or', 'the', 'to', 'v.', 'versus', 'vs.', 'yet']:
+        return word.lower()
+    elif word.lower() in ['am', 'are', 'as', 'be', 'been', 'from', 'he', 'if', 'into', 'is', 'it', 'she', 'so', 'upon', 'was', 'we', 'were', 'with']:
+        return word.capitalize()
+    elif word == 'kHz':
+        return word
+    elif is_roman_numeral(word.upper()):
+        return word.upper()
+    else:
+        return word.capitalize()
+
+def capitalise_first_last(sentence):
+    words = sentence.split()
+    if not words:  # empty sentence check
+        return ''
+    words[0] = words[0].capitalize()
+    words[-1] = words[-1].upper() if is_roman_numeral(words[-1]) else words[-1].capitalize()
+    return ' '.join(words)
+
+
+def capitalise_words(sentence):
+    ''' Breaks a sentence down into words and capitalises each according to capitalise_word() '''
+    parts = re.split(r'(:|\?|!|\—|\(|\)|"| )', sentence)
+    for i in range(len(parts)):
+        if parts[i] and not re.match(r'(:|\?|!|\—|\(|\)|"| )', parts[i]):
+            parts[i] = capitalise_word(parts[i])
+    
+    # Join parts while maintaining original spacing
+    capitalised_sentence = ''.join(parts)
+    
+    # Capitalize first and last words
+    if capitalised_sentence:
+        capitalised_sentence = capitalise_first_last(capitalised_sentence)
+    
+    return capitalised_sentence
+
+
+
 def trim_whitespace(string):
     ''' get rid of multiple spaces between characters in strings '''
     return " ".join(string.split())
@@ -4156,6 +4202,26 @@ def unpad_discnumbers():
                                discnumber != CAST (CAST (discnumber AS INTEGER) AS TEXT);''')
 
 
+def set_title_caps():
+
+    dbcursor.execute('''SELECT DISTINCT title
+                          FROM alib
+                         WHERE title IS NOT NULL
+                         ORDER BY title;''')
+    titles = dbcursor.fetchall()
+    if len(titles) > 0:
+        for title in titles:
+
+            stored_title = title[0]
+            capitalised_title = capitalise_words(stored_title)
+
+            if stored_title != capitalised_title:
+
+                dbcursor.execute('''UPDATE alib
+                                       SET title = (?) 
+                                     WHERE title = (?);''', (capitalised_title, stored_title))
+
+
 
 def rename_tunes():
     ''' rename all tunes in alib table leveraging the metadta in alib.  Relies on compilation = 0 to detect VA and OST albums
@@ -4600,6 +4666,9 @@ def update_tags():
 
     # add resolution info to all > 16/44.1 and mixed resolution albums
     tag_album_resolution()
+
+    # set capitalistion for track titles and album names
+    set_title_caps()
 
     # remove leading 0's from track tags
     unpad_tracks()
