@@ -32,6 +32,8 @@ def capitalise_word(word):
         return word.lower()
     elif word.lower() in ['am', 'are', 'as', 'be', 'been', 'from', 'he', 'if', 'into', 'is', 'it', 'she', 'so', 'upon', 'was', 'we', 'were', 'with']:
         return word.capitalize()
+    elif word.lower() == 'bbc':
+        return 'BBC'
     elif word.lower() == 'khz':
         return 'kHz'
     elif word.lower() == 'lp':
@@ -2886,17 +2888,20 @@ def kill_singular_discnumber():
                                                        SELECT DISTINCT __dirpath,
                                                                        discnumber
                                                          FROM alib
-                                                        WHERE discnumber IS NOT NULL AND 
-                                                              (__dirpath NOT LIKE '%cd%' AND 
+                                                        WHERE --discnumber IS NOT NULL AND 
+                                                              (__dirname NOT LIKE '%cd%' AND 
+                                                               __dirname NOT LIKE 'CD_' AND 
+                                                               __dirname NOT LIKE 'CD %' AND                                                                
+                                                               __dirname NOT LIKE 'D_' AND 
+                                                               __dirname NOT LIKE 'DISC_' AND 
+                                                               __dirname NOT LIKE 'DISC _' AND 
                                                                __dirpath NOT LIKE '%/Michael Jackson - HIStory Past, Present and Future, Book I%' AND 
                                                                __dirpath NOT LIKE '%Depeche Mode - Singles Box%' AND 
-                                                               __dirpath NOT LIKE '%Disc 1%' AND 
+                                                               __dirpath NOT LIKE '%Disc%' AND 
                                                                __dirpath NOT LIKE '%/Lambchop – Tour Box/%' AND 
                                                                __dirpath NOT LIKE '%/Pearl Jam Evolution - Gold Box Set/%' AND 
                                                                __dirpath NOT LIKE '%4CD Box/%' AND 
                                                                __dirpath NOT LIKE '%Boxset/CD%' AND 
-                                                               __dirpath NOT LIKE '%/CD%' AND 
-                                                               __dirpath NOT LIKE '%/CD1%' AND 
                                                                __dirpath NOT LIKE '%Live/d%' AND 
                                                                __dirpath NOT LIKE '%Unearthed/Unearthed%' AND 
                                                                __dirpath NOT LIKE '%/Robin Trower - Original Album Series, Vol. 2/%' AND 
@@ -4389,7 +4394,7 @@ def rename_dirs():
                                         __bitspersample,
                                         __frequency_num,
                                         __frequency
-                          FROM alib
+                          FROM alib WHERE __dirname NOT LIKE 'cd%' AND __dirname NOT LIKE 'disc%' /* don't rename directories where there's a discnumber involved*/
                          ORDER BY counter DESC,
                                   __dirpath;''')
 
@@ -4418,23 +4423,44 @@ def rename_dirs():
         print(f'release_dirpath.rstrip(release_dirname)..: {release_dirpath.rstrip(release_dirname)}')
 
         target_dirname = None # __dirname
-        
-        # derive new dirname
-        if release_compilation == '1':
+
+        # Gather data required to check whether all tracks have the same artist value
+        dbcursor.execute('''SELECT DISTINCT artist FROM alib WHERE __dirpath = (?);''', (release_dirpath,))
+
+        artists = dbcursor.fetchall()
+        artist_count = len(artists)
+        # set boolean value to drive processing workflow
+        single_artist = artist_count == 1
+
+
+        # derive new dirname, deferring to albumartist over compilation flag
+        if release_albumartist is None and not single_artist:
 
             target_dirname = 'VA'  # name for compilations
+            compilation_status = '1'
 
-        else:
+        else:  # if it's not a compilation it must be an album
 
+            compilation_status = '0'
             # get albumartist, but don't count on there being one
             if release_albumartist is not None:
 
                 target_dirname = release_albumartist
 
-            else:
+            elif single_artist: # check if all tracks have the same artist value - if they do, use that rather than VA
 
-                print(f'No albumartist associated with album: {release_dirpath}')
-                target_dirname = 'zMISSING ALBUMARTIST'
+                # collect artist name from single entry tuple
+                target_dirname = artists[0][0]
+
+            else: #theoretically we'll never get here
+
+                print(f'No albumartist associated with album: {release_dirpath} which has not been flagged as compilation. Assigning "ZZZ_MISSING ALBUMARTIST" as albumartist')
+                target_dirname = 'ZZZ_MISSING ALBUMARTIST'
+
+        # check whether compilation status is correctly set based on the determintion of compilation status derived above and if not correct it.
+        if release_compilation != compilation_status:
+
+            dbcursor.execute('''UPDATE alib SET compilation = (?) WHERE __dirpath = (?);''', (compilation_status, release_dirpath))
 
         if release_album is not None:
 
@@ -4587,104 +4613,105 @@ def update_tags():
 
     ''' here you add whatever update and enrichment queries you want to run against the table '''
 
-    # # transfer any unsynced lyrics to LYRICS tag
-    # unsyncedlyrics_to_lyrics()
+    # transfer any unsynced lyrics to LYRICS tag
+    unsyncedlyrics_to_lyrics()
 
-    # # merge [recording location] with RECORDINGLOCATION
-    # merge_recording_locations()
+    # merge [recording location] with RECORDINGLOCATION
+    merge_recording_locations()
 
-    # # merge release tag to VERSION tag
-    # release_to_version()
+    # merge release tag to VERSION tag
+    release_to_version()
 
-    # # get rid of tags we don't want to store
-    # kill_badtags()
+    # get rid of tags we don't want to store
+    kill_badtags()
 
-    # # remove CR & LF from text tags (excluding lyrics & review tags)
-    # trim_and_remove_crlf()
+    # remove CR & LF from text tags (excluding lyrics & review tags)
+    trim_and_remove_crlf()
 
-    # # get rid of on-standard apostrophes
-    # set_apostrophe()
+    # get rid of on-standard apostrophes
+    set_apostrophe()
 
-    # # strip Feat in its various forms from track title and append to ARTIST tag
-    # title_feat_to_artist()
+    # strip Feat in its various forms from track title and append to ARTIST tag
+    title_feat_to_artist()
 
-    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    # feat_artist_to_artist()
+    # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    feat_artist_to_artist()
 
-    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    # # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
-    # # set all empty tags ('') to NULL
-    # nullify_empty_tags()
+    # set all empty tags ('') to NULL
+    nullify_empty_tags()
 
-    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    # nullify_performers_matching_artists()
+    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    nullify_performers_matching_artists()
 
-    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    # strip_live_from_titles()
+    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    strip_live_from_titles()
 
-    # # moves known keywords in brackets to subtitle
-    # title_keywords_to_subtitle()
+    # moves known keywords in brackets to subtitle
+    title_keywords_to_subtitle()
 
-    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    # square_brackets_to_subtitle()
+    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    square_brackets_to_subtitle()
 
-    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    # strip_live_from_album_name()
+    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    strip_live_from_album_name()
 
-    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    # live_in_subtitle_means_live()
+    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    live_in_subtitle_means_live()
 
-    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    # live_means_live_in_subtitle()
+    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    live_means_live_in_subtitle()
 
-    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    # kill_singular_discnumber()
+    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    kill_singular_discnumber()
 
-    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    # merge_album_version()
+    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    merge_album_version()
 
-    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    # set_compilation_flag()
+    # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    set_compilation_flag()
 
-    # # set albumartist to NULL for all compilation albums where they are not NULL
-    # nullify_albumartist_in_va()
+    # set albumartist to NULL for all compilation albums where they are not NULL
+    nullify_albumartist_in_va()
 
-    # # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    # capitalise_releasetype()
+    # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    capitalise_releasetype()
 
-    # # determines releasetype for each album if not already populated
-    # add_releasetype()
+    # determines releasetype for each album if not already populated
+    add_releasetype()
 
-    # # add a uuid4 tag to every record that does not have one
-    # add_tagminder_uuid()
+    # add a uuid4 tag to every record that does not have one
+    add_tagminder_uuid()
 
-    # # # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    # dedupe_fields()
+    # # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    dedupe_fields()
 
-    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    # find_duplicate_flac_albums()
+    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    find_duplicate_flac_albums()
 
-    # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
-    # cleanse_genres_and_styles()
+    # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    cleanse_genres_and_styles()
 
-    # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
-    # add_genres_and_styles()
+    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
+    add_genres_and_styles()
 
-    # # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
-    # # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
-    # # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
-    # # generate_string_grouper_input()
+    # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
+    # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
+    # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
+    # generate_string_grouper_input()
 
-    # # # if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    # # #add_mbrainz_mbid()
+    # # if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    # #add_mbrainz_mbid()
 
 
-    # # # standardise genres, styles, moods, themes: merges tag entries for __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
-    # standardise_album_tags('genre')
-    # standardise_album_tags('style')
-    # standardise_album_tags('mood')
-    # standardise_album_tags('theme')
+    # # standardise genres, styles, moods, themes: merges tag entries for __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
+    standardise_album_tags('album')
+    standardise_album_tags('genre')
+    standardise_album_tags('style')
+    standardise_album_tags('mood')
+    standardise_album_tags('theme')
 
     # # add mbid's for multi-entry artists
     add_multiartist_mbrainz_mbid()
