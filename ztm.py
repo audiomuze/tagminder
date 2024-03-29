@@ -138,16 +138,32 @@ def eliminate_duplicates_ordered_dict(input_string):
     return ' '.join(unique_words)    
 
 
-def remove_duplicate_substring(string, substring):
-    term_length = len(substring)
-    tmp_string = string
-    start_index = tmp_string.find(substring)
-    
-    while start_index != -1:
-        tmp_string = tmp_string[:start_index] + tmp_string[start_index + term_length:]
-        start_index = tmp_string.find(substring)
+def delete_repeated_phrase(sentence, phrase):
+    # Split the sentence into a list of words
+    words = sentence.split()
 
-    return tmp_string + substring
+    # Convert the phrase to a list of words
+    phrase_words = phrase.split()
+
+    # Initialize an empty list to store the result
+    result = []
+
+    # Iterate through the words in the sentence
+    i = 0
+    while i < len(words):
+        # Check if the current word matches the first word of the phrase
+        if words[i:i + len(phrase_words)] == phrase_words:
+            # Skip over the phrase
+            i += len(phrase_words)
+        else:
+            # Add the current word to the result
+            result.append(words[i])
+            i += 1
+
+    # Join the words in the result list back into a string
+    new_sentence = ' '.join(result)
+
+    return new_sentence
 
 
 
@@ -2873,7 +2889,8 @@ def dedupe_fields():
 
 def kill_singular_discnumber():
     ''' get rid of discnumber when all tracks in __dirpath have discnumber = 1.  I'm doing this the lazy way because I've not spent enough time figuring out the CTE update query in SQL.  This is a temporary workaround to be replaced with a CTE update query '''
-    opening_tally = tally_mods()    
+    opening_tally = tally_mods()
+    dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
     # dbcursor.execute('''WITH GET_SINGLE_DISCS AS ( SELECT __dirpath AS cte_value FROM ( SELECT DISTINCT __dirpath, discnumber FROM alib WHERE discnumber IS NOT NULL AND lower(__dirname) NOT LIKE '%cd%' AND lower(__dirname) NOT LIKE '%cd%') GROUP BY __dirpath HAVING count( * ) = 1 ORDER BY __dirpath ) SELECT cte_value FROM GET_SINGLE_DISCS;''')
 
     dbcursor.execute('''CREATE INDEX IF NOT EXISTS dirpaths_discnumbers ON alib (
@@ -4393,8 +4410,9 @@ def rename_dirs():
                                         compilation,
                                         __bitspersample,
                                         __frequency_num,
-                                        __frequency
-                          FROM alib WHERE __dirname NOT LIKE 'cd%' AND __dirname NOT LIKE 'disc%' /* don't rename directories where there's a discnumber involved*/
+                                        __frequency,
+                                        discnumber
+                          FROM alib  --WHERE __dirname NOT LIKE 'cd%' AND __dirname NOT LIKE 'disc%' /* don't rename directories where there's a discnumber involved*/
                          ORDER BY counter DESC,
                                   __dirpath;''')
 
@@ -4415,6 +4433,7 @@ def rename_dirs():
         release_bitspersample = release[7]
         release_frequency_num = release[8]
         release_frequency = release[9]
+        release_discnumber = release[10]
 
         #start buildiing new dirpath by stripping __dirname from __dirpath
 
@@ -4439,7 +4458,7 @@ def rename_dirs():
             target_dirname = 'VA'  # name for compilations
             compilation_status = '1'
 
-        else:  # if it's not a compilation it must be an album
+        else:  # if it's not a compilation it must be an albumartist album
 
             compilation_status = '0'
             # get albumartist, but don't count on there being one
@@ -4452,7 +4471,7 @@ def rename_dirs():
                 # collect artist name from single entry tuple
                 target_dirname = artists[0][0]
 
-            else: #theoretically we'll never get here
+            else: # theoretically we'll never get here, unless there is no artist or albumartist assigned to the tracks
 
                 print(f'No albumartist associated with album: {release_dirpath} which has not been flagged as compilation. Assigning "ZZZ_MISSING ALBUMARTIST" as albumartist')
                 target_dirname = 'ZZZ_MISSING ALBUMARTIST'
@@ -4460,13 +4479,12 @@ def rename_dirs():
         # check whether compilation status is correctly set based on the determintion of compilation status derived above and if not correct it.
         if release_compilation != compilation_status:
 
+            print('Correcting Compilation tag for {release_dirpath} by setting it to {compilation_status} based on album metadata')
             dbcursor.execute('''UPDATE alib SET compilation = (?) WHERE __dirpath = (?);''', (compilation_status, release_dirpath))
 
         if release_album is not None:
 
             target_dirname = target_dirname + ' - ' + release_album
-
-
 
         # check if there's VERSION metadata and append it if it's not already in the target dirname
         if release_version:
@@ -4477,12 +4495,12 @@ def rename_dirs():
 
             else: # ensure release_version isn't in target path more than once e.g. due to tagger logic or workflow limitations.
 
-                target_dirname = remove_duplicate_substring(target_dirname, release_version)
+                target_dirname = delete_repeated_phrase(target_dirname, release_version)
 
 
         # test for [Mixed Res] albums - if tagminder finds mixed resolution files in a single folder it appends [Mixed Res] to album names so we won't want to add other resolution info
 
-        if '[Mixed Res]' not in release_album:  # if not [Mixed Res] test for > redbook
+        if '[mixed res]' not in release_album.lower():  # if not [Mixed Res] test for > redbook
 
             if int(release_bitspersample) > 16 or float(release_frequency_num) > 44.1:
                 # if > redbook append bitrate and sampling frequency to folder name when not already present
@@ -4494,13 +4512,36 @@ def rename_dirs():
 
                 else: # ensure release_resolution isn't in target path more than once e.g. due to tagger logic or workflow limitations.
 
-                    target_dirname = remove_duplicate_substring(target_dirname, release_resolution)
+                    target_dirname = delete_repeated_phrase(target_dirname, release_resolution)
 
 
                 # print(f'target_dirname........: {target_dirname}')
                 # print(f'deduped target_dirname: {target_dirname}')
 
+        target_dirname = delete_repeated_phrase(target_dirname, '[mixed Res]')
 
+        # this is a lazy override, but a simple means of reverting to CDx if necessary whilst ensuring the compilation determination runs regardless
+        if 'cd' in release_dirname.lower()[:2]:
+
+            if release_discnumber:
+
+                # if there's a discnumber present, leverage it
+                target_dirname = 'cd' + release_discnumber
+
+            else:
+                # otherwise use whatever came after cd
+                target_dirname = 'cd' + release_dirname.lower()[2:]
+
+        elif 'disc' in release_dirname.lower()[:4]:
+
+            if release_discnumber:
+                # if there's a discnumber present, leverage it
+                target_dirname = 'cd' + release_discnumber
+
+            else:
+                # otherwise use whatever came after disc
+                target_dirname = 'cd' + release_dirname.lower()[4:]
+            
         
         target_dirname = trim_whitespace(sanitize_filename(target_dirname)) # strip illegal chars from target_dirname using same logic as applies to filenames because __dirname cannot ontains '/'
         target_dirpath = sanitize_dirname(release_dirpath.rstrip(release_dirname) + target_dirname) # Now derive target_dirpath, which comprises the old __dirpath stripped of the old __dirname and replaced by target_dirname
