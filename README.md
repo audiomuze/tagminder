@@ -6,6 +6,8 @@ It enables you to affect mass updates / changes using SQL and ultimately write t
 
 Tags are read/written using the Mutagen library as used in puddletag. Requires Python 3.x.
 
+Furthermore, it's a great tool to use when adding new music to your music collection and wanting to ensure consistency in tag treatment, contributor names, MBIDs, file naming and directory naming.  It's now at a point functionally where I tag using Picard, then run tagminder against the files, export its changes sight unseen and do a final review using Puddletag to pick up the few edge cases that aren't worth otherwise coding to automate.  Something that for me has always been time, consuming, mind-numbing, prone to human error and inconsistency has now been almost entirely automated.
+
 ## General philosophy and rationale
 
 ### Make sense from chaos
