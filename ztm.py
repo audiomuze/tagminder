@@ -51,15 +51,16 @@ def capitalise_word(word):
         return word.upper()
     else:
         # capitalise it taking into account ([ as opening brackets
-        capitalise_bracketed_word(word)
+        return capitalise_bracketed_word(word)
 
 
 def capitalise_first_last(sentence):
+
     words = sentence.split()
     if not words:  # empty sentence check
         return ''
-    words[0] = words[0].capitalize()
-    words[-1] = words[-1].upper() if is_roman_numeral(words[-1]) else words[-1].capitalize()
+    words[0] = capitalise_bracketed_word(words[0]) # here we're deliberately bypassing capitalise_word() in favour of capitalise_bracketed_word() to bypass the exceptions in capitalise_word()
+    words[-1] = words[-1].upper() if is_roman_numeral(words[-1]) else capitalise_bracketed_word(words[-1])
     return ' '.join(words)
 
 
@@ -3780,7 +3781,7 @@ def tag_mixed_res_albums():
                         )
                         UPDATE alib
                            SET album = trim(album) || ' [Mixed Res]'
-                         WHERE __dirpath IN cte and album NOT LIKE '% [Mixed Res]';''')
+                         WHERE __dirpath IN cte and album NOT LIKE '%[Mixed Res]';''')
 
 
 def tag_album_resolution():
@@ -4529,7 +4530,8 @@ def rename_dirs():
                 # print(f'target_dirname........: {target_dirname}')
                 # print(f'deduped target_dirname: {target_dirname}')
 
-        target_dirname = delete_repeated_phrase(target_dirname, '[mixed Res]')
+        target_dirname = delete_repeated_phrase(target_dirname, '[mixed Res]') # fix a for when Caps didn't work if word was bracketed.  Can be removed.
+        target_dirname = delete_repeated_phrase(target_dirname, '[Mixed Res]')
 
         # this is a lazy override, but a simple means of reverting to CDx if necessary whilst ensuring the compilation determination runs regardless
         if 'cd' in release_dirname.lower()[:2]:
