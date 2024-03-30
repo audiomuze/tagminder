@@ -1,4 +1,6 @@
 # Introduction
+Tagging music has (for me) always been a time consuming, mind-numbing, prone to human error and inconsistency, and laborious task.  Tagminder has reduced it to something that is now almost entirely automated.
+
 
 tagminder is comprised of two Python scripts.  One imports audio metadata from underlying audio files into a dynamically created SQLite database and can export metadata back to the underlying files.  The other processes the imported metadata in the SQLite database in order to correct anomalies and enrich the metadata where possible.
 
@@ -8,7 +10,6 @@ Tags are read/written using the Mutagen library as used in puddletag. Requires P
 
 Furthermore, it's a great tool to use when adding new music to your music collection and wanting to ensure consistency in tag treatment, contributor names, MBIDs, file naming and directory naming.  It's now at a point functionally where I tag using Picard, then run tagminder against the files, export its changes sight unseen and do a final review using Puddletag to pick up the few edge cases that aren't worth otherwise coding to automate.
 
-Tagging nusic has (for me) always been a time consuming, mind-numbing, prone to human error and inconsistency, and laborious task.  Tagminder has reduced it to something that is now almost entirely automated.
 
 ## General philosophy and rationale
 
