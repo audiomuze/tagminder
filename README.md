@@ -99,7 +99,7 @@ At present it does the following:
 
 - removes zero padding from discnumber and track tags
 
-- Implements [RYM Capitalisation](https://rateyourmusic.com/wiki/RYM:Capitalization) rules for English language insofar as is possible without resording to leveraging a LLM to understand word context.
+- Implements [RYM Capitalisation](https://rateyourmusic.com/wiki/RYM:Capitalization) rules for English language insofar as is possible without resorting to leveraging a LLM to understand word context.
 
 #### Handling of ‘Live’ in album names and track titles
 
