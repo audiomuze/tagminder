@@ -19,7 +19,14 @@ def firstlettercaps(s):
     ''' returns first letter caps for each word but respects apostrophes '''
     return re.sub(r"[A-Za-z]+('[A-Za-z]+)?", lambda mo: mo.group(0)[0].upper() + mo.group(0)[1:].lower(), s)
 
-
+def capitalise_bracketed_word(word):
+    ''' check first character of word and capitalise if alpha, otherwise test for brackets [( otherwise just return word unaltered '''
+    if word[0:1].isalpha():
+        return word.capitalize()
+    elif word[0:1] == '[' or word[0:1] == '(':
+        return word[0:1] + word[1:].capitalize()
+    else:
+        return word
 
 def is_roman_numeral(word):
     ''' determines whether word passed is a roman numeral within the stricter meaning of the term '''
@@ -38,10 +45,14 @@ def capitalise_word(word):
         return 'kHz'
     elif word.lower() == 'lp':
         return 'LP'
+    elif word.lower() == 'usa':
+        return 'USA'
     elif is_roman_numeral(word.upper()):
         return word.upper()
     else:
-        return word.capitalize()
+        # capitalise it taking into account ([ as opening brackets
+        capitalise_bracketed_word(word)
+
 
 def capitalise_first_last(sentence):
     words = sentence.split()
