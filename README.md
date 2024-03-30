@@ -91,13 +91,15 @@ At present it does the following:
 
 - removes 'Various Artists' from ALBUMARTIST
 
-- writes out multiple TAGNAME=value entries rather than TAGNAME=value1\\value2 delimited tag entries, and in doing so respects the underlying file type's tagging 'specification' (I use the term loosely).
+- writes out multiple TAGNAME=value entries rather than TAGNAME=value1\\value2 delimited tag entries, and in doing so respects the underlying file type's tagging 'specification' (if one considers the bull that's been conjured over the years standards).
 
 - normalises RELEASETYPE entries for using `First Letter Caps` for better presentation in music server front-ends that leverage RELEASETYPE (Support for RELEASETYPE this was recently added to Logitechmediaserver massively improving its ability to list an artist's work in a meanigful manner)
 
 - adds MusicBrainz identifiers to artists and albumartists leveraging what already exists in your file tags or where a master table of MBID's exists it leverages that. Where a performer name is associated with > 1 MBID in your tags these performers are ignored so as not to conflate performers.  Check tables namesakes_* for contributors requiring manual disambiguation
 
 - removes zero padding from discnumber and track tags
+
+- Implements [RYM Capitalistion](https://rateyourmusic.com/wiki/RYM:Capitalization) rules for English language insofar as is possible without resording to leveraging a LLM to understand word context.
 
 #### Handling of ‘Live’ in album names and track titles
 
