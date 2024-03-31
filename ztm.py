@@ -2842,7 +2842,7 @@ def tags_to_dedupe():
 
 
 
-def dedupe_fields():
+def dedupe_tags():
     ''' remove duplicate tag entries in text fields present in alib that may contain duplicate entries
     genre and style tags re excluded as they're deduped when validated.
     This function should ideally be called after anything dealing with track titles, subtitles etc.'''
@@ -3763,9 +3763,9 @@ def standardise_album_tags(tag):
 
 
 def tag_mixed_res_albums():
-    ''' Add [Mixed Res] to end of all album names where file bit depth and/or sample rates differ - ensuring we don't add the string if it's already present '''
+    ''' Add [Mixed Res] to end of version tag where file bit depth and/or sample rates differ - ensuring we don't add the string if it's already present '''
 
-    print(f"\nIdentifying all albums where bit depth and/or sample rates differs between files and appending ' [Mixed Res]'' to end of all album name if not already present")
+    print(f"\nIdentifying all albums where bit depth and/or sample rates differs between files and appending ' [Mixed Res]'' to end of all version tags if not already present")
 
     dbcursor.execute('''WITH cte AS (
                             SELECT __dirpath
@@ -3780,42 +3780,44 @@ def tag_mixed_res_albums():
                              ORDER BY __dirpath
                         )
                         UPDATE alib
-                           SET album = trim(album) || ' [Mixed Res]'
-                         WHERE __dirpath IN cte and album NOT LIKE '%[Mixed Res]';''')
+                           SET version = IIF(version IS NULL, '', trim(version)) || ' [Mixed Res]'
+                         WHERE __dirpath IN cte AND (
+                            version IS NULL OR version NOT LIKE '%[Mixed Res]%');''')
 
 
 def tag_album_resolution():
-    ''' Add album res to end of all album names where file bit depth and/or sample rates > 16/44.1 respectively - ensuring we don't add the string if it's already present or is a [Mixed Res] album '''
+    ''' Add album res to end of all version tags where file bit depth and/or sample rates > 16/44.1 respectively - ensuring we don't add the string if it's already present or is a [Mixed Res] album '''
 
     ''' first deal with mixed resolution albums '''
     tag_mixed_res_albums()
 
 
     ''' Now deal with any > redbook '''
-    print(f"\nAdding bit_depth and sampling rate to end of all album names where file bit depth and/or sample rates > 16/44.1 respectively whilst ensuring we don't add the string if it's already present or the album is a [Mixed Res] album")
+    print(f"\nAdding bit_depth and sampling rate to end of all version tags where file bit depth and/or sample rates > 16/44.1 respectively whilst ensuring we don't add the string if it's already present or the album is a [Mixed Res] album")
 
+    # update version tag with album resolution metadata if it's not already present in the version tag
+    # SQLite3 instr() returns NULL if a field value is NULL so leverage '' as a value
+    # Seens contrived...could probably be rewritten as AND version is NULL OR instr(lower(version), 'value')
     dbcursor.execute('''WITH cte AS (
-                            SELECT album
+                            SELECT version
                               FROM (
                                        SELECT DISTINCT album,
+                                                       version,
                                                        __bitspersample,
                                                        __frequency_num
                                          FROM alib
                                    )
                              WHERE (__bitspersample > '16' OR 
                                     __frequency_num > '44.1') AND 
-                                   (instr(lower(album), 'khz]') = 0 AND 
-                                    instr(lower(album), '[mixed res]') = 0) 
+                                   (instr(lower(version), 'khz]') = 0 AND 
+                                    instr(lower(version), '[mixed res]') = 0) 
                         )
                         UPDATE alib
-                           SET album = trim(album) || ' [' || __bitspersample || __frequency || ']'
+                           SET version = iif(version IS NULL, '', trim(version) ) || ' [' || __bitspersample || __frequency || ']'
                          WHERE (__bitspersample > '16' OR 
                                 __frequency_num > '44.1') AND 
-                               (instr(lower(album), 'khz]') = 0 AND 
-                                instr(lower(album), '[mixed res]') = 0);''')
-
-
-
+                               instr(iif(version IS NULL, '', lower(version) ), 'khz]') = 0 AND 
+                               instr(iif(version IS NULL, '', lower(version) ), '[mixed res]') = 0;''')
 
 def find_duplicate_flac_albums():
     ''' this is based on records in the alib table as opposed to file based metadata imported using md5sum.  The code relies on the md5sum embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
@@ -4630,7 +4632,7 @@ def show_stats_and_log_changes():
         dbcursor.execute("CREATE INDEX IF NOT EXISTS filepaths ON alib(__path)")
 
         #############################################temporarily blocked code###############################
-        export_db = '/tmp/export.db'
+        export_db = '/tmp/amg/export.db'
         # print(f"\nGenerating changed_tags table: {export_db}")
         dbcursor.execute(f"ATTACH DATABASE '{export_db}' AS alib2")
         dbcursor.execute("DROP TABLE IF EXISTS  alib2.alib")
@@ -4721,9 +4723,6 @@ def update_tags():
     # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
     kill_singular_discnumber()
 
-    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    merge_album_version()
-
     # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
     set_compilation_flag()
 
@@ -4739,8 +4738,8 @@ def update_tags():
     # add a uuid4 tag to every record that does not have one
     add_tagminder_uuid()
 
-    # # Sorts delimited text strings in fields, dedupes them and compares the result against the original field contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    dedupe_fields()
+    # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    dedupe_tags()
 
     # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
     find_duplicate_flac_albums()
@@ -4756,10 +4755,6 @@ def update_tags():
     # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
     # generate_string_grouper_input()
 
-    # # if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    # #add_mbrainz_mbid()
-
-
     # # standardise genres, styles, moods, themes: merges tag entries for __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
     standardise_album_tags('album')
     standardise_album_tags('genre')
@@ -4767,11 +4762,17 @@ def update_tags():
     standardise_album_tags('mood')
     standardise_album_tags('theme')
 
+    # # if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    # #add_mbrainz_mbid()
+
     # # add mbid's for multi-entry artists
     add_multiartist_mbrainz_mbid()
 
     # add resolution info to all > 16/44.1 and mixed resolution albums
     tag_album_resolution()
+
+    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    merge_album_version()
 
     # set capitalistion for track titles
     set_title_caps()
