@@ -150,33 +150,66 @@ def eliminate_duplicates_ordered_dict(input_string):
     return ' '.join(unique_words)    
 
 
-def delete_repeated_phrase(sentence, phrase):
-    # Split the sentence into a list of words
-    words = sentence.split()
+# def delete_repeated_phrase(sentence, phrase):
 
-    # Convert the phrase to a list of words
-    phrase_words = phrase.split()
+#     # first count the number of instances of a phrase in the sentence, if no occurences, return the original sentence
+#     if sentence.count(phrase) == 0:
+#         return sentence
 
-    # Initialize an empty list to store the result
-    result = []
+#     # get phrase length
+#     phrase_len = len(phrase)
+        
+#     # reverse the string because we want to remove the phrase from end of sentence to start of sentence
+#     reversed_sentence = "".join(reversed(sentence))
+#     reversed_phrase = "".join(reversed(phrase))
+    
+#     # while there remains more than 1 instance of phrase in sentence
+#     while reversed_sentence.count(reversed_phrase) > 1:
+        
+#         # slice string to remove the first occurence of the phrase
+#         index = reversed_sentence.find(reversed_phrase)
 
-    # Iterate through the words in the sentence
-    i = 0
-    while i < len(words):
-        # Check if the current word matches the first word of the phrase
-        if words[i:i + len(phrase_words)] == phrase_words:
-            # Skip over the phrase
-            i += len(phrase_words)
-        else:
-            # Add the current word to the result
-            result.append(words[i])
-            i += 1
+#         reversed_sentence = reversed_sentence[0:index] + reversed_sentence[index + 1 + phrase_len:]
 
-    # Join the words in the result list back into a string
-    new_sentence = ' '.join(result)
 
+#     new_sentence = "".join(reversed(reversed_sentence))
+#     return new_sentence
+
+def delete_repeated_phrase(sentence, phrase, lastonly = False):
+    ''' deletes all but the first instance of phrase from sentence, unless lastonly == True.  Pass True if you only want to remove the last instance of a phrase from sentence '''
+
+    # first count the number of instances of a phrase in the sentence, if no occurences, return the original sentence
+    if sentence.count(phrase) == 0:
+        return sentence
+
+    # get phrase length
+    phrase_len = len(phrase)
+        
+    # reverse the string because we want to remove the phrase from end of sentence to start of sentence
+    reversed_sentence = sentence[::-1]
+    reversed_phrase = phrase[::-1]
+
+    if lastonly:
+        # slice string to remove the first occurence of the phrase
+        index = reversed_sentence.find(reversed_phrase)
+        
+        reversed_sentence = reversed_sentence[0:index] + reversed_sentence[index + 1 + phrase_len:]
+        new_sentence = reversed_sentence[::-1]
+        return new_sentence
+        
+    else:
+
+        # while there remains more than 1 instance of phrase in sentence
+        while reversed_sentence.count(reversed_phrase) > 1:
+            
+            # slice string to remove the first occurence of the phrase
+            index = reversed_sentence.find(reversed_phrase)
+
+            reversed_sentence = reversed_sentence[0:index] + reversed_sentence[index + 1 + phrase_len:]
+
+
+    new_sentence = reversed_sentence[::-1]
     return new_sentence
-
 
 
 def get_spurious_items(source, target):
@@ -3809,15 +3842,15 @@ def tag_album_resolution():
                                    )
                              WHERE (__bitspersample > '16' OR 
                                     __frequency_num > '44.1') AND 
-                                   (instr(lower(version), 'khz]') = 0 AND 
-                                    instr(lower(version), '[mixed res]') = 0) 
+                                   (instr(iif(version IS NULL, '', lower(version) ), 'khz]') = 0 AND 
+                                    instr(iif(version IS NULL, '', lower(version) ), '[mixed res]') = 0) 
                         )
                         UPDATE alib
                            SET version = iif(version IS NULL, '', trim(version) ) || ' [' || __bitspersample || __frequency || ']'
                          WHERE (__bitspersample > '16' OR 
                                 __frequency_num > '44.1') AND 
-                               instr(iif(version IS NULL, '', lower(version) ), 'khz]') = 0 AND 
-                               instr(iif(version IS NULL, '', lower(version) ), '[mixed res]') = 0;''')
+                               (instr(iif(version IS NULL, '', lower(version) ), 'khz]') = 0 AND 
+                                instr(iif(version IS NULL, '', lower(version) ), '[mixed res]') = 0);''')
 
 def find_duplicate_flac_albums():
     ''' this is based on records in the alib table as opposed to file based metadata imported using md5sum.  The code relies on the md5sum embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
@@ -4373,14 +4406,17 @@ def rename_tunes():
 
                 target_filename = target_filename + '.' + tune_ext
 
-            print(f'target_filename: {target_filename}')
-            target_filename = target_filename.replace(' )', ')')
-            print(f'target_filename: {target_filename}')
+            # print(f'target_filename: {target_filename}')
+            target_filename = target_filename.replace(' )', ')') # remove extraneous spaces between closing bracket if any
+            # print(f'target_filename: {target_filename}')
             new_tune_path = tune_dirpath + r'/' + trim_whitespace(sanitize_filename(target_filename))
 
-            print(f'old: {tune_path}\nnew: {new_tune_path}')
 
-        if tune_filename != target_filename: # only rename if necessary
+
+        if new_tune_path != tune_path: # only rename if necessary
+
+            print(f'Old filename: {tune_path}\nNew filename: {new_tune_path}')
+            input()
 
             # attempt to rename the file
             try:
@@ -4395,8 +4431,8 @@ def rename_tunes():
             except OSError as e:
                 print(f"{e}\n", file=sys.stderr)
 
-        else:
-            print(f"Cannot rename file {tune_path}")
+        # else:
+        #     print(f"No need to rename file {tune_path}")
 
 
 
@@ -4432,11 +4468,11 @@ def rename_dirs():
 
     releases = dbcursor.fetchall()
 
-    print("\nRenaming files based on metadata...")
+    print("\nRenaming directories based on metadata...")
 
     for release in releases:
 
-        # grab metadata related to the track in question, ensure all file related metadata is read in as literals.  We're not interested in counter, so don't bother retrieving it
+        # grab metadata related to the directory in question, ensure all directorty related metadata is read in as literals.  We're not interested in counter, so don't bother retrieving it
 
         release_dirpath = release[1] # __dirpath
         release_dirname = release[2] # __dirname    
@@ -4449,11 +4485,11 @@ def rename_dirs():
         release_frequency = release[9]
         release_discnumber = release[10]
 
-        #start buildiing new dirpath by stripping __dirname from __dirpath
+        #start building new dirpath by stripping __dirname from __dirpath
 
-        print(f'release_dirpath..........................: {release_dirpath}')
-        print(f'release_dirname..........................: {release_dirname}')
-        print(f'release_dirpath.rstrip(release_dirname)..: {release_dirpath.rstrip(release_dirname)}')
+        # print(f'release_dirpath..........................: {release_dirpath}')
+        # print(f'release_dirname..........................: {release_dirname}')
+        # print(f'release_dirpath.rstrip(release_dirname)..: {release_dirpath.rstrip(release_dirname)}')
 
         target_dirname = None # __dirname
 
@@ -4467,7 +4503,7 @@ def rename_dirs():
 
 
         # derive new dirname, deferring to albumartist over compilation flag
-        if release_albumartist is None and not single_artist:
+        if release_albumartist is None and not single_artist:  # then this release is definitely a compilation
 
             target_dirname = 'VA'  # name for compilations
             compilation_status = '1'
@@ -4480,7 +4516,7 @@ def rename_dirs():
 
                 target_dirname = release_albumartist
 
-            elif single_artist: # check if all tracks have the same artist value - if they do, use that rather than VA
+            elif single_artist: # check if all tracks have the same artist value - if they do, use that rather than VA in the event there's no albumartist tag present
 
                 # collect artist name from single entry tuple
                 target_dirname = artists[0][0]
@@ -4500,16 +4536,17 @@ def rename_dirs():
 
             target_dirname = target_dirname + ' - ' + release_album
 
-        # check if there's VERSION metadata and append it if it's not already in the target dirname
+        # check if there's VERSION metadata and append it, if and only if it's not already in the target dirname
         if release_version:
 
             if release_version.lower() not in target_dirname.lower():
 
                 target_dirname = target_dirname + release_version
-
-            else: # ensure release_version isn't in target path more than once e.g. due to tagger logic or workflow limitations.
-
                 target_dirname = delete_repeated_phrase(target_dirname, release_version)
+
+        # ensure release_version isn't in target path more than once e.g. due to tagger logic or workflow limitations.
+
+        # target_dirname = delete_repeated_phrase(target_dirname, release_version)
 
 
         # test for [Mixed Res] albums - if tagminder finds mixed resolution files in a single folder it appends [Mixed Res] to album names so we won't want to add other resolution info
@@ -4523,16 +4560,16 @@ def rename_dirs():
                 if release_resolution.lower() not in target_dirname.lower():
 
                     target_dirname = target_dirname + ' ' + release_resolution
-
-                else: # ensure release_resolution isn't in target path more than once e.g. due to tagger logic or workflow limitations.
-
                     target_dirname = delete_repeated_phrase(target_dirname, release_resolution)
+
+        # ensure release_resolution isn't in target path more than once e.g. due to tagger logic or workflow limitations.
+
+        # target_dirname = delete_repeated_phrase(target_dirname, release_resolution)
 
 
                 # print(f'target_dirname........: {target_dirname}')
                 # print(f'deduped target_dirname: {target_dirname}')
 
-        target_dirname = delete_repeated_phrase(target_dirname, '[mixed Res]') # fix a for when Caps didn't work if word was bracketed.  Can be removed.
         target_dirname = delete_repeated_phrase(target_dirname, '[Mixed Res]')
 
         # this is a lazy override, but a simple means of reverting to CDx if necessary whilst ensuring the compilation determination runs regardless
@@ -4567,13 +4604,13 @@ def rename_dirs():
         # __dirname # target_dirname
         # __parent_dir # doesn't change
 
-        print(f'target_dirpath...........................: {target_dirpath}\n')        
+        # print(f'target_dirpath...........................: {target_dirpath}\n')        
 
         if release_dirname != target_dirname: # run rename operation only if the derived dirname differs from the current dirname
 
             # attempt to rename the directory
             try:
-                print(f'Renaming: {release_dirpath}\nto......: {target_dirname}')
+                print(f'Renaming directory: {release_dirpath}\nto directory......: {target_dirname}')
                 os.rename(release_dirpath, target_dirpath)
 
                 # if the rename was successful update the alib table to reflect the new __dirname, __dirpath & __path
@@ -4585,6 +4622,8 @@ def rename_dirs():
 
             except OSError as e:
                 print(f"{e}\n", file=sys.stderr)
+        # else:
+        #     print(f'Skipping {release_dirname} - already correctly named.')
 
 
 
