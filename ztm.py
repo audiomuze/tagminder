@@ -150,30 +150,14 @@ def eliminate_duplicates_ordered_dict(input_string):
     return ' '.join(unique_words)    
 
 
-# def delete_repeated_phrase(sentence, phrase):
-
-#     # first count the number of instances of a phrase in the sentence, if no occurences, return the original sentence
-#     if sentence.count(phrase) == 0:
-#         return sentence
-
-#     # get phrase length
-#     phrase_len = len(phrase)
-        
-#     # reverse the string because we want to remove the phrase from end of sentence to start of sentence
-#     reversed_sentence = "".join(reversed(sentence))
-#     reversed_phrase = "".join(reversed(phrase))
-    
-#     # while there remains more than 1 instance of phrase in sentence
-#     while reversed_sentence.count(reversed_phrase) > 1:
-        
-#         # slice string to remove the first occurence of the phrase
-#         index = reversed_sentence.find(reversed_phrase)
-
-#         reversed_sentence = reversed_sentence[0:index] + reversed_sentence[index + 1 + phrase_len:]
+def delete_repeated_phrase2(s, phrase):
+    j = s.find(phrase)
+    if j >= 0:
+        k = j + len(phrase)
+        s = s[:k] + s[k:].replace(phrase, "")
+    return s
 
 
-#     new_sentence = "".join(reversed(reversed_sentence))
-#     return new_sentence
 
 def delete_repeated_phrase(sentence, phrase, lastonly = False):
     ''' deletes all but the first instance of phrase from sentence, unless lastonly == True.  Pass True if you only want to remove the last instance of a phrase from sentence '''
@@ -4379,7 +4363,7 @@ def rename_tunes():
 
                 target_filename = pad_text(str(int(tune_track)))
 
-        if tune_compilation == 1 and tune_artist is not None: # if compilation add track artist
+        if tune_compilation == '1' and tune_artist is not None: # if compilation add track artist
 
             if target_filename is not None:
 
@@ -4406,17 +4390,16 @@ def rename_tunes():
 
                 target_filename = target_filename + '.' + tune_ext
 
-            # print(f'target_filename: {target_filename}')
             target_filename = target_filename.replace(' )', ')') # remove extraneous spaces between closing bracket if any
-            # print(f'target_filename: {target_filename}')
-            new_tune_path = tune_dirpath + r'/' + trim_whitespace(sanitize_filename(target_filename))
+            target_filename = sanitize_filename(target_filename) # strip out any bad characters
+            new_tune_path = tune_dirpath + r'/' + trim_whitespace(target_filename)
 
 
 
-        if new_tune_path != tune_path: # only rename if necessary
+        if target_filename != tune_filename: # only rename if necessary
 
-            print(f'Old filename: {tune_path}\nNew filename: {new_tune_path}')
-            input()
+            print(f'Old filename: {tune_filename}\nNew filename: {target_filename}')
+
 
             # attempt to rename the file
             try:
@@ -4430,9 +4413,6 @@ def rename_tunes():
 
             except OSError as e:
                 print(f"{e}\n", file=sys.stderr)
-
-        # else:
-        #     print(f"No need to rename file {tune_path}")
 
 
 
