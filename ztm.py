@@ -191,9 +191,8 @@ def delete_repeated_phrase(sentence, phrase, lastonly = False):
 
             reversed_sentence = reversed_sentence[0:index] + reversed_sentence[index + 1 + phrase_len:]
 
-
-    new_sentence = reversed_sentence[::-1]
-    return new_sentence
+        new_sentence = reversed_sentence[::-1]
+        return new_sentence
 
 
 def get_spurious_items(source, target):
@@ -1726,7 +1725,6 @@ def vetted_genre_pool():
         "Zouk",
         "Zulu",
         "Zydeco")
-
 
 
 
@@ -3814,27 +3812,29 @@ def tag_album_resolution():
 
     # update version tag with album resolution metadata if it's not already present in the version tag
     # SQLite3 instr() returns NULL if a field value is NULL so leverage '' as a value
-    # Seens contrived...could probably be rewritten as AND version is NULL OR instr(lower(version), 'value')
+    # Seems contrived...could probably be rewritten as AND version is NULL OR instr(lower(version), 'value')
     dbcursor.execute('''WITH cte AS (
-                            SELECT version
+                            SELECT __dirpath
                               FROM (
-                                       SELECT DISTINCT album,
+                                       SELECT DISTINCT __dirpath,
+                                                       album,
                                                        version,
                                                        __bitspersample,
                                                        __frequency_num
                                          FROM alib
                                    )
-                             WHERE (__bitspersample > '16' OR 
-                                    __frequency_num > '44.1') AND 
-                                   (instr(iif(version IS NULL, '', lower(version) ), 'khz]') = 0 AND 
-                                    instr(iif(version IS NULL, '', lower(version) ), '[mixed res]') = 0) 
+
+                            WHERE ( (__bitspersample > '16' OR 
+                                      __frequency_num > '44.1') AND 
+                                     version IS NULL) OR 
+                                   ( (__bitspersample > '16' OR 
+                                      __frequency_num > '44.1') AND 
+                                     instr(lower(version), 'khz]') = 0 AND 
+                                     instr(lower(version), '[mixed res]') = 0)
                         )
                         UPDATE alib
                            SET version = iif(version IS NULL, '', trim(version) ) || ' [' || __bitspersample || __frequency || ']'
-                         WHERE (__bitspersample > '16' OR 
-                                __frequency_num > '44.1') AND 
-                               (instr(iif(version IS NULL, '', lower(version) ), 'khz]') = 0 AND 
-                                instr(iif(version IS NULL, '', lower(version) ), '[mixed res]') = 0);''')
+                         WHERE __dirpath IN cte;''')
 
 def find_duplicate_flac_albums():
     ''' this is based on records in the alib table as opposed to file based metadata imported using md5sum.  The code relies on the md5sum embedded in properly encoded FLAC files - it basically takes them, creates a concatenated string
@@ -4442,7 +4442,7 @@ def rename_dirs():
                                         __frequency_num,
                                         __frequency,
                                         discnumber
-                          FROM alib  --WHERE __dirname NOT LIKE 'cd%' AND __dirname NOT LIKE 'disc%' /* don't rename directories where there's a discnumber involved*/
+                          FROM alib
                          ORDER BY counter DESC,
                                   __dirpath;''')
 
@@ -4452,7 +4452,7 @@ def rename_dirs():
 
     for release in releases:
 
-        # grab metadata related to the directory in question, ensure all directorty related metadata is read in as literals.  We're not interested in counter, so don't bother retrieving it
+        # grab metadata related to the directory in question, ensure all directory related metadata is read in as literals.  We're not interested in counter, so don't bother retrieving it
 
         release_dirpath = release[1] # __dirpath
         release_dirname = release[2] # __dirname    
@@ -4465,25 +4465,19 @@ def rename_dirs():
         release_frequency = release[9]
         release_discnumber = release[10]
 
-        #start building new dirpath by stripping __dirname from __dirpath
-
-        # print(f'release_dirpath..........................: {release_dirpath}')
-        # print(f'release_dirname..........................: {release_dirname}')
-        # print(f'release_dirpath.rstrip(release_dirname)..: {release_dirpath.rstrip(release_dirname)}')
-
+        # build up target dirname
         target_dirname = None # __dirname
 
         # Gather data required to check whether all tracks have the same artist value
         dbcursor.execute('''SELECT DISTINCT artist FROM alib WHERE __dirpath = (?);''', (release_dirpath,))
-
         artists = dbcursor.fetchall()
         artist_count = len(artists)
-        # set boolean value to drive processing workflow
-        single_artist = artist_count == 1
+        # set boolean value to drive processing workflow based on whether there's only a single artist entry
+        single_trackartist = artist_count == 1
 
 
         # derive new dirname, deferring to albumartist over compilation flag
-        if release_albumartist is None and not single_artist:  # then this release is definitely a compilation
+        if release_albumartist is None and not single_trackartist:  # then this release is definitely a compilation
 
             target_dirname = 'VA'  # name for compilations
             compilation_status = '1'
@@ -4496,7 +4490,7 @@ def rename_dirs():
 
                 target_dirname = release_albumartist
 
-            elif single_artist: # check if all tracks have the same artist value - if they do, use that rather than VA in the event there's no albumartist tag present
+            elif single_trackartist: # check if all tracks have the same artist value - if they do, use that rather than VA in the event there's no albumartist tag present
 
                 # collect artist name from single entry tuple
                 target_dirname = artists[0][0]
@@ -4512,6 +4506,7 @@ def rename_dirs():
             print('Correcting Compilation tag for {release_dirpath} by setting it to {compilation_status} based on album metadata')
             dbcursor.execute('''UPDATE alib SET compilation = (?) WHERE __dirpath = (?);''', (compilation_status, release_dirpath))
 
+        # append album name if it's present
         if release_album is not None:
 
             target_dirname = target_dirname + ' - ' + release_album
@@ -4524,33 +4519,22 @@ def rename_dirs():
                 target_dirname = target_dirname + release_version
                 target_dirname = delete_repeated_phrase(target_dirname, release_version)
 
-        # ensure release_version isn't in target path more than once e.g. due to tagger logic or workflow limitations.
+        # determine release_resolution string
+        release_resolution = ' ['  + release_bitspersample + release_frequency + ']'
 
-        # target_dirname = delete_repeated_phrase(target_dirname, release_version)
+        # test for [Mixed Res] albums - if tagminder finds mixed resolution files in a single folder it appends [Mixed Res] to album names so we won't want to add other resolution info on top of that
+        if '[mixed res]' not in release_album.lower():  # i.e. it's not a Mixed Re album
 
+            # if > redbook append bitrate and sampling frequency to folder name when not already present
+            if (int(release_bitspersample) > 16 or float(release_frequency_num) > 44.1) and release_resolution.lower() not in target_dirname.lower(): # i.e. this is not a redbook album and release resolution is not already present in the target_dirname
+                
+                # release_resolution = ' ['  + release_bitspersample + release_frequency + ']'
 
-        # test for [Mixed Res] albums - if tagminder finds mixed resolution files in a single folder it appends [Mixed Res] to album names so we won't want to add other resolution info
-
-        if '[mixed res]' not in release_album.lower():  # if not [Mixed Res] test for > redbook
-
-            if int(release_bitspersample) > 16 or float(release_frequency_num) > 44.1:
-                # if > redbook append bitrate and sampling frequency to folder name when not already present
-                release_resolution = ' ['  + release_bitspersample + release_frequency + ']'
-
-                if release_resolution.lower() not in target_dirname.lower():
-
-                    target_dirname = target_dirname + ' ' + release_resolution
-                    target_dirname = delete_repeated_phrase(target_dirname, release_resolution)
-
-        # ensure release_resolution isn't in target path more than once e.g. due to tagger logic or workflow limitations.
-
-        # target_dirname = delete_repeated_phrase(target_dirname, release_resolution)
-
-
-                # print(f'target_dirname........: {target_dirname}')
-                # print(f'deduped target_dirname: {target_dirname}')
-
-        target_dirname = delete_repeated_phrase(target_dirname, '[Mixed Res]')
+                print('Detected a non-redbook album where its bit depth andsample rate are not indicated in the album title')
+                input()
+                target_dirname = target_dirname + ' ' + release_resolution
+                print(f'{target_dirname} should now incorporate only a single instance of {release_resolution} ... does it?')
+                input()
 
         # this is a lazy override, but a simple means of reverting to CDx if necessary whilst ensuring the compilation determination runs regardless
         if 'cd' in release_dirname.lower()[:2]:
@@ -4574,9 +4558,20 @@ def rename_dirs():
                 # otherwise use whatever came after disc
                 target_dirname = 'cd' + release_dirname.lower()[4:]
             
-        
+        # ensure release_resolution and [mixed res] aren't in target path more than once e.g. due to tagger logic or workflow limitations.
+        print(f'unfiltered buildup: {target_dirname}')
+        input()
+        target_dirname = delete_repeated_phrase(target_dirname, release_version)
+        print(f'eliminated release_version: {target_dirname}')
+        input()
+        target_dirname = delete_repeated_phrase(target_dirname, release_resolution)
+        print(f'eliminated release_resolution: {target_dirname}')
+        input()
+        target_dirname = delete_repeated_phrase(target_dirname, '[Mixed Res]')
+        print(f'{target_dirname}')
+        input()
         target_dirname = trim_whitespace(sanitize_filename(target_dirname)) # strip illegal chars from target_dirname using same logic as applies to filenames because __dirname cannot ontains '/'
-        target_dirpath = sanitize_dirname(release_dirpath.rstrip(release_dirname) + target_dirname) # Now derive target_dirpath, which comprises the old __dirpath stripped of the old __dirname and replaced by target_dirname
+
 
 
         # __path # derive via sql as it's 1:many tracks  = __dirpath + __filename, tus SQL update would read replace(__path, __dirpath, (?)) where __dirpath = (?); (target_dirpath, release_dirpath)
@@ -4584,10 +4579,10 @@ def rename_dirs():
         # __dirname # target_dirname
         # __parent_dir # doesn't change
 
-        # print(f'target_dirpath...........................: {target_dirpath}\n')        
-
         if release_dirname != target_dirname: # run rename operation only if the derived dirname differs from the current dirname
 
+            # derive new target_dirpath
+            target_dirpath = sanitize_dirname(release_dirpath.rstrip(release_dirname) + target_dirname) # Now derive target_dirpath, which comprises the old __dirpath stripped of the old __dirname and replaced by target_dirname
             # attempt to rename the directory
             try:
                 print(f'Renaming directory: {release_dirpath}\nto directory......: {target_dirname}')
@@ -4808,8 +4803,8 @@ def update_tags():
     # rename files leveraging processed metadata in the database
     rename_tunes()
 
-    # rename folders containing albums leveraging processed metadata in the database
-    rename_dirs()
+    # # rename folders containing albums leveraging processed metadata in the database
+    # rename_dirs()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
@@ -4822,6 +4817,31 @@ def update_tags():
     conn.commit()
     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
     return(tally_mods() - start_tally)
+
+
+
+
+# # Define argparse configuration
+# parser = argparse.ArgumentParser(description="Run specific functions for metadata processing.")
+# parser.add_argument('--all', action='store_true', help="Run all functions.")
+# parser.add_argument('--exclude', nargs='+', help="Exclude specified functions from execution.")
+# parser.add_argument('--include', nargs='+', help="Run only specified functions.")
+# args = parser.parse_args()
+
+# # Define which functions to run based on argparse arguments
+# functions_to_run = []
+
+# if args.all:
+#     functions_to_run = [func for func in globals() if callable(globals()[func]) and func.startswith('') and func != 'parser']
+# elif args.exclude:
+#     functions_to_run = [func for func in globals() if callable(globals()[func]) and func.startswith('') and func != 'parser' and func not in args.exclude]
+# elif args.include:
+#     functions_to_run = [func for func in globals() if callable(globals()[func]) and func.startswith('') and func != 'parser' and func in args.include]
+
+# # Execute the selected functions
+# for func_name in functions_to_run:
+#     func = globals()[func_name]
+#     func()
 
 
 
