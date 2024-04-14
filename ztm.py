@@ -19,18 +19,45 @@ def firstlettercaps(s):
     ''' returns first letter caps for each word but respects apostrophes '''
     return re.sub(r"[A-Za-z]+('[A-Za-z]+)?", lambda mo: mo.group(0)[0].upper() + mo.group(0)[1:].lower(), s)
 
-def capitalise_bracketed_word(word):
-    ''' check first character of word and capitalise if alpha, otherwise test for brackets [( otherwise just return word unaltered '''
-    if word[0:1].isalpha():
-        return word.capitalize()
-    elif word[0:1] == '[' or word[0:1] == '(':
-        return word[0:1] + word[1:].capitalize()
+
+def first_alpha_char(word):
+    return word.find(next(filter(str.isalpha, word)))
+
+
+def capitalise_first_word(word):
+    
+    alpha = first_alpha_char(word)
+    
+    if  alpha > 0:
+              
+        return word[0:alpha] + word[alpha:].capitalize()
     else:
-        return word
+        
+        return word.capitalize()
+
+
+# def capitalise_bracketed_word(word):
+#     ''' check first character of word and capitalise if alpha, otherwise test for brackets [( otherwise just return word unaltered '''
+#     if word[0:1].isalpha():
+#         return word.capitalize()
+#     elif word[0:1] == '[' or word[0:1] == '(':
+#         return word[0:1] + word[1:].capitalize()
+#     else:
+#         return word
 
 def is_roman_numeral(word):
     ''' determines whether word passed is a roman numeral within the stricter meaning of the term '''
     return bool(re.match(r'^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$', word))
+
+
+def always_upper(word):
+
+    return word.upper() in ('BBC' 'LP', 'USA')
+
+def always_mixedcase(word):
+
+    return word.lower() in ('kHz')
+
 
 def capitalise_word(word):
     ''' loose implementation of RYM's capitalisation standards '''
@@ -39,32 +66,43 @@ def capitalise_word(word):
         return word.lower()
     elif word.lower() in ['am', 'are', 'as', 'be', 'been', 'from', 'he', 'if', 'into', 'is', 'it', 'she', 'so', 'upon', 'was', 'we', 'were', 'with']:
         return word.capitalize()
-    elif word.lower() == 'bbc':
-        return 'BBC'
-    elif word.lower() == 'khz':
-        return 'kHz'
-    elif word.lower() == 'lp':
-        return 'LP'
-    elif word.lower() == 'usa':
-        return 'USA'
-    elif is_roman_numeral(word.upper()):
+    elif always_mixedcase(word):
+        return word
+    elif is_roman_numeral(word.upper()) or always_upper(word):
+        print(f"is_roman_numeral(word.upper()) or always_upper(word): {is_roman_numeral(word.upper())} {always_upper(word)}")
+        input()
         return word.upper()
     else:
         # capitalise it taking into account ([ as opening brackets
-        return capitalise_bracketed_word(word)
+        return capitalise_first_word(word)
 
 
 def capitalise_first_last(sentence):
 
-    words = sentence.split()
-    if not words:  # empty sentence check
+    if not sentence:  # empty sentence check
         return ''
+
+    words = sentence.split()
     words[0] = capitalise_bracketed_word(words[0]) # here we're deliberately bypassing capitalise_word() in favour of capitalise_bracketed_word() to bypass the exceptions in capitalise_word()
-    words[-1] = words[-1].upper() if is_roman_numeral(words[-1]) else capitalise_bracketed_word(words[-1])
+    words[-1] = words[-1].upper() if is_roman_numeral(words[-1]) else capitalise_first_word(words[-1])
+    # print(f'capitalise_first_last: {words[0]}, {words[1]}')
+    # input()
+    return ' '.join(words)
+
+def capitalise_last_word(sentence):
+
+    if not sentence:  # empty sentence check
+        return ''
+
+    words = sentence.split()
+    words[-1] = words[-1].upper() if is_roman_numeral(words[-1]) else capitalise_first_word(words[-1])
+    print(f'capitalise_first_last: {words[0]}, {words[1]}')
+    input()
     return ' '.join(words)
 
 
-def capitalise_words(sentence):
+
+def capitalise_sentence(sentence):
     ''' Breaks a sentence down into words and capitalises each according to capitalise_word() '''
     parts = re.split(r'(:|\?|!|\—|\(|\)|"| )', sentence)
     for i in range(len(parts)):
@@ -76,7 +114,7 @@ def capitalise_words(sentence):
     
     # Capitalize first and last words
     if capitalised_sentence:
-        capitalised_sentence = capitalise_first_last(capitalised_sentence)
+        capitalised_sentence = capitalise_last_word(capitalised_sentence)
     
     return capitalised_sentence
 
@@ -151,6 +189,9 @@ def eliminate_duplicates_ordered_dict(input_string):
 
 
 def delete_repeated_phrase2(s, phrase):
+
+    if phrase == None:
+        return s
     j = s.find(phrase)
     if j >= 0:
         k = j + len(phrase)
@@ -3007,7 +3048,7 @@ def merge_album_version():
     ''' merge album name and version fields into album name '''
     print(f"\nMerging album name and version fields into album name where version tag does not already appear in album name")
     opening_tally = tally_mods()
-    dbcursor.execute(f"UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(album, version);")
+    dbcursor.execute('''UPDATE alib SET album = album || ' ' || version WHERE version IS NOT NULL AND NOT INSTR(lower(album), lower(version));''')
     print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
@@ -3800,7 +3841,7 @@ def tag_mixed_res_albums():
                             version IS NULL OR version NOT LIKE '%[Mixed Res]%');''')
 
 
-def tag_album_resolution():
+def tag_non_redbook():
     ''' Add album res to end of all version tags where file bit depth and/or sample rates > 16/44.1 respectively - ensuring we don't add the string if it's already present or is a [Mixed Res] album '''
 
     ''' first deal with mixed resolution albums '''
@@ -3812,8 +3853,9 @@ def tag_album_resolution():
 
     # update version tag with album resolution metadata if it's not already present in the version tag
     # SQLite3 instr() returns NULL if a field value is NULL so leverage '' as a value
-    # Seems contrived...could probably be rewritten as AND version is NULL OR instr(lower(version), 'value')
-    dbcursor.execute('''WITH cte AS (
+
+    dbcursor.execute('''
+                        WITH cte AS (
                             SELECT __dirpath
                               FROM (
                                        SELECT DISTINCT __dirpath,
@@ -3823,17 +3865,16 @@ def tag_album_resolution():
                                                        __frequency_num
                                          FROM alib
                                    )
-
-                            WHERE ( (__bitspersample > '16' OR 
+                             WHERE ( (__bitspersample > '16' OR 
                                       __frequency_num > '44.1') AND 
                                      version IS NULL) OR 
                                    ( (__bitspersample > '16' OR 
                                       __frequency_num > '44.1') AND 
                                      instr(lower(version), 'khz]') = 0 AND 
-                                     instr(lower(version), '[mixed res]') = 0)
+                                     instr(lower(version), '[mixed res]') = 0) 
                         )
                         UPDATE alib
-                           SET version = iif(version IS NULL, '', trim(version) ) || ' [' || __bitspersample || __frequency || ']'
+                           SET version = iif(version IS NULL, '[' || __bitspersample || __frequency || ']', version || ' [' || __bitspersample || __frequency || ']') 
                          WHERE __dirpath IN cte;''')
 
 def find_duplicate_flac_albums():
@@ -4235,13 +4276,13 @@ def disambiguate_contributors():
         print('No remaining name corrections to process')
 
 
-def add_resolution_to_album():
-    # Some music servers conflate different releases of an album where they have the same albumartist and album name e.g. Logitechmediaserver, Navidrome
-    # This update appends the album's bit depth and sample rate to the album name where the album is > redbook
-    dbcursor.execute('''UPDATE alib
-                           SET album = album || ' [' || __bitspersample || __frequency || ']'
-                         WHERE __frequency > '44.1 kHz' AND 
-                               instr(album, __bitspersample || __frequency) = 0;''')
+# def add_resolution_to_album():
+#     # Some music servers conflate different releases of an album where they have the same albumartist and album name e.g. Logitechmediaserver, Navidrome
+#     # This update appends the album's bit depth and sample rate to the album name where the album is > redbook
+#     dbcursor.execute('''UPDATE alib
+#                            SET album = album || ' [' || __bitspersample || __frequency || ']'
+#                          WHERE __frequency > '44.1 kHz' AND 
+#                                instr(album, ' [' || __bitspersample || __frequency || ']') = 0;''')
 
 
 def unpad_tracks():
@@ -4271,7 +4312,7 @@ def set_title_caps():
         for title in titles:
 
             stored_title = title[0]
-            capitalised_title = capitalise_words(stored_title)
+            capitalised_title = capitalise_sentence(stored_title)
 
             if stored_title != capitalised_title:
 
@@ -4290,9 +4331,13 @@ def set_album_caps():
         for album in albums:
 
             stored_album = album[0]
-            capitalised_album = capitalise_words(stored_album)
+            capitalised_album = capitalise_sentence(stored_album)
+            # print(f'stored album: "{stored_album}", capitalised album "{capitalised_album}", mistmatched: {stored_album != capitalised_album}')
+            # input()
 
             if stored_album != capitalised_album:
+
+                print(f"Current album name: '{stored_album}' \nmismatched\nRevised album name: '{capitalised_album}'")
 
                 dbcursor.execute('''UPDATE alib
                                        SET album = (?) 
@@ -4517,7 +4562,7 @@ def rename_dirs():
             if release_version.lower() not in target_dirname.lower():
 
                 target_dirname = target_dirname + release_version
-                target_dirname = delete_repeated_phrase(target_dirname, release_version)
+                target_dirname = delete_repeated_phrase2(target_dirname, release_version)
 
         # determine release_resolution string
         release_resolution = ' ['  + release_bitspersample + release_frequency + ']'
@@ -4528,13 +4573,13 @@ def rename_dirs():
             # if > redbook append bitrate and sampling frequency to folder name when not already present
             if (int(release_bitspersample) > 16 or float(release_frequency_num) > 44.1) and release_resolution.lower() not in target_dirname.lower(): # i.e. this is not a redbook album and release resolution is not already present in the target_dirname
                 
-                # release_resolution = ' ['  + release_bitspersample + release_frequency + ']'
+                release_resolution = ' ['  + release_bitspersample + release_frequency + ']'
 
-                print('Detected a non-redbook album where its bit depth andsample rate are not indicated in the album title')
-                input()
-                target_dirname = target_dirname + ' ' + release_resolution
-                print(f'{target_dirname} should now incorporate only a single instance of {release_resolution} ... does it?')
-                input()
+                # print('Detected a non-redbook album where its bit depth andsample rate are not indicated in the album title')
+                # input()
+                # target_dirname = target_dirname + ' ' + release_resolution
+                # print(f'{target_dirname} should now incorporate only a single instance of {release_resolution} ... does it?')
+                # input()
 
         # this is a lazy override, but a simple means of reverting to CDx if necessary whilst ensuring the compilation determination runs regardless
         if 'cd' in release_dirname.lower()[:2]:
@@ -4560,16 +4605,16 @@ def rename_dirs():
             
         # ensure release_resolution and [mixed res] aren't in target path more than once e.g. due to tagger logic or workflow limitations.
         print(f'unfiltered buildup: {target_dirname}')
-        input()
-        target_dirname = delete_repeated_phrase(target_dirname, release_version)
+        # input()
+        target_dirname = delete_repeated_phrase2(target_dirname, release_version)
         print(f'eliminated release_version: {target_dirname}')
-        input()
-        target_dirname = delete_repeated_phrase(target_dirname, release_resolution)
+        # input()
+        target_dirname = delete_repeated_phrase2(target_dirname, release_resolution)
         print(f'eliminated release_resolution: {target_dirname}')
-        input()
-        target_dirname = delete_repeated_phrase(target_dirname, '[Mixed Res]')
+        # input()
+        target_dirname = delete_repeated_phrase2(target_dirname, '[Mixed Res]')
         print(f'{target_dirname}')
-        input()
+        # input()
         target_dirname = trim_whitespace(sanitize_filename(target_dirname)) # strip illegal chars from target_dirname using same logic as applies to filenames because __dirname cannot ontains '/'
 
 
@@ -4776,20 +4821,21 @@ def update_tags():
     standardise_album_tags('mood')
     standardise_album_tags('theme')
 
-    # # if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    # #add_mbrainz_mbid()
+    # if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    #add_mbrainz_mbid()
 
     # # add mbid's for multi-entry artists
     add_multiartist_mbrainz_mbid()
 
-    # add resolution info to all > 16/44.1 and mixed resolution albums
-    tag_album_resolution()
+    # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
+    tag_non_redbook()
 
     # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    merge_album_version()
+    # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
+    # merge_album_version()
 
     # set capitalistion for track titles
-    set_title_caps()
+    # set_title_caps()
 
     # set capitalistion for album names
     set_album_caps()
@@ -4800,10 +4846,10 @@ def update_tags():
     # remove leading 0's from discnumber tags
     unpad_discnumbers()
 
-    # rename files leveraging processed metadata in the database
-    rename_tunes()
+    # # rename files leveraging processed metadata in the database
+    # rename_tunes()
 
-    # # rename folders containing albums leveraging processed metadata in the database
+    # # # rename folders containing albums leveraging processed metadata in the database
     # rename_dirs()
 
 
