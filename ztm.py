@@ -43,7 +43,7 @@ def us_state(s):
                         'KS',
                         'KY',
                         'LA',
-                        'ME',
+                        # 'ME',
                         'MD',
                         'MA',
                         'MI',
@@ -78,26 +78,12 @@ def us_state(s):
                         'WI',
                         'WY']
 
-# def first_alpha_char(string):
-#     '''return pos of first alpha character in string'''
-#     return string.find(next(filter(str.isalpha, string)))
-
 def first_alpha_char(string):
     match = re.search(r'[a-zA-Z]', string)
     if match:
         return match.start()
     else:
         return -1
-
-# def capitalise_first_alpha(s):
-#     for i, c in enumerate(s):
-#         if c.isalpha():
-
-#             tmp = s[:i] + c.upper() + s[i+1:]
-#             if always_upper(tmp) or us_state(tmp):
-#                 tmp = tmp.upper()
-#             return tmp
-#     return s
 
 
 def capitalise_first_alpha(s):
@@ -112,9 +98,6 @@ def capitalise_first_alpha(s):
             return tmp
     return s
 
-
-
-
 # stuff intended to handle single words
 
 def is_roman_numeral(word):
@@ -123,25 +106,8 @@ def is_roman_numeral(word):
 
 def always_upper(word):
     '''determines whether word is in list of words that will always be uppercase'''
-    return word.upper() in ('BBC', 'LP', 'NYC', 'USA')
+    return word.upper() in ('BBC', 'EP', 'LP', 'NYC', 'USA')
 
-# def capitalise_first_alpha(word):
-    
-#     alpha = first_alpha_char(word)
-
-#     if  alpha > 0:
-        
-#         tmp = word[alpha:]
-#         if always_upper(tmp):
-#             tmp = tmp.upper()
-#         else:
-#             tmp = tmp.capitalize()
-              
-#         #return word[0:alpha] + word[alpha:].capitalize()
-#         return word[0:alpha] + tmp
-#     else:
-        
-#         return word.capitalize()
 
 def capitalise_first_word(sentence):
 
@@ -3619,124 +3585,6 @@ def add_mbrainz_mbid():
         print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
-
-# def add_multiartist_mbrainz_mbid():
-#     ''' if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use) '''
-
-#     # check if the mbrainz_mbid_distinct_names table exists.  If it's present then populate mbid's from it where records are currently without
-    
-#     if table_exists('mbrainz_mbid_distinct_names'):
-
-#         dbcursor.execute('''CREATE INDEX IF NOT EXISTS lalbumartists ON alib(LOWER(albumartist)) WHERE albumartist IS NOT NULL;''')
-#         dbcursor.execute('''CREATE INDEX IF NOT EXISTS lartists ON alib(LOWER(artist)) WHERE artist IS NOT NULL;''')
-#         dbcursor.execute('''CREATE INDEX IF NOT EXISTS lcomposers ON alib(LOWER(composer)) WHERE composer IS NOT NULL;''')
-#         dbcursor.execute('''CREATE INDEX IF NOT EXISTS lmbrainz_artists on mbrainz_mbid_distinct_names(LOWER(artist));''')
-
-#         # firstly update all MBIDs in table alib that are readily matchable to a contributor, correcting any legacy mismatch of mbids that might be present in alib
-#         # (e.g. where a tagger has previously selected the wrong artist for whatever reason)
-#         # only write changes if the current mbid value does not correspond with the mbid value in mbrainz_mbid_distinct_names which is pulled directly from the MusicBrainz official dataset
-
-#         add_mbrainz_mbid()  # update individual MBIDs
-
-
-#         # now that we've added individual mbid's above, now create a union of all unique combinations of artists, albumartists and composers
-#         dbcursor.execute('''DROP TABLE IF EXISTS multi_contributors;''')
-#         dbcursor.execute('''CREATE TABLE multi_contributors AS SELECT lower(artist) AS contributor,
-#                                                                       musicbrainz_artistid AS mbid
-#                                                                  FROM alib
-#                                                                 WHERE artist IS NOT NULL
-#                             UNION
-#                             SELECT lower(albumartist) AS contributor,
-#                                    musicbrainz_albumartistid AS mbid
-#                               FROM alib
-#                              WHERE albumartist IS NOT NULL
-#                             UNION
-#                             SELECT lower(composer) AS contributor,
-#                                    musicbrainz_composerid AS mbid
-#                               FROM alib
-#                              WHERE composer IS NOT NULL
-#                              ORDER BY contributor;''')
-
-#         dbcursor.execute('''CREATE INDEX IF NOT EXISTS multi_contributor_index ON multi_contributors (
-#                                 contributor
-#                             );''')
-
-#         # now process all DISTINCT multi-contributor entries, building up the concatenated MBID string then applying it to all matching records in alib (1:many update)
-#         # dbcursor.execute('''SELECT DISTINCT contributor,
-#         #                            mbid
-#         #                       FROM multi_contributors
-#         #                      WHERE INSTR(contributor, '\\');''')
-
-
-#         # select only instances where the number of contributor names and number of mbid's are mismatched for repprocessing
-#         # NOTE: This means that incorrect associations will not be corrected
-
-#         dbcursor.execute('''SELECT DISTINCT contributor,
-#                                             mbid,
-#                                             (LENGTH(contributor) - LENGTH(REPLACE(contributor, '\\', '') ) ) / LENGTH('\\') AS acount,
-#                                             (LENGTH(mbid) - LENGTH(REPLACE(mbid, '\\', '') ) ) / LENGTH('\\') AS idcount
-#                               FROM multi_contributors
-#                              WHERE acount > 1 AND 
-#                                    acount != idcount ORDER BY contributor;''')
-
-
-#         records = dbcursor.fetchall()
-#         population = len(records)
-#         if population > 0:
-
-#             print(f'{population} distinct multi-artist entries to process')
-#             #iterate through every record
-#             for record in records:
-
-#                 #store the baseline values which would serve as the replacement criteria where a table update is required
-#                 baseline_contributor = record[0]
-#                 baseline_mbid = record[1]
-#                 derived_mbid = []
-
-#                 # generate a list from the delimited contributors string retrieved from the Sqlite table
-#                 contributors = delimited_string_to_list(baseline_contributor)
-
-#                 # now retrieve mbid for the individual contributor and append it to derived_mbid
-#                 for contributor in contributors:
-
-#                     dbcursor.execute('''SELECT mbid from mbrainz_mbid_distinct_names where LOWER(mbrainz_mbid_distinct_names.artist) == (?);''', (contributor,))
-
-#                     retrieved_mbid = dbcursor.fetchone()
-#                     # check if the select statement returned a match, and if it did, append it to the derived_mbid list
-#                     if retrieved_mbid is not None:
-#                         derived_mbid.append(retrieved_mbid[0])
-        
-#                 derived_mbid = list_to_delimited_string(derived_mbid)
-
-#                 # now write updates to alib where current MBID for baseline_contributor does not correspond with that we've derived:
-
-#                 # print what we're doing to visually show what's being updated
-#                 print(f'Baseline contributor: {baseline_contributor}\nBaseline MBID.......: {baseline_mbid}\nDerived MBID........: {derived_mbid}\n')
-
-#                 # process artists
-#                 dbcursor.execute('''
-#                                     UPDATE alib
-#                                        SET musicbrainz_artistid = (?) 
-#                                      WHERE (LOWER(artist) == (?) AND 
-#                                            musicbrainz_artistid != (?));''', (derived_mbid, baseline_contributor, derived_mbid))
-
-#                 # process albumartists
-#                 dbcursor.execute('''
-#                                     UPDATE alib
-#                                        SET musicbrainz_albumartistid = (?) 
-#                                      WHERE (LOWER(albumartist) == (?) AND 
-#                                            musicbrainz_albumartistid != (?));''', (derived_mbid, baseline_contributor, derived_mbid))
-
-#                 # process composers
-#                 dbcursor.execute('''
-#                                     UPDATE alib
-#                                        SET musicbrainz_composerid = (?) 
-#                                      WHERE (LOWER(composer) == (?) AND 
-#                                            musicbrainz_composerid != (?));''', (derived_mbid, baseline_contributor, derived_mbid))
-
-
-
-
 def add_multiartist_mbrainz_mbid():
     ''' if mbrainz_mbid_distinct_names table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use) '''
 
@@ -4085,65 +3933,6 @@ def find_duplicate_flac_albums():
         print(f"|\n{duplicated_flac_albums[0]} duplicated FLAC albums present - see table __dirpaths_with_same_content for a listing")
 
 
-# def string_groups():
-#     ''' Function to generate a unique list of:
-#     contributors by merging artist, performer, albumartist and composer entries from alib into a single file for parsing by string-grouper in order to identify potential duplicates
-#     titles by selecting distinct tracks from alib'''
-
-#     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
-
-#     dbcursor.execute('''DROP TABLE IF EXISTS sg_contributors;''')
-#     dbcursor.execute('''CREATE TABLE ct AS SELECT DISTINCT artist
-#                                              FROM alib
-#                                             WHERE artist IS NOT NULL AND 
-#                                                   artist NOT LIKE '%\\%' AND 
-#                                                   artist NOT LIKE '%, %'
-#                                             ORDER BY artist;''')
-
-#     dbcursor.execute('''INSERT INTO ct (
-#                                            artist
-#                                        )
-#                                        SELECT albumartist
-#                                          FROM alib
-#                                         WHERE albumartist IS NOT NULL AND 
-#                                               albumartist NOT LIKE '%\\%' AND 
-#                                                   albumartist NOT LIKE '%, %'
-#                                         ORDER BY albumartist;''')
-
-#     dbcursor.execute('''INSERT INTO ct (
-#                                            artist
-#                                        )
-#                                        SELECT performer
-#                                          FROM alib
-#                                         WHERE performer IS NOT NULL AND 
-#                                               performer NOT LIKE '%\\%' AND 
-#                                                   performer NOT LIKE '%, %'
-#                                         ORDER BY performer;''')
-
-#     dbcursor.execute('''INSERT INTO ct (
-#                                            artist
-#                                        )
-#                                        SELECT composer
-#                                          FROM alib
-#                                         WHERE composer IS NOT NULL AND 
-#                                               composer NOT LIKE '%\\%' AND 
-#                                                   composer NOT LIKE '%, %'
-#                                         ORDER BY composer;''')
-
-#     dbcursor.execute('''CREATE TABLE sg_contributors AS SELECT DISTINCT artist
-#                                                          FROM ct
-#                                                         ORDER BY artist;''')
-#     dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
-
-#     dbcursor.execute('''DROP TABLE IF EXISTS sg_tracks;''')
-
-#     dbcursor.execute('''CREATE TABLE sg_tracks AS SELECT DISTINCT title
-#                                                     FROM alib
-#                                                    WHERE title IS NOT NULL AND 
-#                                                          genre NOT LIKE '%Classical%'
-#                                                    ORDER BY title;''')
-
-
 
 def generate_string_grouper_input():
 
@@ -4373,14 +4162,6 @@ def disambiguate_contributors():
     else:
         print('No remaining name corrections to process')
 
-
-# def add_resolution_to_album():
-#     # Some music servers conflate different releases of an album where they have the same albumartist and album name e.g. Logitechmediaserver, Navidrome
-#     # This update appends the album's bit depth and sample rate to the album name where the album is > redbook
-#     dbcursor.execute('''UPDATE alib
-#                            SET album = album || ' [' || __bitspersample || __frequency || ']'
-#                          WHERE __frequency > '44.1 kHz' AND 
-#                                instr(album, ' [' || __bitspersample || __frequency || ']') = 0;''')
 
 
 def unpad_tracks():
@@ -4673,12 +4454,6 @@ def rename_dirs():
                 
                 release_resolution = ' ['  + release_bitspersample + release_frequency + ']'
 
-                # print('Detected a non-redbook album where its bit depth andsample rate are not indicated in the album title')
-                # input()
-                # target_dirname = target_dirname + ' ' + release_resolution
-                # print(f'{target_dirname} should now incorporate only a single instance of {release_resolution} ... does it?')
-                # input()
-
         # this is a lazy override, but a simple means of reverting to CDx if necessary whilst ensuring the compilation determination runs regardless
         if 'cd' in release_dirname.lower()[:2]:
 
@@ -4740,8 +4515,6 @@ def rename_dirs():
 
             except OSError as e:
                 print(f"{e}\n", file=sys.stderr)
-        # else:
-        #     print(f'Skipping {release_dirname} - already correctly named.')
 
 
 
