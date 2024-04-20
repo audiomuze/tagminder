@@ -20,43 +20,158 @@ def firstlettercaps(s):
     return re.sub(r"[A-Za-z]+('[A-Za-z]+)?", lambda mo: mo.group(0)[0].upper() + mo.group(0)[1:].lower(), s)
 
 
-def first_alpha_char(word):
-    return word.find(next(filter(str.isalpha, word)))
+def us_state(s):
 
+    return s.upper() in ['AL',
+                        'AK',
+                        'AZ',
+                        'AR',
+                        'CA',
+                        'CZ',
+                        'CO',
+                        'CT',
+                        'DE',
+                        'DC',
+                        'FL',
+                        'GA',
+                        'GU',
+                        'HI',
+                        'ID',
+                        'IL',
+                        'IN',
+                        'IA',
+                        'KS',
+                        'KY',
+                        'LA',
+                        'ME',
+                        'MD',
+                        'MA',
+                        'MI',
+                        'MN',
+                        'MS',
+                        'MO',
+                        'MT',
+                        'NE',
+                        'NV',
+                        'NH',
+                        'NJ',
+                        'NM',
+                        'NY',
+                        'NC',
+                        'ND',
+                        'OH',
+                        'OK',
+                        'OR',
+                        'PA',
+                        'PR',
+                        'RI',
+                        'SC',
+                        'SD',
+                        'TN',
+                        'TX',
+                        'UT',
+                        'VT',
+                        'VI',
+                        'VA',
+                        'WA',
+                        'WV',
+                        'WI',
+                        'WY']
 
-def capitalise_first_word(word):
-    
-    alpha = first_alpha_char(word)
-    
-    if  alpha > 0:
-              
-        return word[0:alpha] + word[alpha:].capitalize()
+# def first_alpha_char(string):
+#     '''return pos of first alpha character in string'''
+#     return string.find(next(filter(str.isalpha, string)))
+
+def first_alpha_char(string):
+    match = re.search(r'[a-zA-Z]', string)
+    if match:
+        return match.start()
     else:
-        
-        return word.capitalize()
+        return -1
+
+# def capitalise_first_alpha(s):
+#     for i, c in enumerate(s):
+#         if c.isalpha():
+
+#             tmp = s[:i] + c.upper() + s[i+1:]
+#             if always_upper(tmp) or us_state(tmp):
+#                 tmp = tmp.upper()
+#             return tmp
+#     return s
 
 
-# def capitalise_bracketed_word(word):
-#     ''' check first character of word and capitalise if alpha, otherwise test for brackets [( otherwise just return word unaltered '''
-#     if word[0:1].isalpha():
-#         return word.capitalize()
-#     elif word[0:1] == '[' or word[0:1] == '(':
-#         return word[0:1] + word[1:].capitalize()
-#     else:
-#         return word
+def capitalise_first_alpha(s):
+    for i, c in enumerate(s):
+
+        print(i)
+        if c.isalpha():
+
+            tmp = s[:i] + c.upper() + s[i+1:]
+            if always_upper(tmp) or us_state(tmp):
+                tmp = tmp.upper()
+            return tmp
+    return s
+
+
+
+
+# stuff intended to handle single words
 
 def is_roman_numeral(word):
     ''' determines whether word passed is a roman numeral within the stricter meaning of the term '''
-    return bool(re.match(r'^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$', word))
-
+    return bool(re.match(r'^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$', word.upper()))
 
 def always_upper(word):
+    '''determines whether word is in list of words that will always be uppercase'''
+    return word.upper() in ('BBC', 'LP', 'NYC', 'USA')
 
-    return word.upper() in ('BBC' 'LP', 'USA')
+# def capitalise_first_alpha(word):
+    
+#     alpha = first_alpha_char(word)
 
-def always_mixedcase(word):
+#     if  alpha > 0:
+        
+#         tmp = word[alpha:]
+#         if always_upper(tmp):
+#             tmp = tmp.upper()
+#         else:
+#             tmp = tmp.capitalize()
+              
+#         #return word[0:alpha] + word[alpha:].capitalize()
+#         return word[0:alpha] + tmp
+#     else:
+        
+#         return word.capitalize()
 
-    return word.lower() in ('kHz')
+def capitalise_first_word(sentence):
+
+    if not sentence:  # empty sentence check
+        return ''
+
+    words = sentence.split()
+    first_word  = sentence[0]
+
+    if first_word and re.match(r'(:|\?|!|\}|\—|\(|\)|"| )', first_word):
+
+        first_word = capitalise_word(first_word)
+
+    return ' '.join(words)
+
+def capitalise_last_word(sentence):
+
+    if not sentence:  # empty sentence check
+        return ''
+
+    words = sentence.split()
+    *_, lastword = words
+
+    if lastword and re.match(r'(:|\?|!|\}|\—|\(|\)|"| )', lastword):
+
+        lastword = capitalise_word(lastword)
+        # print(lastword)
+        # input()
+
+    return ' '.join(words)
 
 
 def capitalise_word(word):
@@ -66,59 +181,42 @@ def capitalise_word(word):
         return word.lower()
     elif word.lower() in ['am', 'are', 'as', 'be', 'been', 'from', 'he', 'if', 'into', 'is', 'it', 'she', 'so', 'upon', 'was', 'we', 'were', 'with']:
         return word.capitalize()
-    elif always_mixedcase(word):
-        return word
-    elif is_roman_numeral(word.upper()) or always_upper(word):
-        print(f"is_roman_numeral(word.upper()) or always_upper(word): {is_roman_numeral(word.upper())} {always_upper(word)}")
-        input()
+    elif word.lower() == 'khz':
+        return 'kHz'
+    elif is_roman_numeral(word) or always_upper(word) or us_state(word):
         return word.upper()
     else:
-        # capitalise it taking into account ([ as opening brackets
-        return capitalise_first_word(word)
+        # if it doesn't meet any of thse special conditions. capitalise it taking into account first aplha character as capitalisation candidate
+        return capitalise_first_alpha(word)
 
 
-def capitalise_first_last(sentence):
+# this handles the full string
 
-    if not sentence:  # empty sentence check
-        return ''
-
-    words = sentence.split()
-    words[0] = capitalise_bracketed_word(words[0]) # here we're deliberately bypassing capitalise_word() in favour of capitalise_bracketed_word() to bypass the exceptions in capitalise_word()
-    words[-1] = words[-1].upper() if is_roman_numeral(words[-1]) else capitalise_first_word(words[-1])
-    # print(f'capitalise_first_last: {words[0]}, {words[1]}')
-    # input()
-    return ' '.join(words)
-
-def capitalise_last_word(sentence):
-
-    if not sentence:  # empty sentence check
-        return ''
-
-    words = sentence.split()
-    words[-1] = words[-1].upper() if is_roman_numeral(words[-1]) else capitalise_first_word(words[-1])
-    print(f'capitalise_first_last: {words[0]}, {words[1]}')
-    input()
-    return ' '.join(words)
-
-
-
-def capitalise_sentence(sentence):
+def rymify(sentence):
     ''' Breaks a sentence down into words and capitalises each according to capitalise_word() '''
+
+    if not sentence:  # empty sentence check
+        return ''
+
     parts = re.split(r'(:|\?|!|\—|\(|\)|"| )', sentence)
     for i in range(len(parts)):
         if parts[i] and not re.match(r'(:|\?|!|\—|\(|\)|"| )', parts[i]):
+
             parts[i] = capitalise_word(parts[i])
+            print(parts[i])
     
     # Join parts while maintaining original spacing
     capitalised_sentence = ''.join(parts)
     
-    # Capitalize first and last words
-    if capitalised_sentence:
-        capitalised_sentence = capitalise_last_word(capitalised_sentence)
+    # # Capitalize last word
+    # capitalised_sentence = capitalise_last_word(capitalised_sentence)
     
+    # Capitalize first and last word
+    capitalised_sentence = capitalise_first_alpha(capitalise_last_word(capitalised_sentence))
+
+
+
     return capitalised_sentence
-
-
 
 def trim_whitespace(string):
     ''' get rid of multiple spaces between characters in strings '''
@@ -4312,7 +4410,7 @@ def set_title_caps():
         for title in titles:
 
             stored_title = title[0]
-            capitalised_title = capitalise_sentence(stored_title)
+            capitalised_title = rymify(stored_title)
 
             if stored_title != capitalised_title:
 
@@ -4331,7 +4429,7 @@ def set_album_caps():
         for album in albums:
 
             stored_album = album[0]
-            capitalised_album = capitalise_sentence(stored_album)
+            capitalised_album = rymify(stored_album)
             # print(f'stored album: "{stored_album}", capitalised album "{capitalised_album}", mistmatched: {stored_album != capitalised_album}')
             # input()
 
@@ -4827,18 +4925,19 @@ def update_tags():
     # # add mbid's for multi-entry artists
     add_multiartist_mbrainz_mbid()
 
+    # set capitalistion for track titles
+    set_title_caps()
+
+    # set capitalistion for album names
+    set_album_caps()
+
     # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
     tag_non_redbook()
 
     # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
     # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
-    # merge_album_version()
+    merge_album_version()
 
-    # set capitalistion for track titles
-    # set_title_caps()
-
-    # set capitalistion for album names
-    set_album_caps()
 
     # remove leading 0's from track tags
     unpad_tracks()
@@ -4846,11 +4945,11 @@ def update_tags():
     # remove leading 0's from discnumber tags
     unpad_discnumbers()
 
-    # # rename files leveraging processed metadata in the database
-    # rename_tunes()
+    # rename files leveraging processed metadata in the database
+    rename_tunes()
 
-    # # # rename folders containing albums leveraging processed metadata in the database
-    # rename_dirs()
+    # # rename folders containing albums leveraging processed metadata in the database
+    rename_dirs()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
