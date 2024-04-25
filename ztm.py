@@ -106,7 +106,7 @@ def is_roman_numeral(word):
 
 def always_upper(word):
     '''determines whether word is in list of words that will always be uppercase'''
-    return word.upper() in ('BBC', 'EP', 'LP', 'NYC', 'USA')
+    return word.upper() in ('BBC', 'EP', 'LP', 'NYC', 'USA', 'U.S.A.')
 
 
 def capitalise_first_word(sentence):
@@ -145,15 +145,16 @@ def capitalise_word(word):
 
     if word.lower() in ['a', 'an', 'and', 'at', 'but', 'by', 'cetera ', 'et', 'etc.', 'for', 'in', 'nor', 'of', 'on', 'or', 'the', 'to', 'v.', 'versus', 'vs.', 'yet']:
         return word.lower()
-    elif word.lower() in ['am', 'are', 'as', 'be', 'been', 'from', 'he', 'if', 'into', 'is', 'it', 'she', 'so', 'upon', 'was', 'we', 'were', 'with']:
-        return word.capitalize()
-    elif word.lower() == 'khz':
+    # elif word.lower() in ['am', 'are', 'as', 'be', 'been', 'from', 'he', 'if', 'into', 'is', 'it', 'she', 'so', 'upon', 'was', 'we', 'were', 'with']:
+    #     return word.capitalize()
+    # elif word.lower() == 'khz':
         return 'kHz'
     elif is_roman_numeral(word) or always_upper(word) or us_state(word):
         return word.upper()
     else:
         # if it doesn't meet any of thse special conditions. capitalise it taking into account first aplha character as capitalisation candidate
-        return capitalise_first_alpha(word)
+        # return capitalise_first_alpha(word)
+        return capitalise_first_alpha(word.capitalize())
 
 
 # this handles the full string
@@ -169,7 +170,7 @@ def rymify(sentence):
         if parts[i] and not re.match(r'(:|\?|!|\—|\(|\)|"| )', parts[i]):
 
             parts[i] = capitalise_word(parts[i])
-            print(parts[i])
+            # print(parts[i])
     
     # Join parts while maintaining original spacing
     capitalised_sentence = ''.join(parts)
@@ -4204,7 +4205,7 @@ def set_album_caps():
     dbcursor.execute('''SELECT DISTINCT album
                           FROM alib
                          WHERE album IS NOT NULL
-                         ORDER BY album;''')
+                         ORDER BY lower(albumartist), lower(album);''')
     albums = dbcursor.fetchall()
     if len(albums) > 0:
         for album in albums:
