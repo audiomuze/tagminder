@@ -106,7 +106,7 @@ def is_roman_numeral(word):
 
 def always_upper(word):
     '''determines whether word is in list of words that will always be uppercase'''
-    return word.upper() in ('BBC', 'EP', 'LP', 'NYC', 'USA', 'U.S.A.')
+    return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'LP', 'MFSL', 'MOFI', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
 
 
 def capitalise_first_word(sentence):
@@ -147,8 +147,10 @@ def capitalise_word(word):
         return word.lower()
     # elif word.lower() in ['am', 'are', 'as', 'be', 'been', 'from', 'he', 'if', 'into', 'is', 'it', 'she', 'so', 'upon', 'was', 'we', 'were', 'with']:
     #     return word.capitalize()
-    # elif word.lower() == 'khz':
+    elif word.lower() == 'khz':
         return 'kHz'
+    elif word.lower() ==  'khz]':        
+        return 'kHz]'
     elif is_roman_numeral(word) or always_upper(word) or us_state(word):
         return word.upper()
     else:
