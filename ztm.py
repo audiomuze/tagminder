@@ -78,18 +78,55 @@ def us_state(s):
                         'WI',
                         'WY']
 
-def first_alpha_char(string):
+
+def title_case(value):
+    # turns a word into Title Case and takes care of numbering and apostrophes
+
+    titled = value.title()
+    titled = re.sub(r"([a-z])'([A-Z])", lowercase_match, titled)  # Fix Don'T
+    titled = re.sub(r"\d([A-Z])", lowercase_match, titled)  # Fix 1St and 2Nd
+    return titled
+
+def lowercase_match(match):
+    """Lowercase the whole regular expression match group."""
+    return match.group().lower()
+
+def replace_demimiters(string):
+    # Define a regular expression pattern to match comma, forward slash, or semicolon
+    pattern = r'[,\;/&]'
+
+    # Replace occurrences of the pattern with double backslash
+    replaced_string = re.sub(pattern, r'\\\\', string)
+
+    # Remove spaces immediately before and after the double backslash
+    replaced_string = re.sub(r'\s*\\\\\s*', r'\\\\', replaced_string)
+
+    return replaced_string
+
+
+def first_alpha(string):
+    # returns the pos of the first alpha char in a string, else -1
     match = re.search(r'[a-zA-Z]', string)
     if match:
         return match.start()
     else:
         return -1
 
+def last_alpha(string):
+    # returns the pos of the last alpha char in a string, else -1
+    last_alpha = -1
+    for i, c in enumerate(string):
+        if c.isalpha():
+            last_alpha = i
+
+    return last_alpha
+
 
 def capitalise_first_alpha(s):
+    # Capitalises first alpha char in s
+
     for i, c in enumerate(s):
 
-        print(i)
         if c.isalpha():
 
             tmp = s[:i] + c.upper() + s[i+1:]
@@ -101,15 +138,37 @@ def capitalise_first_alpha(s):
 # stuff intended to handle single words
 
 def is_roman_numeral(word):
-    ''' determines whether word passed is a roman numeral within the stricter meaning of the term '''
+    ''' determines whether word passed is a roman numeral within the stricter meaning of the term and returns it properly formatted '''
     return bool(re.match(r'^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$', word.upper()))
 
+# def always_upper(word):
+#     '''determines whether word is in list of words that will always be uppercase'''
+#     return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'LP', 'MFSL', 'MOFI', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
+
+# def always_upper(word):
+    
+#     '''determines whether word is in list of words that will always be uppercase after stripping out the last char where it's a bracket'''
+#     # consider using if not word[-1].isalpha() to catch all instances of a word  e.g. USA1, USA- etc.
+#     if word[-1] in (')', ']', '}'):
+#         word = word[:len(word)-1]
+        
+#     return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'LP', 'MFSL', 'MOFI', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
+
 def always_upper(word):
-    '''determines whether word is in list of words that will always be uppercase'''
-    return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'LP', 'MFSL', 'MOFI', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
+    '''determines whether word is in list of words that will always be uppercase after stripping out non-alpha chars at the beginning and end of the string '''    
+    first_char = first_alpha(word)
+    if first_char > -1: # i.e. there is indeed at least one alpha char in string
+        last_char = last_alpha(word) + 1
+        word = word[first_char:last_char]
+       
+    return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'LP', 'MFSL', 'MOFI', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
+
+
+
 
 
 def capitalise_first_word(sentence):
+    # capitalises the first word in a string passed to it
 
     if not sentence:  # empty sentence check
         return ''
@@ -124,7 +183,7 @@ def capitalise_first_word(sentence):
     return ' '.join(words)
 
 def capitalise_last_word(sentence):
-
+    # capitalises the last word in a string passed to it
     if not sentence:  # empty sentence check
         return ''
 
@@ -134,9 +193,7 @@ def capitalise_last_word(sentence):
     if lastword and re.match(r'(:|\?|!|\}|\—|\(|\)|"| )', lastword):
 
         lastword = capitalise_word(lastword)
-        # print(lastword)
-        # input()
-
+    
     return ' '.join(words)
 
 
@@ -151,6 +208,8 @@ def capitalise_word(word):
         return 'kHz'
     elif word.lower() ==  'khz]':        
         return 'kHz]'
+    elif word.lower() ==  '10cc':        
+        return '10cc'
     elif is_roman_numeral(word) or always_upper(word) or us_state(word):
         return word.upper()
     else:
@@ -169,21 +228,15 @@ def rymify(sentence):
 
     parts = re.split(r'(:|\?|!|\—|\(|\)|"| )', sentence)
     for i in range(len(parts)):
-        if parts[i] and not re.match(r'(:|\?|!|\—|\(|\)|"| )', parts[i]):
+        if parts[i] and not re.match(r'(:|\?|!|\—|\(|\)|"| |&)', parts[i]):
 
             parts[i] = capitalise_word(parts[i])
-            # print(parts[i])
     
     # Join parts while maintaining original spacing
     capitalised_sentence = ''.join(parts)
     
-    # # Capitalize last word
-    # capitalised_sentence = capitalise_last_word(capitalised_sentence)
-    
     # Capitalize first and last word
     capitalised_sentence = capitalise_first_alpha(capitalise_last_word(capitalised_sentence))
-
-
 
     return capitalised_sentence
 
@@ -4225,6 +4278,73 @@ def set_album_caps():
                                        SET album = (?) 
                                      WHERE album = (?);''', (capitalised_album, stored_album))
 
+def set_composer_caps():
+
+    dbcursor.execute('''SELECT DISTINCT composer
+                          FROM alib
+                         WHERE composer IS NOT NULL
+                         ORDER BY lower(albumartist), lower(album);''')
+    composers = dbcursor.fetchall()
+    if len(composers) > 0:
+        for composer in composers:
+
+            stored_composer = composer[0]
+            capitalised_composer = title_case(replace_demimiters(stored_composer))
+
+
+            if stored_composer != capitalised_composer:
+
+                print(f"Current composer name: '{stored_composer}' \nmismatched\nRevised composer name: '{capitalised_composer}'")
+
+                dbcursor.execute('''UPDATE alib
+                                       SET composer = (?) 
+                                     WHERE composer = (?);''', (capitalised_composer, stored_composer))
+
+def set_artist_caps():
+
+    dbcursor.execute('''SELECT DISTINCT artist
+                          FROM alib
+                         WHERE artist IS NOT NULL
+                         ORDER BY lower(albumartist), lower(album);''')
+    artists = dbcursor.fetchall()
+    if len(artists) > 0:
+        for artist in artists:
+
+            stored_artist = artist[0]
+            capitalised_artist = title_case(replace_demimiters(stored_artist))
+
+
+            if stored_artist != capitalised_artist:
+
+                print(f"Current artist name: '{stored_artist}' \nmismatched\nRevised artist name: '{capitalised_artist}'")
+
+                dbcursor.execute('''UPDATE alib
+                                       SET artist = (?) 
+                                     WHERE artist = (?);''', (capitalised_artist, stored_artist))
+
+
+def set_albumartist_caps():
+
+    dbcursor.execute('''SELECT DISTINCT albumartist
+                          FROM alib
+                         WHERE albumartist IS NOT NULL
+                         ORDER BY lower(albumartist), lower(album);''')
+    albumartists = dbcursor.fetchall()
+    if len(albumartists) > 0:
+        for albumartist in albumartists:
+
+            stored_albumartist = albumartist[0]
+            capitalised_albumartist = title_case(replace_demimiters(stored_albumartist))
+
+            if stored_albumartist != capitalised_albumartist:
+
+                print(f"Current albumartist name: '{stored_albumartist}' \nmismatched\nRevised albumartist name: '{capitalised_albumartist}'")
+
+                dbcursor.execute('''UPDATE alib
+                                       SET albumartist = (?) 
+                                     WHERE albumartist = (?);''', (capitalised_albumartist, stored_albumartist))
+
+
 
 
 def rename_tunes():
@@ -4480,20 +4600,18 @@ def rename_dirs():
                 target_dirname = 'cd' + release_dirname.lower()[4:]
             
         # ensure release_resolution and [mixed res] aren't in target path more than once e.g. due to tagger logic or workflow limitations.
-        print(f'unfiltered buildup: {target_dirname}')
-        # input()
+        # print(f'unfiltered buildup: {target_dirname}')
+
         target_dirname = delete_repeated_phrase2(target_dirname, release_version)
-        print(f'eliminated release_version: {target_dirname}')
-        # input()
+        # print(f'eliminated release_version: {target_dirname}')
+
         target_dirname = delete_repeated_phrase2(target_dirname, release_resolution)
-        print(f'eliminated release_resolution: {target_dirname}')
+        # print(f'eliminated release_resolution: {target_dirname}')
         # input()
         target_dirname = delete_repeated_phrase2(target_dirname, '[Mixed Res]')
-        print(f'{target_dirname}')
+        # print(f'{target_dirname}')
         # input()
         target_dirname = trim_whitespace(sanitize_filename(target_dirname)) # strip illegal chars from target_dirname using same logic as applies to filenames because __dirname cannot ontains '/'
-
-
 
         # __path # derive via sql as it's 1:many tracks  = __dirpath + __filename, tus SQL update would read replace(__path, __dirpath, (?)) where __dirpath = (?); (target_dirpath, release_dirpath)
         # __dirpath # 1:1 replacement
@@ -4510,11 +4628,17 @@ def rename_dirs():
                 os.rename(release_dirpath, target_dirpath)
 
                 # if the rename was successful update the alib table to reflect the new __dirname, __dirpath & __path
-                dbcursor.execute('''UPDATE alib
-                                       SET __path = replace(__path, __dirpath, (?) ),
-                                           __dirpath = (?),
-                                           __dirname = (?) 
-                                     WHERE __dirpath = (?);''', (target_dirpath, target_dirpath, target_dirname, release_dirpath))
+                try:
+
+                    dbcursor.execute('''UPDATE alib
+                                           SET __path = replace(__path, __dirpath, (?) ),
+                                               __dirpath = (?),
+                                               __dirname = (?) 
+                                         WHERE __dirpath = (?);''', (target_dirpath, target_dirpath, target_dirname, release_dirpath))
+                except sqlite3.Error as er:
+
+                    print(er.sqlite_errorcode)  # Prints 275
+                    print(er.sqlite_errorname)  # Prints SQLITE_CONSTRAINT_CHECK
 
             except OSError as e:
                 print(f"{e}\n", file=sys.stderr)
@@ -4600,7 +4724,7 @@ def update_tags():
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
 
 
-    ''' here you add whatever update and enrichment queries you want to run against the table '''
+    # ''' here you add whatever update and enrichment queries you want to run against the table '''
 
     # transfer any unsynced lyrics to LYRICS tag
     unsyncedlyrics_to_lyrics()
@@ -4706,6 +4830,15 @@ def update_tags():
 
     # set capitalistion for album names
     set_album_caps()
+
+    # set capitalistion for composers
+    set_composer_caps()
+
+    # set capitalistion for artists
+    set_artist_caps()
+
+    # set capitalistion for albumartists
+    set_albumartist_caps()
 
     # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
     tag_non_redbook()
