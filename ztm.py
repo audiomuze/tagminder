@@ -91,9 +91,14 @@ def lowercase_match(match):
     """Lowercase the whole regular expression match group."""
     return match.group().lower()
 
-def replace_demimiters(string):
+def replace_demimiters(string, entity = ''):
+
     # Define a regular expression pattern to match comma, forward slash, or semicolon
-    pattern = r'[,\;/&]'
+    # if artisrt or albumartist do not include & in splitting logic
+    if entity in ('artist', 'albumartist'):
+        pattern = r'[,\;/]'
+    else:
+        pattern = r'[,\;/&]'
 
     # Replace occurrences of the pattern with double backslash
     replaced_string = re.sub(pattern, r'\\\\', string)
@@ -138,12 +143,17 @@ def capitalise_first_alpha(s):
 # stuff intended to handle single words
 
 def is_roman_numeral(word):
+    first_char = first_alpha(word)
+    if first_char > -1: # i.e. there is indeed at least one alpha char in string
+        last_char = last_alpha(word) + 1
+        word = word[first_char:last_char]
+
     ''' determines whether word passed is a roman numeral within the stricter meaning of the term and returns it properly formatted '''
     return bool(re.match(r'^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$', word.upper()))
 
 # def always_upper(word):
 #     '''determines whether word is in list of words that will always be uppercase'''
-#     return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'LP', 'MFSL', 'MOFI', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
+#     return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'LP', 'MFSL', 'MOFI', 'MTV','NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
 
 # def always_upper(word):
     
@@ -161,7 +171,7 @@ def always_upper(word):
         last_char = last_alpha(word) + 1
         word = word[first_char:last_char]
        
-    return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'LP', 'MFSL', 'MOFI', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
+    return word.upper() in ('ABBA', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'HBO', 'LP', 'MFSL', 'MOFI', 'MTV', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
 
 
 
@@ -228,7 +238,7 @@ def rymify(sentence):
 
     parts = re.split(r'(:|\?|!|\—|\(|\)|"| )', sentence)
     for i in range(len(parts)):
-        if parts[i] and not re.match(r'(:|\?|!|\—|\(|\)|"| |&)', parts[i]):
+        if parts[i] and not re.match(r'(:|\?|!|\—|\(|\)|"|&| )', parts[i]):
 
             parts[i] = capitalise_word(parts[i])
     
@@ -507,6 +517,7 @@ def establish_environment():
     "acoustid_fingerprint",
     "acoustid_id",
     "album",
+    "album_dr",
     "albumartist",
     "amg_album_id",
     "amg_boxset_url",
@@ -4219,6 +4230,12 @@ def disambiguate_contributors():
         print('No remaining name corrections to process')
 
 
+############################################################
+
+
+#################################################################
+
+
 
 def unpad_tracks():
 
@@ -4311,7 +4328,7 @@ def set_artist_caps():
         for artist in artists:
 
             stored_artist = artist[0]
-            capitalised_artist = title_case(replace_demimiters(stored_artist))
+            capitalised_artist = title_case(replace_demimiters(stored_artist, 'artist'))
 
 
             if stored_artist != capitalised_artist:
@@ -4334,15 +4351,38 @@ def set_albumartist_caps():
         for albumartist in albumartists:
 
             stored_albumartist = albumartist[0]
-            capitalised_albumartist = title_case(replace_demimiters(stored_albumartist))
+            l_stored_albumartist = stored_albumartist.lower()
 
-            if stored_albumartist != capitalised_albumartist:
+            # here we need some code tht checks for mbrainz table, and if exists lookup stored_albumartist.  if found leave name unchanged, if not do capitalisation.  Obv means mbrainz capitalisation must agree with what we see in allmusic
+            # if that's important to you.  So some code should eb written to id albumartists in current day alib where their text case differs from mbrainz and then mbrainz must be updated accordingly
 
-                print(f"Current albumartist name: '{stored_albumartist}' \nmismatched\nRevised albumartist name: '{capitalised_albumartist}'")
+            dbcursor.execute('''SELECT artist
+                                  FROM mbrainz_mbid_distinct_names
+                                 WHERE lower(artist) == (?);''', (l_stored_albumartist,))
 
-                dbcursor.execute('''UPDATE alib
-                                       SET albumartist = (?) 
-                                     WHERE albumartist = (?);''', (capitalised_albumartist, stored_albumartist))
+            matched_artist = dbcursor.fetchall()
+
+            # if there's no match, the artist doesn't exist in musicbrainz data, so transform it:
+            if len(matched_artist) == 0:
+                capitalised_albumartist = title_case(replace_demimiters(stored_albumartist,'albumartist'))
+
+                if stored_albumartist != capitalised_albumartist:
+
+                    print(f"Current albumartist name: '{stored_albumartist}' \nmismatched\nRevised albumartist name: '{capitalised_albumartist}'")
+
+                    dbcursor.execute('''UPDATE alib
+                                           SET albumartist = (?) 
+                                         WHERE albumartist = (?);''', (capitalised_albumartist, stored_albumartist))
+            else:
+                # if there is a match check that the text case is the same ... if not prefer mbrainz text case
+                mb_artist = matched_artist[0][0]
+                if stored_albumartist != mb_artist:
+
+                    print(f"Current albumartist name: '{stored_albumartist}' \nmismatched with\nRevised albumartist name: '{mb_artist}'")
+                    dbcursor.execute('''UPDATE alib SET albumartist = ? WHERE albumartist = ?''', (mb_artist, stored_albumartist))
+
+
+
 
 
 
@@ -4449,17 +4489,23 @@ def rename_tunes():
 
 
             # attempt to rename the file
-            try:
-                os.rename(tune_path, new_tune_path)
-                # if the rename was successful update the alib table to reflect the new filenames, keeping old file extension as file type will not have changed.
-                dbcursor.execute('''UPDATE alib
-                                       SET __filename = (?),
-                                           __filename_no_ext = substr( (?), 1, instr( (?), __ext) - 2),
-                                           __path = (?) 
-                                     WHERE rowid = (?);''', (tune_filename, tune_filename, tune_filename, new_tune_path, tune_rowid))
 
-            except OSError as e:
-                print(f"{e}\n", file=sys.stderr)
+            if os.path.exists(new_tune_path):
+
+                print(f'Cannot rename file: {tune_filename} to: {target_filename} because {new_tune_path} exists.')
+            else:
+                
+                try:
+                    os.rename(tune_path, new_tune_path)
+                    # if the rename was successful update the alib table to reflect the new filenames, keeping old file extension as file type will not have changed.
+                    dbcursor.execute('''UPDATE alib
+                                           SET __filename = (?),
+                                               __filename_no_ext = substr( (?), 1, instr( (?), __ext) - 2),
+                                               __path = (?) 
+                                         WHERE rowid = (?);''', (tune_filename, tune_filename, tune_filename, new_tune_path, tune_rowid))
+
+                except OSError as e:
+                    print(f"{e}\n", file=sys.stderr)
 
 
 
@@ -4623,25 +4669,31 @@ def rename_dirs():
             # derive new target_dirpath
             target_dirpath = sanitize_dirname(release_dirpath.rstrip(release_dirname) + target_dirname) # Now derive target_dirpath, which comprises the old __dirpath stripped of the old __dirname and replaced by target_dirname
             # attempt to rename the directory
-            try:
-                print(f'Renaming directory: {release_dirpath}\nto directory......: {target_dirname}')
-                os.rename(release_dirpath, target_dirpath)
 
-                # if the rename was successful update the alib table to reflect the new __dirname, __dirpath & __path
+            if os.path.exists(target_dirpath):
+
+                print(f'Cannot rename directory: {release_dirpath} to: {target_dirpath} because {target_dirpath} already exists.')
+            else:
+
                 try:
+                    print(f'Renaming directory: {release_dirpath}\nto directory......: {target_dirname}')
+                    os.rename(release_dirpath, target_dirpath)
 
-                    dbcursor.execute('''UPDATE alib
-                                           SET __path = replace(__path, __dirpath, (?) ),
-                                               __dirpath = (?),
-                                               __dirname = (?) 
-                                         WHERE __dirpath = (?);''', (target_dirpath, target_dirpath, target_dirname, release_dirpath))
-                except sqlite3.Error as er:
+                    # if the rename was successful update the alib table to reflect the new __dirname, __dirpath & __path
+                    try:
 
-                    print(er.sqlite_errorcode)  # Prints 275
-                    print(er.sqlite_errorname)  # Prints SQLITE_CONSTRAINT_CHECK
+                        dbcursor.execute('''UPDATE alib
+                                               SET __path = replace(__path, __dirpath, (?) ),
+                                                   __dirpath = (?),
+                                                   __dirname = (?) 
+                                             WHERE __dirpath = (?);''', (target_dirpath, target_dirpath, target_dirname, release_dirpath))
+                    except sqlite3.Error as er:
 
-            except OSError as e:
-                print(f"{e}\n", file=sys.stderr)
+                        print(er.sqlite_errorcode)  # Prints 275
+                        print(er.sqlite_errorname)  # Prints SQLITE_CONSTRAINT_CHECK
+
+                except OSError as e:
+                    print(f"{e}\n", file=sys.stderr)
 
 
 
@@ -4801,7 +4853,7 @@ def update_tags():
     # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
     find_duplicate_flac_albums()
 
-    # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
     cleanse_genres_and_styles()
 
     # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
@@ -4831,11 +4883,11 @@ def update_tags():
     # set capitalistion for album names
     set_album_caps()
 
-    # set capitalistion for composers
-    set_composer_caps()
+    # # set capitalistion for composers
+    # set_composer_caps()
 
-    # set capitalistion for artists
-    set_artist_caps()
+    # # set capitalistion for artists
+    # set_artist_caps()
 
     # set capitalistion for albumartists
     set_albumartist_caps()
