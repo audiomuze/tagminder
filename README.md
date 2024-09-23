@@ -133,7 +133,9 @@ Renames audio files as follows:
 
 Files and directories are renamed in-situ rather than being moved elsewhere in directory tree.  This means all other files associated with an album remain in the renamed folders.
 
+#### Normalising artist, albumartist, composer, engineer, producer and record label names
 
+Tagminder includes the capability to affect mass changes across hundreds of thousands of records almost instantaneously.  Music Servers typically employ database models that mean 10CC, 10cc and 10cc. are three different artists.  Tagminder includes a transformation function that enables you to transform all instances of names like 10CC, 10cc. and 10 cc to 10cc throughout your collection in a single operation, without having to write any code.  These transformation rules need only be captured once, and are then available for all future metadata ingestion, ensuring that your collection achieves a level of consistency that would otherwise be very diffucult to attain and maintain.  For users so inclined, data science techniques such as cosine similarity can be used to identify all likely permuations of 10cc in your data, making it trivial to popular the disambigation table used to drive normalisation of names throoughout your music.
 
 ## TODO: 
 Refer issues list, filter on enhancements.
