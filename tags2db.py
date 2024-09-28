@@ -259,6 +259,8 @@ def initdb(dbpath):
 	musicbrainz_artistid text,
     musicbrainz_composerid text,
 	musicbrainz_discid text,
+	musicbrainz_engineerid text,
+	musicbrainz_producerid text,
 	musicbrainz_releasegroupid text,
 	musicbrainz_releasetrackid text,
 	musicbrainz_trackid text,
@@ -368,10 +370,12 @@ def import_dir(dbpath, dirpath):
 					try:
 						columns = import_tag(tag, conn, columns)
 						logging.info('Import completed: ' + str(filepath))
-					except Exception as e:
-						logging.error('Error occured importing file %s' % filepath)
-						logging.exception(e)
-						raise
+					# except Exception as e:
+					# 	logging.error('Error occured importing file %s' % filepath)
+					# 	logging.exception(e)
+					# 	#raise
+					except:
+						pass
 				else:
 					logging.warning('Invalid file: ' + filepath)
 
