@@ -643,7 +643,7 @@ def establish_environment():
                                                                                            ORDER BY lower(entity) 
                                                                                       );''')
             # index it for speed
-            dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_namesakes on mb_namesakes(lower(entity)) WHERE entity IS NOT NULL;''')
+            dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_disambiguated on mb_disambiguated(lower(entity)) WHERE entity IS NOT NULL;''')
 
 
 
@@ -1984,12 +1984,12 @@ def kill_badtags():
                 ''' make an exception for __albumgain as it's ever present in mp3 and always null, so bypass it as it'd waste a cycle.  all other tags starting with '__' are created by tagfromdb3.py and are in effect _static_ data '''
                 ''' append quotes to tag names in case any have a space in the field name '''
                 tag = '"' + tagname[0] + '"'
-                dbcursor.execute(f'''CREATE INDEX IF NOT EXISTS spurious ON alib({tag}) WHERE {tag} IS NOT NULL''')
+                dbcursor.execute(f'''CREATE INDEX IF NOT EXISTS ix_spurious ON alib({tag}) WHERE {tag} IS NOT NULL''')
                 dbcursor.execute(f'''SELECT COUNT({tag}) FROM alib''')
                 tally = dbcursor.fetchone()[0]
                 print(f"- {tag}, {tally}")
                 dbcursor.execute(f"UPDATE alib SET {tag} = NULL WHERE {tag} IS NOT NULL")
-                dbcursor.execute(f"DROP INDEX IF EXISTS spurious")
+                dbcursor.execute(f"DROP INDEX IF EXISTS ix_spurious")
                 conn.commit() # it should be possible to move this out of the for loop, but then just check that trigger is working correctly
 
     closing_tally = tally_mods()
@@ -2009,9 +2009,9 @@ def nullify_empty_tags():
         if not column[0].startswith('__'):
             field_to_check = '[' + column[0] + ']'
             print(f"Checking: {field_to_check}")
-            dbcursor.execute(f"CREATE INDEX IF NOT EXISTS nullify ON alib ({field_to_check}) WHERE TRIM({field_to_check}) = '';")
+            dbcursor.execute(f"CREATE INDEX IF NOT EXISTS ix_nullify ON alib ({field_to_check}) WHERE TRIM({field_to_check}) = '';")
             dbcursor.execute(f"UPDATE alib SET {field_to_check} = NULL WHERE TRIM({field_to_check}) = '';")
-            dbcursor.execute(f"DROP INDEX IF EXISTS nullify;")
+            dbcursor.execute(f"DROP INDEX IF EXISTS ix_nullify;")
     print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
@@ -2030,8 +2030,8 @@ def trim_and_remove_crlf():
     opening_tally = tally_mods()
 
     for text_tag in text_tags:
-        dbcursor.execute(f"CREATE INDEX IF NOT EXISTS crlf ON alib (replace(replace({text_tag}, char(10), ''), char(13), '') ) WHERE {text_tag} IS NOT NULL AND {text_tag} != replace(replace({text_tag}, char(10), ''), char(13), '');")
-        dbcursor.execute(f"CREATE INDEX IF NOT EXISTS crlf1 ON alib (trim({text_tag})) WHERE {text_tag} IS NOT NULL;")
+        dbcursor.execute(f"CREATE INDEX IF NOT EXISTS ix_crlf ON alib (replace(replace({text_tag}, char(10), ''), char(13), '') ) WHERE {text_tag} IS NOT NULL AND {text_tag} != replace(replace({text_tag}, char(10), ''), char(13), '');")
+        dbcursor.execute(f"CREATE INDEX IF NOT EXISTS ix_crlf1 ON alib (trim({text_tag})) WHERE {text_tag} IS NOT NULL;")
 
         print(f"- {text_tag}")
 
@@ -2072,7 +2072,7 @@ def set_apostrophe():
     opening_tally = tally_mods()
 
     for text_tag in text_tags:
-        dbcursor.execute(f"CREATE INDEX IF NOT EXISTS apostrophe ON alib ({text_tag}) WHERE {text_tag} IS NOT NULL;")
+        dbcursor.execute(f"CREATE INDEX IF NOT EXISTS ix_apostrophe ON alib ({text_tag}) WHERE {text_tag} IS NOT NULL;")
         print(f"\nStandardising apostrophes: replacing instances of '{wrong_apostrophe1}' and '{wrong_apostrophe2}' with '{right_apostrophe}' for tag: {text_tag}")
 
         ''' replace wrong apostrophes '''
@@ -2083,7 +2083,7 @@ def set_apostrophe():
             f"UPDATE alib SET {text_tag} = replace({text_tag}, (?), (?) ) WHERE {text_tag} IS NOT NULL AND {text_tag} != replace({text_tag}, (?), (?) );", (wrong_apostrophe2, right_apostrophe, wrong_apostrophe2, right_apostrophe))
 
 
-        dbcursor.execute(f"DROP INDEX IF EXISTS apostrophe;")
+        dbcursor.execute(f"DROP INDEX IF EXISTS ix_apostrophe;")
 
     print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
@@ -2506,14 +2506,14 @@ def add_genres_and_styles():
     print(f"\n┌ Adding Genres and Styles to albums without both of genres and styles, based on amalgamation of albumartist's genres and styles from other works:\n")
 
     # as this is a rather data intensive iterative process, conditional indexes may help with performance
-    dbcursor.execute('''CREATE INDEX IF NOT EXISTS albartists1 ON alib (
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_albartists1 ON alib (
                             albumartist
                         )
                         WHERE (albumartist IS NOT NULL AND 
                                (genre IS NULL AND 
                                 style IS NULL) );''')
 
-    dbcursor.execute('''CREATE INDEX IF NOT EXISTS albartists2 ON alib (
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_albartists2 ON alib (
                             albumartist
                         )
                         WHERE (albumartist IS NOT NULL AND 
@@ -2675,7 +2675,7 @@ def add_genres_and_styles():
                     # check for existence of Pop/Rock only entries for this albumartist
                     ##################################################################
 
-                    dbcursor.execute('''CREATE INDEX IF NOT EXISTS albartists3 ON alib (
+                    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_albartists3 ON alib (
                                             albumartist
                                         )
                                         WHERE (albumartist IS NOT NULL COLLATE NOCASE AND 
@@ -2724,7 +2724,7 @@ def add_genres_and_styles():
                     ###############################################################################################
                     # now check for existence of Pop only entities for this albumartist and augment with 'Pop/Rock'
                     ###############################################################################################
-                    dbcursor.execute('''CREATE INDEX IF NOT EXISTS albartists4 ON alib (
+                    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_albartists4 ON alib (
                                             albumartist
                                         )
                                         WHERE (albumartist IS NOT NULL COLLATE NOCASE AND 
@@ -2782,7 +2782,7 @@ def add_genres_and_styles():
                     ##################################################################
                     # check for existence of Jazz only entities for this albumartist
                     ##################################################################
-                    dbcursor.execute('''CREATE INDEX IF NOT EXISTS albartists5 ON alib (
+                    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_albartists5 ON alib (
                                             albumartist
                                         )
                                         WHERE (albumartist IS NOT NULL COLLATE NOCASE AND 
@@ -2870,7 +2870,7 @@ def title_keywords_to_subtitle():
     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
 
     print('\n')
-    dbcursor.execute(f'''CREATE INDEX IF NOT EXISTS titles_subtitles ON alib(title, subtitle) WHERE title IS NOT NULL;''')
+    dbcursor.execute(f'''CREATE INDEX IF NOT EXISTS ix_titles_subtitles ON alib(title, subtitle) WHERE title IS NOT NULL;''')
     opening_tally = tally_mods()
     for keyword in keywords:
 
@@ -2887,7 +2887,7 @@ def title_keywords_to_subtitle():
                                    subtitle = substr(title, instr(title, ?) ) 
                              WHERE (title LIKE ?) AND 
                                    subtitle IS NULL;''', (keyword, keyword, keyword))
-    dbcursor.execute(f"DROP INDEX IF EXISTS titles_subtitles")
+    dbcursor.execute(f"DROP INDEX IF EXISTS ix_titles_subtitles")
     print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
@@ -2946,7 +2946,7 @@ def live_means_live_in_subtitle():
 #     dbcursor.execute('PRAGMA case_sensitive_like = TRUE;')
 
 #     print('\n')
-#     dbcursor.execute(f"CREATE INDEX IF NOT EXISTS titles_subtitles ON alib(title, subtitle)")
+#     dbcursor.execute(f"CREATE INDEX IF NOT EXISTS ix_titles_subtitles ON alib(title, subtitle)")
 #     opening_tally = tally_mods()
 #     for live_instance in live_instances:
 
@@ -2954,7 +2954,7 @@ def live_means_live_in_subtitle():
 #         dbcursor.execute(f"UPDATE alib SET title = trim(substr(title, 1, instr(title, ?) - 1) ), subtitle = substr(title, instr(title, ?)) WHERE (title LIKE ? AND subtitle IS NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
 #         dbcursor.execute(f"UPDATE alib SET subtitle = subtitle || '\\\\' || trim(substr(title, instr(title, ?))), title = trim(substr(title, 1, instr(title, ?) - 1) ) WHERE (title LIKE ? AND subtitle IS NOT NULL);", (live_instance, live_instance, '%'+live_instance+'%'))
 
-#     dbcursor.execute(f"DROP INDEX IF EXISTS titles_subtitles")
+#     dbcursor.execute(f"DROP INDEX IF EXISTS ix_titles_subtitles")
 #     print(f"|\n{tally_mods() - opening_tally} records were modified")
 
 
@@ -3075,7 +3075,7 @@ def dedupe_tags():
 
     for text_tag in text_tags:
         
-        query = (f"CREATE INDEX IF NOT EXISTS dedupe_tag ON alib({text_tag}) WHERE {text_tag} IS NOT NULL;")
+        query = (f"CREATE INDEX IF NOT EXISTS ix_dedupe_tag ON alib({text_tag}) WHERE {text_tag} IS NOT NULL;")
 
         dbcursor.execute(query)
         print(f"- {text_tag}")
@@ -3126,7 +3126,7 @@ def kill_singular_discnumber():
     dbcursor.execute('PRAGMA case_sensitive_like = FALSE;')
     # dbcursor.execute('''WITH GET_SINGLE_DISCS AS ( SELECT __dirpath AS cte_value FROM ( SELECT DISTINCT __dirpath, discnumber FROM alib WHERE discnumber IS NOT NULL AND lower(__dirname) NOT LIKE '%cd%' AND lower(__dirname) NOT LIKE '%cd%') GROUP BY __dirpath HAVING count( * ) = 1 ORDER BY __dirpath ) SELECT cte_value FROM GET_SINGLE_DISCS;''')
 
-    dbcursor.execute('''CREATE INDEX IF NOT EXISTS dirpaths_discnumbers ON alib (
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_dirpaths_discnumbers ON alib (
                             __dirpath,
                             discnumber
                         );''')
@@ -3185,7 +3185,7 @@ def strip_live_from_album_name():
     print(f"\nStripping all occurences of '(live)' from end of album name, ensuring album is marked live and updating subtitle where required")
 
     opening_tally = tally_mods()
-    dbcursor.execute('''CREATE INDEX IF NOT EXISTS albums ON alib(album) WHERE album IS NOT NULL''')
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_albums ON alib(album) WHERE album IS NOT NULL''')
 
     ''' set live flag '''
     dbcursor.execute('''UPDATE alib
@@ -3422,9 +3422,9 @@ def establish_alib_contributors():
     dbcursor.execute('''DROP INDEX IF EXISTS role_composers;''')
     dbcursor.execute('''DROP INDEX IF EXISTS contributors_with_mbid;''')
 
-    dbcursor.execute('''CREATE INDEX IF NOT EXISTS albumartists ON alib(albumartist) WHERE albumartist IS NOT NULL;''')
-    dbcursor.execute('''CREATE INDEX IF NOT EXISTS artists ON alib(artist) WHERE artist IS NOT NULL;''')
-    dbcursor.execute('''CREATE INDEX IF NOT EXISTS composers ON alib(composer) WHERE composer IS NOT NULL;''')
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_albumartists ON alib(albumartist) WHERE albumartist IS NOT NULL;''')
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_artists ON alib(artist) WHERE artist IS NOT NULL;''')
+    dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_composers ON alib(composer) WHERE composer IS NOT NULL;''')
 
 
     # create contributors table from all albumartists, artists and composers where the abumartist, artist and composer names only appear once alongside an mbid
@@ -3668,12 +3668,12 @@ def add_mb_entities():
         # build list of unique contibutors by gathering all mbid's found in alib - checking against artist, albumartist and composer fields
         establish_alib_contributors()
 
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS lrole_albumartists ON alib(LOWER(albumartist)) WHERE albumartist IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS lrole_artists ON alib(LOWER(artist)) WHERE artist IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS lrole_composers ON alib(LOWER(composer)) WHERE composer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS lrole_engineers ON alib(LOWER(engineer)) WHERE engineer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS lrole_producers ON alib(LOWER(producer)) WHERE producer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS lcontributors on contributor_with_mbid(LOWER(contributor)) WHERE contributor IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lrole_albumartists ON alib(LOWER(albumartist)) WHERE albumartist IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lrole_artists ON alib(LOWER(artist)) WHERE artist IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lrole_composers ON alib(LOWER(composer)) WHERE composer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lrole_engineers ON alib(LOWER(engineer)) WHERE engineer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lrole_producers ON alib(LOWER(producer)) WHERE producer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lcontributors on contributor_with_mbid(LOWER(contributor)) WHERE contributor IS NOT NULL;''')
             
         print(f"\nAdding musicbrainz identifiers to artists & albumartists")
         opening_tally = tally_mods()
@@ -3731,9 +3731,9 @@ def add_multiartist_mb_entities():
     if table_exists('mb_disambiguated'):
 
         # I believe these indexes are duplicated under add_mb_entities() using a different naming convention
-        # dbcursor.execute('''CREATE INDEX IF NOT EXISTS lalbumartists ON alib(LOWER(albumartist)) WHERE albumartist IS NOT NULL;''')
-        # dbcursor.execute('''CREATE INDEX IF NOT EXISTS lartists ON alib(LOWER(artist)) WHERE artist IS NOT NULL;''')
-        # dbcursor.execute('''CREATE INDEX IF NOT EXISTS lcomposers ON alib(LOWER(composer)) WHERE composer IS NOT NULL;''')
+        # dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lalbumartists ON alib(LOWER(albumartist)) WHERE albumartist IS NOT NULL;''')
+        # dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lartists ON alib(LOWER(artist)) WHERE artist IS NOT NULL;''')
+        # dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lcomposers ON alib(LOWER(composer)) WHERE composer IS NOT NULL;''')
         dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lmb_artists on mb_disambiguated(LOWER(entity));''')
 
 
@@ -3783,7 +3783,7 @@ def add_multiartist_mb_entities():
 
                              ORDER BY contributor;''')
 
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS multi_contributor_index ON multi_contributors (
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_multi_contributor_index ON multi_contributors (
                                 contributor
                             );''')
 
@@ -4991,7 +4991,7 @@ def show_stats_and_log_changes():
 
         ''' write changed records to changed_tags table '''
         ''' Create an export database and write out alib containing changed records with sqlmodded set to NULL for writing back to underlying file tags '''
-        dbcursor.execute("CREATE INDEX IF NOT EXISTS filepaths ON alib(__path)")
+        dbcursor.execute("CREATE INDEX IF NOT EXISTS ix_filepaths ON alib(__path)")
 
         #############################################temporarily blocked code###############################
         export_db = '/tmp/amg/export.db'
@@ -5032,115 +5032,115 @@ def update_tags():
     # here you add whatever update and enrichment queries you want to run against the table 
     # comment out anything you don't want run
 
-    # transfer any unsynced lyrics to LYRICS tag
-    unsyncedlyrics_to_lyrics()
+    # # transfer any unsynced lyrics to LYRICS tag
+    # unsyncedlyrics_to_lyrics()
 
-    # merge [recording location] with RECORDINGLOCATION
-    merge_recording_locations()
+    # # merge [recording location] with RECORDINGLOCATION
+    # merge_recording_locations()
 
-    # merge release tag to VERSION tag
-    release_to_version()
+    # # merge release tag to VERSION tag
+    # release_to_version()
 
-    # get rid of tags we don't want to store
-    kill_badtags()
+    # # get rid of tags we don't want to store
+    # kill_badtags()
 
-    # remove CR & LF from text tags (excluding lyrics & review tags)
-    trim_and_remove_crlf()
+    # # remove CR & LF from text tags (excluding lyrics & review tags)
+    # trim_and_remove_crlf()
 
-    # get rid of on-standard apostrophes
-    set_apostrophe()
+    # # get rid of on-standard apostrophes
+    # set_apostrophe()
 
-    # strip Feat in its various forms from track title and append to ARTIST tag
-    title_feat_to_artist()
+    # # strip Feat in its various forms from track title and append to ARTIST tag
+    # title_feat_to_artist()
 
-    # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    feat_artist_to_artist()
+    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    # feat_artist_to_artist()
 
     # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
     # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
     # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
     # # generate_string_grouper_input()
 
-    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
-    # set all empty tags ('') to NULL
-    nullify_empty_tags()
+    # # set all empty tags ('') to NULL
+    # nullify_empty_tags()
 
-    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    nullify_performers_matching_artists()
+    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    # nullify_performers_matching_artists()
 
-    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    strip_live_from_titles()
+    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    # strip_live_from_titles()
 
-    # moves known keywords in brackets to subtitle
-    title_keywords_to_subtitle()
+    # # moves known keywords in brackets to subtitle
+    # title_keywords_to_subtitle()
 
-    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    square_brackets_to_subtitle()
+    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    # square_brackets_to_subtitle()
 
-    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    strip_live_from_album_name()
+    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    # strip_live_from_album_name()
 
-    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    live_in_subtitle_means_live()
+    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    # live_in_subtitle_means_live()
 
-    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    live_means_live_in_subtitle()
+    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    # live_means_live_in_subtitle()
 
-    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    kill_singular_discnumber()
+    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    # kill_singular_discnumber()
 
-    # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    set_compilation_flag()
+    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # set_compilation_flag()
 
-    # set albumartist to NULL for all compilation albums where they are not NULL
-    nullify_albumartist_in_va()
+    # # set albumartist to NULL for all compilation albums where they are not NULL
+    # nullify_albumartist_in_va()
 
-    # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    capitalise_releasetype()
+    # # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    # capitalise_releasetype()
 
-    # determines releasetype for each album if not already populated
-    add_releasetype()
+    # # determines releasetype for each album if not already populated
+    # add_releasetype()
 
-    # add a uuid4 tag to every record that does not have one
-    add_tagminder_uuid()
+    # # add a uuid4 tag to every record that does not have one
+    # add_tagminder_uuid()
 
-    # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    dedupe_tags()
+    # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # dedupe_tags()
 
-    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    find_duplicate_flac_albums()
+    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    # find_duplicate_flac_albums()
 
-    # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
-    cleanse_genres_and_styles()
+    # # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    # cleanse_genres_and_styles()
 
-    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
-    add_genres_and_styles()
+    # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
+    # add_genres_and_styles()
 
-    # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
-    # # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
-    # # do not run genre and style code if you use per track genres and styles
-    standardise_album_tags('album')
-    standardise_album_tags('genre')
-    standardise_album_tags('style')
-    standardise_album_tags('mood')
-    standardise_album_tags('theme')
+    # # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
+    # # # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
+    # # # do not run genre and style code if you use per track genres and styles
+    # standardise_album_tags('album')
+    # standardise_album_tags('genre')
+    # standardise_album_tags('style')
+    # standardise_album_tags('mood')
+    # standardise_album_tags('theme')
 
-    # if mb_disambiguated table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    # not necessary to call this anymore becaise it gets called by add_multiartist_mb_entities()
-    # ideally it should be turned into a localised function of add_multiartist_mb_entities()
-    #add_mb_entities()
+    # # if mb_disambiguated table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    # # not necessary to call this anymore becaise it gets called by add_multiartist_mb_entities()
+    # # ideally it should be turned into a localised function of add_multiartist_mb_entities()
+    # #add_mb_entities()
 
-    # # add mbid's for multi-entry artists
-    add_multiartist_mb_entities()
+    # # # add mbid's for multi-entry artists
+    # add_multiartist_mb_entities()
 
-    # set capitalistion for track titles
-    set_title_caps()
+    # # set capitalistion for track titles
+    # set_title_caps()
 
 
-    # set capitalistion for album names
-    set_album_caps()
+    # # set capitalistion for album names
+    # set_album_caps()
 
 
     # ######################
@@ -5158,25 +5158,25 @@ def update_tags():
     # ######################
 
 
-    # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
-    tag_non_redbook()
+    # # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
+    # tag_non_redbook()
 
-    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
-    merge_album_version()
+    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
+    # merge_album_version()
 
 
-    # remove leading 0's from track tags
-    unpad_tracks()
+    # # remove leading 0's from track tags
+    # unpad_tracks()
 
-    # remove leading 0's from discnumber tags
-    unpad_discnumbers()
+    # # remove leading 0's from discnumber tags
+    # unpad_discnumbers()
 
-    # rename files leveraging processed metadata in the database
-    rename_tunes()
+    # # rename files leveraging processed metadata in the database
+    # rename_tunes()
 
-    # # rename folders containing albums leveraging processed metadata in the database
-    rename_dirs()
+    # # # rename folders containing albums leveraging processed metadata in the database
+    # rename_dirs()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
