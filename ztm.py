@@ -4416,7 +4416,7 @@ def generate_string_grouper_input():
 
 
     # create table only if it doesn't exist - if it's there preserve prior work
-    dbcursor.execute("CREATE TABLE IF NOT EXISTS _INF_contributors_with_commas (contributor TEXT UNIQUE, delimit NULL, lcontributor TEXT, ampersands TEXT, commas TEXT)")
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS _INF_contributors_with_commas (contributor TEXT UNIQUE, delimit NULL, lcontributor TEXT, ampersands INTEGER, commas INTEGER)")
     # pull in only those contributors with commas that do not already appear in mb_disambiguated (because they're clearly correct)
     dbcursor.execute('''INSERT INTO
                           _INF_contributors_with_commas
@@ -4443,14 +4443,14 @@ def generate_string_grouper_input():
 
 
     # create table only if it doesn't exist - if it's there preserve prior work
-    dbcursor.execute("CREATE TABLE IF NOT EXISTS _INF_contributors_with_ampersand (contributor TEXT UNIQUE, delimit NULL, lcontributor TEXT, ampersands TEXT, commas TEXT)")
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS _INF_contributors_with_ampersand (contributor TEXT UNIQUE, delimit NULL, lcontributor TEXT, ampersands INTEGER, commas INTEGER)")
     # pull in only those contributors with commas that do not already appear in mb_disambiguated (because they're clearly correct)
     dbcursor.execute('''INSERT INTO
                           _INF_contributors_with_ampersand
                         SELECT
                           contributor,
                           NULL AS delimit,
-                          lcontributor
+                          lcontributor,
                           (
                             LENGTH (contributor) - LENGTH (REPLACE (contributor, '&', ''))
                           ) / LENGTH ('&') as ampersands,
