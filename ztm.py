@@ -4,6 +4,10 @@ import csv
 import os
 from os.path import exists, dirname
 import pandas as pd
+import numpy as np
+from string_grouper import match_strings, match_most_similar, \
+    group_similar_strings, compute_pairwise_similarities, \
+    StringGrouper
 import re
 import sqlite3
 import sys
@@ -606,7 +610,13 @@ def establish_environment():
     dbcursor.execute("CREATE TRIGGER IF NOT EXISTS sqlmods AFTER UPDATE ON alib FOR EACH ROW WHEN old.sqlmodded IS NULL BEGIN UPDATE alib SET sqlmodded = iif(sqlmodded IS NULL, '1', (CAST (sqlmodded AS INTEGER) + 1) )  WHERE rowid = NEW.rowid; END;")
 
     ''' alib_rollback is a master copy of alib table untainted by any changes made by this script.  if a rollback table already exists we are applying further changes or imports, so leave it intact '''
-    dbcursor.execute("CREATE TABLE IF NOT EXISTS alib_rollback AS SELECT * FROM alib order by __path;")
+
+    ######################################################################################################
+    # TEMP DISABLE
+    # dbcursor.execute("CREATE TABLE IF NOT EXISTS alib_rollback AS SELECT * FROM alib order by __path;")
+    ######################################################################################################
+
+
 
     # check whether there's a musicbrainz entities table containing distinct names and mbid's.  If it exists, leverage it.  Note, this table is the entire musicbrainz master before removing namesakes.
     # Namesakes need to be dealt with manually in userland, it's not something that can be automated as there's no way to reliably distinguish one namesake from another when considering only name
@@ -639,27 +649,31 @@ def establish_environment():
                                                                                            ORDER BY lower(entity) 
                                                                                       )
                                                                                       SELECT mbid,
-                                                                                             entity
+                                                                                             entity,
+                                                                                             lentity
                                                                                         FROM mb_entities
                                                                                        WHERE entity IN cte
                                                                                   );''')
 
             # index it for speed
-            dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_namesakes on mb_namesakes(lower(entity)) WHERE entity IS NOT NULL;''')
+            #dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_namesakes on mb_namesakes(lower(entity)) WHERE entity IS NOT NULL;''')
+            dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lmb_namesakes on mb_namesakes(lentity) WHERE entity IS NOT NULL;''')
 
             # create a table of entity names that only appear once in mb_master for use within tagminder when adding mbid's to artist, albumartist, composer, engineer, producer, label and recordinglocation tags
             dbcursor.execute('''DROP TABLE IF EXISTS mb_disambiguated;''')
             dbcursor.execute('''CREATE TABLE IF NOT EXISTS mb_disambiguated AS SELECT *
                                                                                  FROM (
                                                                                           SELECT mbid,
-                                                                                                 entity
+                                                                                                 entity,
+                                                                                                 lentity
                                                                                             FROM mb_entities
                                                                                            GROUP BY lower(entity) 
                                                                                           HAVING count() == 1
                                                                                            ORDER BY lower(entity) 
                                                                                       );''')
             # index it for speed
-            dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_disambiguated on mb_disambiguated(lower(entity)) WHERE entity IS NOT NULL;''')
+            #dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_disambiguated on mb_disambiguated(lower(entity)) WHERE entity IS NOT NULL;''')
+            dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_ldisambiguated on mb_disambiguated(lentity) WHERE entity IS NOT NULL;''')
 
     conn.commit()
     return
@@ -4379,22 +4393,114 @@ def generate_string_grouper_input():
     
     merged_list = sorted(set(unique_sorted_split_list + singles_records))
 
+    # create a dict including lowercase of every record
+    data_to_insert = [(item, item.lower(), 0) for item in merged_list]
+
 
 
     # Ensure the all_contributors table exists
-    dbcursor.execute("CREATE TABLE IF NOT EXISTS distinct_contributors (contributor TEXT PRIMARY KEY, processed INTEGER, mbid TEXT)")
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS distinct_contributors (contributor TEXT PRIMARY KEY, lcontributor TEXT, processed INTEGER, mbid TEXT)")
 
     # Batch insert all unique, sorted entries from the merged list into a table for processing via string_grouper
     # this table is used externally by the user to feed lists to string grouper and find possible namesakes, misspelled arist names, text case differences. irregular spacing, 'the ' etc.
+    #dbcursor.executemany("INSERT INTO distinct_contributors (contributor, processed, mbid) VALUES (?,0,NULL)", ((item,) for item in merged_list))
+    #dbcursor.executemany("INSERT INTO distinct_contributors (contributor, lcontributor, processed, mbid) VALUES (?,NULL,0,NULL)", ((item,) for item in merged_list))
+    # Use executemany for efficient bulk insertion
+    dbcursor.executemany('''INSERT OR IGNORE INTO distinct_contributors (contributor, lcontributor, processed, mbid)
+                            VALUES (?, ?, ?, NULL)''', data_to_insert)
 
-    dbcursor.executemany("INSERT INTO distinct_contributors (contributor, processed, mbid) VALUES (?,0,NULL)", ((item,) for item in merged_list))
 
     # index all_contributors
-    dbcursor.execute('''CREATE INDEX ix_all_contributors ON distinct_contributors(contributor)''')
+    dbcursor.execute('''CREATE INDEX ix_distinct_contributors ON distinct_contributors(contributor)''')
+    dbcursor.execute('''CREATE INDEX ix_ldistinct_contributors ON distinct_contributors(lcontributor)''')    
+
+
+    # create table only if it doesn't exist - if it's there preserve prior work
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS _INF_contributors_with_commas (contributor TEXT UNIQUE, delimit NULL, lcontributor TEXT, ampersands TEXT, commas TEXT)")
+    # pull in only those contributors with commas that do not already appear in mb_disambiguated (because they're clearly correct)
+    dbcursor.execute('''INSERT INTO
+                          _INF_contributors_with_commas
+                        SELECT
+                          contributor,
+                          NULL AS delimit,
+                          lcontributor,
+                          (
+                            LENGTH (contributor) - LENGTH (REPLACE (contributor, '&', ''))
+                          ) / LENGTH ('&') as ampersands,
+                          (
+                            LENGTH (contributor) - LENGTH (REPLACE (contributor, ',', ''))
+                          ) / LENGTH (',') as commas
+                        FROM
+                          distinct_contributors
+                        WHERE
+                          contributor LIKE '%,%'
+                          AND lcontributor NOT IN (
+                            SELECT
+                              lentity
+                            FROM
+                              mb_disambiguated
+                          ) ON CONFLICT DO NOTHING;''')
+
+
+    # create table only if it doesn't exist - if it's there preserve prior work
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS _INF_contributors_with_ampersand (contributor TEXT UNIQUE, delimit NULL, lcontributor TEXT, ampersands TEXT, commas TEXT)")
+    # pull in only those contributors with commas that do not already appear in mb_disambiguated (because they're clearly correct)
+    dbcursor.execute('''INSERT INTO
+                          _INF_contributors_with_ampersand
+                        SELECT
+                          contributor,
+                          NULL AS delimit,
+                          lcontributor
+                          (
+                            LENGTH (contributor) - LENGTH (REPLACE (contributor, '&', ''))
+                          ) / LENGTH ('&') as ampersands,
+                          (
+                            LENGTH (contributor) - LENGTH (REPLACE (contributor, ',', ''))
+                          ) / LENGTH (',') as commas
+                        FROM
+                          distinct_contributors
+                        WHERE
+                          contributor LIKE '%&%'
+                          AND lcontributor NOT IN (
+                            SELECT
+                              lentity
+                            FROM
+                              mb_disambiguated
+                          ) ON CONFLICT DO NOTHING;''')
+
 
     dbcursor.execute('''select count(*) from distinct_contributors;''')
     records_generated = dbcursor.fetchall()[0][0]
     print(f'Your library contains {records_generated} unique artists, albumartists composers, lyricists, witers, performers, engineers & producers')
+
+    # now generate string grouper output
+    df = pd.read_sql_query(f'SELECT rowid, contributor, FALSE FROM distinct_contributors;', conn) # import all distinct contributors derived from alib
+
+    # match strings using string grouper capability
+    matches = match_strings(df['contributor'], min_similarity=0.85) # tweak similarity threshold for your level of precision ... lower score = more records in results
+    # Look at only the non-exact matches:
+    similarities = matches[matches['left_contributor'] != matches['right_contributor']].head(None)
+    #similarities = matches[matches['similarity'] < 0.9]
+
+    # write out to a csv file
+    similarities.to_csv('similar_contributors.csv', index=False, sep = '|')
+
+    # write out to a sqlite table
+    similarities.to_sql('string_grouper', conn, index=True, if_exists='replace')
+
+    # so what we now have is string_grouper's take on likely matches, based on speficied similarity threshold
+    # as we have processed records in the past and accepted them as true (1) or false (0), we should delete all matching records from disambiguation table
+    # do this by deleting records in string_grouper that match records in disambuguation table
+
+
+
+
+
+
+
+
+
+
 
 
     # # generate list of distinct labels --- this needs to follow above logic and then get repeated for recordinglocations
