@@ -4239,151 +4239,192 @@ def generate_string_grouper_input():
 # during this routine a number of tables are created/leveraged
 # ct is a temp table
    
-    print('Generating string_grouper_contributors table which holds distinct list of artist, performers, albumartists, composers, writers, lyricists, engineers and producers present in your tags')
-    #dbcursor.execute('''DROP TABLE IF EXISTS disambiguator_landing;''') not sure we want top drop this table if it's the resolved stuff, not even sure why we're creating it?
-    dbcursor.execute('''DROP TABLE IF EXISTS string_grouper_contributors;''')
-    dbcursor.execute('''DROP TABLE IF EXISTS string_grouper_labels;''')
-    dbcursor.execute('''DROP TABLE IF EXISTS string_grouper_recordinglocations;''')
-    dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
-    dbcursor.execute('''DROP TABLE IF EXISTS string_grouper;''')
+    print('Generating distinct_contributors table which holds distinct list of artist, performers, albumartists, composers, writers, lyricists, engineers and producers present in your tags')
+    # right, what we're doing here is creating a list of all contributors across artist, albumrtist, composer, lyricist, writer, performer, engineer and producer
+    # method:  
+    # get distinct records from each table, union all into a temp table
+    # write all entries containing '\\' to a secondary temp table
+    # read secondary temp table entries into a list
+    # split list using Python function
+    # add all entries from the primary temp table to the split list
+    # convert list to a set to elimiate duplicate list items
+    # sort it
+    # write it out to sqlite table called all_contributors
+    # feed that into the end result.
 
-    # dbcursor.execute('''CREATE TABLE IF NOT EXISTS disambiguator_landing (
-    #                         existing_contributor    TEXT,
-    #                         replacement_contributor TEXT
-    #                     );''')
+    dbcursor.execute("DROP TABLE IF EXISTS ct")
+    dbcursor.execute("DROP TABLE IF EXISTS ct_singles")
+    dbcursor.execute("DROP TABLE IF EXISTS ct_delimited")
+    dbcursor.execute("DROP TABLE IF EXISTS distinct_contributors")
+
+    dbcursor.execute("CREATE TEMP TABLE IF NOT EXISTS ct (contributor TEXT)")
+    dbcursor.execute("CREATE INDEX ix_ct on ct(contributor)")
+    dbcursor.execute("CREATE TEMP TABLE IF NOT EXISTS ct_singles (contributor TEXT)")
+    dbcursor.execute("CREATE INDEX ix_ct_singles on ct_singles(contributor)")
+    dbcursor.execute("CREATE TEMP TABLE IF NOT EXISTS ct_delimited (contributor TEXT)")
+    dbcursor.execute("CREATE INDEX ix_ct_delimited on ct_delimited(contributor)")
+
+    # grab all 
+    # -artist
+    # -albumartist
+    # -performer
+    # -composer
+    # -lyricist
+    # -writer
+    # -engineer
+    # -producer
+    # 
+    # names and insert into ct table
+    dbcursor.execute('''INSERT INTO
+                          ct (contributor)
+                        SELECT DISTINCT
+                          artist
+                        FROM
+                          alib
+                        WHERE
+                          artist IS NOT NULL
+                        UNION ALL
+                        SELECT DISTINCT
+                          albumartist
+                        FROM
+                          alib
+                        WHERE
+                          albumartist IS NOT NULL
+                        UNION ALL
+                        SELECT DISTINCT
+                          performer
+                        FROM
+                          alib
+                        WHERE
+                          performer IS NOT NULL
+                        UNION ALL
+                        SELECT DISTINCT
+                          composer
+                        FROM
+                          alib
+                        WHERE
+                          composer IS NOT NULL
+                        UNION ALL
+                        SELECT DISTINCT
+                          lyricist
+                        FROM
+                          alib
+                        WHERE
+                          lyricist IS NOT NULL
+                        UNION ALL
+                        SELECT DISTINCT
+                          writer
+                        FROM
+                          alib
+                        WHERE
+                          writer IS NOT NULL
+                        UNION ALL
+                        SELECT DISTINCT
+                          engineer
+                        FROM
+                          alib
+                        WHERE
+                          engineer IS NOT NULL
+                        UNION ALL
+                        SELECT DISTINCT
+                          producer
+                        FROM
+                          alib
+                        WHERE
+                          producer IS NOT NULL;''')
+
+    dbcursor.execute('''INSERT INTO ct_singles 
+                        SELECT DISTINCT
+                          contributor
+                        FROM
+                          ct
+                        WHERE
+                          contributor NOT LIKE '%\\%'
+                        ORDER BY
+                          contributor;''')
+
+    dbcursor.execute('''INSERT INTO ct_delimited 
+                        SELECT DISTINCT
+                          contributor
+                        FROM
+                          ct
+                        WHERE
+                          contributor LIKE '%\\%'
+                        ORDER BY
+                          contributor;''')
 
 
-    # grab all single entry artist names and insert into ct table
-    dbcursor.execute('''CREATE TEMP TABLE ct AS SELECT DISTINCT artist AS contributor
-                                             FROM alib
-                                            WHERE artist IS NOT NULL AND 
-                                                  artist NOT LIKE '%\\%' AND 
-                                                  artist NOT LIKE '%, %'
-                                            ORDER BY artist;''')
-
-    # grab all single entry albumartist names and insert into ct table
-    dbcursor.execute('''INSERT INTO ct (
-                                           contributor
-                                       )
-                                       SELECT DISTINCT albumartist
-                                         FROM alib
-                                        WHERE albumartist IS NOT NULL AND 
-                                              albumartist NOT LIKE '%\\%' AND 
-                                                  albumartist NOT LIKE '%, %'
-                                        ORDER BY albumartist;''')
-
-    # grab all single entry performer names and insert into ct table
-    dbcursor.execute('''INSERT INTO ct (
-                                           contributor
-                                       )
-                                       SELECT DISTINCT performer
-                                         FROM alib
-                                        WHERE performer IS NOT NULL AND 
-                                              performer NOT LIKE '%\\%' AND 
-                                                  performer NOT LIKE '%, %'
-                                        ORDER BY performer;''')
-
-    # grab all single entry composer names and insert into ct table
-    dbcursor.execute('''INSERT INTO ct (
-                                           contributor
-                                       )
-                                       SELECT DISTINCT composer
-                                         FROM alib
-                                        WHERE composer IS NOT NULL AND 
-                                              composer NOT LIKE '%\\%' AND 
-                                                  composer NOT LIKE '%, %'
-                                        ORDER BY composer;''')
-
-    # grab all single entry lyricist names and insert into ct table
-    dbcursor.execute('''INSERT INTO ct (
-                                           contributor
-                                       )
-                                       SELECT DISTINCT lyricist
-                                         FROM alib
-                                        WHERE lyricist IS NOT NULL AND 
-                                              lyricist NOT LIKE '%\\%' AND 
-                                                  lyricist NOT LIKE '%, %'
-                                        ORDER BY lyricist;''')
-
-# grab all single entry writer names and insert into ct table
-    dbcursor.execute('''INSERT INTO ct (
-                                           contributor
-                                       )
-                                       SELECT DISTINCT writer
-                                         FROM alib
-                                        WHERE writer IS NOT NULL AND 
-                                              writer NOT LIKE '%\\%' AND 
-                                                  writer NOT LIKE '%, %'
-                                        ORDER BY writer;''')
-
-    # grab all single entry engineer names and insert into ct table
-    dbcursor.execute('''INSERT INTO ct (
-                                           contributor
-                                       )
-                                       SELECT DISTINCT engineer
-                                         FROM alib
-                                        WHERE engineer IS NOT NULL AND 
-                                              engineer NOT LIKE '%\\%' AND 
-                                                  engineer NOT LIKE '%, %'
-                                        ORDER BY engineer;''')
-
-    # grab all single entry producer names and insert into ct table
-    dbcursor.execute('''INSERT INTO ct (
-                                           contributor
-                                       )
-                                       SELECT DISTINCT producer
-                                         FROM alib
-                                        WHERE producer IS NOT NULL AND 
-                                              producer NOT LIKE '%\\%' AND 
-                                                  producer NOT LIKE '%, %'
-                                        ORDER BY producer;''')
+    # get all records from delimited_contributors
+    dbcursor.execute('''SELECT contributor
+                        FROM
+                          ct_delimited;''')
 
 
-    # now take distinct records from ct and dump them into string_grouper table
+    # now grab the lot into a list
+    delim_records = [row[0] for row in dbcursor.fetchall()]
+    # split every string into discrete words
+    split_list = [item for sublist in delim_records for item in sublist.split('\\')]
+    print(f"Splitting contributor fields with delimited text gives rise to {len(split_list)} rows")
+    # deduplicate and sort split_list
+    unique_sorted_split_list = sorted(set(split_list))
+    # release mem
+    split_list.clear()
+
+    # get all records from ct_singles
+    dbcursor.execute('''SELECT contributor
+                        FROM
+                          ct_singles;''')
+    # now grab the lot into a list
+    singles_records = [row[0] for row in dbcursor.fetchall()]
+    
+    merged_list = sorted(set(unique_sorted_split_list + singles_records))
+
+
+
+    # Ensure the all_contributors table exists
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS distinct_contributors (contributor TEXT PRIMARY KEY, processed INTEGER, mbid TEXT)")
+
+    # Batch insert all unique, sorted entries from the merged list into a table for processing via string_grouper
     # this table is used externally by the user to feed lists to string grouper and find possible namesakes, misspelled arist names, text case differences. irregular spacing, 'the ' etc.
-    dbcursor.execute('''CREATE TABLE string_grouper AS SELECT DISTINCT contributor
-                                                         FROM ct
-                                                        WHERE contributor IS NOT NULL AND contributor != '' 
-                                                        ORDER BY contributor;''')
-    dbcursor.execute('''ALTER TABLE string_grouper ADD COLUMN processed INTEGER;''')
 
-    dbcursor.execute('''DROP TABLE IF EXISTS ct;''')
-    dbcursor.execute('''ALTER TABLE string_grouper RENAME TO string_grouper_contributors;''')
+    dbcursor.executemany("INSERT INTO distinct_contributors (contributor, processed, mbid) VALUES (?,0,NULL)", ((item,) for item in merged_list))
 
-    dbcursor.execute('''select count(*) from string_grouper_contributors;''')
+    # index all_contributors
+    dbcursor.execute('''CREATE INDEX ix_all_contributors ON distinct_contributors(contributor)''')
 
-    records_generated = dbcursor.fetchall()[0]
+    dbcursor.execute('''select count(*) from distinct_contributors;''')
+    records_generated = dbcursor.fetchall()[0][0]
     print(f'Your library contains {records_generated} unique artists, albumartists composers, lyricists, witers, performers, engineers & producers')
 
 
-    # generate list of distinct labels
-    # probably best dealt with as a seperate table
-    # grab all single entry label names and insert into string_grouper_labels table
-    dbcursor.execute('''CREATE TABLE string_grouper_labels AS SELECT DISTINCT label AS contributor
-                                                                FROM alib
-                                                               WHERE label IS NOT NULL AND 
-                                                                     label NOT LIKE '%\\%' AND 
-                                                                     label NOT LIKE '%, %'
-                                                               ORDER BY label;''')
+    # # generate list of distinct labels --- this needs to follow above logic and then get repeated for recordinglocations
+    # # probably best dealt with as a seperate table
+    # # grab all single entry label names and insert into string_grouper_labels table
+    # dbcursor.execute('''CREATE TABLE string_grouper_labels AS SELECT DISTINCT label AS contributor
+    #                                                             FROM alib
+    #                                                            WHERE label IS NOT NULL AND 
+    #                                                                  label NOT LIKE '%\\%' AND 
+    #                                                                  label NOT LIKE '%, %'
+    #                                                            ORDER BY label;''')
 
 
-    dbcursor.execute('''select count(*) from string_grouper_labels;''')
+    # dbcursor.execute('''select count(*) from string_grouper_labels;''')
 
-    records_generated = dbcursor.fetchall()[0]
-    print(f'Your library contains {records_generated} unique labels')
+    # records_generated = dbcursor.fetchall()[0]
+    # print(f'Your library contains {records_generated} unique labels')
 
-    # grab all single entry recordinglocation names and insert into string_grouper_recordinglocations table
-    dbcursor.execute('''CREATE TABLE string_grouper_recordinglocations AS SELECT DISTINCT recordinglocation AS contributor
-                                                                            FROM alib
-                                                                           WHERE recordinglocation IS NOT NULL AND 
-                                                                                 recordinglocation NOT LIKE '%\\%' AND 
-                                                                                 recordinglocation NOT LIKE '%, %'
-                                                                           ORDER BY recordinglocation;''')
+    # # grab all single entry recordinglocation names and insert into string_grouper_recordinglocations table
+    # dbcursor.execute('''CREATE TABLE string_grouper_recordinglocations AS SELECT DISTINCT recordinglocation AS contributor
+    #                                                                         FROM alib
+    #                                                                        WHERE recordinglocation IS NOT NULL AND 
+    #                                                                              recordinglocation NOT LIKE '%\\%' AND 
+    #                                                                              recordinglocation NOT LIKE '%, %'
+    #                                                                        ORDER BY recordinglocation;''')
 
-    dbcursor.execute('''select count(*) from string_grouper_recordinglocations''')
+    # dbcursor.execute('''select count(*) from string_grouper_recordinglocations''')
 
-    records_generated = dbcursor.fetchall()[0]
-    print(f'Your library contains {records_generated} unique recordinglocations')
+    # records_generated = dbcursor.fetchall()[0]
+    # print(f'Your library contains {records_generated} unique recordinglocations')
 
 
 
@@ -5062,7 +5103,7 @@ def show_stats_and_log_changes():
     print(f"{metadata_changes} updates have been processed against {records_changed} records, affecting {dir_count} albums")
     print('─' * messagelen)
 
-
+def export_changes():
     ''' get list of all affected __dirpaths '''
     changed_dirpaths = affected_dirpaths()
 
@@ -5127,100 +5168,100 @@ def update_tags():
     # here you add whatever update and enrichment queries you want to run against the table 
     # comment out anything you don't want run
 
-    # transfer any unsynced lyrics to LYRICS tag
-    unsyncedlyrics_to_lyrics()
+    # # transfer any unsynced lyrics to LYRICS tag
+    # unsyncedlyrics_to_lyrics()
 
-    # merge [recording location] with RECORDINGLOCATION
-    merge_recording_locations()
+    # # merge [recording location] with RECORDINGLOCATION
+    # merge_recording_locations()
 
-    # merge release tag to VERSION tag
-    release_to_version()
+    # # merge release tag to VERSION tag
+    # release_to_version()
 
-    # get rid of tags we don't want to store
-    kill_badtags()
+    # # get rid of tags we don't want to store
+    # kill_badtags()
 
-    # remove CR & LF from text tags (excluding lyrics & review tags)
-    trim_and_remove_crlf()
+    # # remove CR & LF from text tags (excluding lyrics & review tags)
+    # trim_and_remove_crlf()
 
-    # get rid of on-standard apostrophes
-    set_apostrophe()
+    # # get rid of non-standard apostrophes
+    # set_apostrophe()
 
-    # strip Feat in its various forms from track title and append to ARTIST tag
-    title_feat_to_artist()
+    # # strip Feat in its various forms from track title and append to ARTIST tag
+    # title_feat_to_artist()
 
-    # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    feat_artist_to_artist()
+    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    # feat_artist_to_artist()
 
-    # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
-    # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
-    # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors()
-    # # generate_string_grouper_input()
+    # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
+    # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
+    # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors() if enabled by user
+    generate_string_grouper_input()
 
-    # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
-    # set all empty tags ('') to NULL
-    nullify_empty_tags()
+    # # set all empty tags ('') to NULL
+    # nullify_empty_tags()
 
-    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    nullify_performers_matching_artists()
+    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    # nullify_performers_matching_artists()
 
-    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    strip_live_from_titles()
+    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    # strip_live_from_titles()
 
-    # moves known keywords in brackets to subtitle
-    title_keywords_to_subtitle()
+    # # moves known keywords in brackets to subtitle
+    # title_keywords_to_subtitle()
 
-    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    square_brackets_to_subtitle()
+    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    # square_brackets_to_subtitle()
 
-    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    strip_live_from_album_name()
+    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    # strip_live_from_album_name()
 
-    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    live_in_subtitle_means_live()
+    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    # live_in_subtitle_means_live()
 
-    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    live_means_live_in_subtitle()
+    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    # live_means_live_in_subtitle()
 
-    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    kill_singular_discnumber()
+    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    # kill_singular_discnumber()
 
-    # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    set_compilation_flag()
+    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # set_compilation_flag()
 
-    # set albumartist to NULL for all compilation albums where they are not NULL
-    nullify_albumartist_in_va()
+    # # set albumartist to NULL for all compilation albums where they are not NULL
+    # nullify_albumartist_in_va()
 
-    # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    capitalise_releasetype()
+    # # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    # capitalise_releasetype()
 
-    # determines releasetype for each album if not already populated
-    add_releasetype()
+    # # determines releasetype for each album if not already populated
+    # add_releasetype()
 
     # add a uuid4 tag to every record that does not have one
-    add_tagminder_uuid()
+    # add_tagminder_uuid()
 
-    # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    dedupe_tags()
+    # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # dedupe_tags()
 
-    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    find_duplicate_flac_albums()
+    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    # find_duplicate_flac_albums()
 
-    # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
-    cleanse_genres_and_styles()
+    # # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    # cleanse_genres_and_styles()
 
-    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
-    add_genres_and_styles()
+    # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
+    # add_genres_and_styles()
 
     # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
     # # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
     # # do not run genre and style code if you use per track genres and styles
-    standardise_album_tags('album')
-    standardise_album_tags('genre')
-    standardise_album_tags('style')
-    standardise_album_tags('mood')
-    standardise_album_tags('theme')
+    # standardise_album_tags('album')
+    # standardise_album_tags('genre')
+    # standardise_album_tags('style')
+    # standardise_album_tags('mood')
+    # standardise_album_tags('theme')
 
     # # if mb_disambiguated table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
     # # not necessary to call this anymore becaise it gets called by add_multiartist_mb_entities()
@@ -5228,19 +5269,19 @@ def update_tags():
     # #add_mb_entities()
 
     # # add mbid's for multi-entry artists
-    add_multiartist_mb_entities()
+    # add_multiartist_mb_entities()
 
-    # set capitalistion for track titles
-    set_title_caps()
+    # # set capitalistion for track titles
+    # set_title_caps()
 
 
-    # set capitalistion for album names
-    set_album_caps()
+    # # set capitalistion for album names
+    # set_album_caps()
 
 
     # ######################
     # # these should probably go and never be run, because the reality is all entries for contrbutors should in fact be processed against the musicbrainz mbid table once the musicbrainz names in that table have been updated with changes 
-    # # from disambiguation table
+    # # from disambiguation table, which in effect means those changes reflect how the artist name appears on allmusic.com
 
     # # set capitalistion for composers
     # set_composer_caps()
@@ -5254,24 +5295,24 @@ def update_tags():
 
 
     # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
-    tag_non_redbook()
+    # tag_non_redbook()
 
-    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
-    merge_album_version()
+    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
+    # merge_album_version()
 
 
-    # remove leading 0's from track tags
-    unpad_tracks()
+    # # remove leading 0's from track tags
+    # unpad_tracks()
 
-    # remove leading 0's from discnumber tags
-    unpad_discnumbers()
+    # # remove leading 0's from discnumber tags
+    # unpad_discnumbers()
 
-    # rename files leveraging processed metadata in the database
-    rename_tunes()
+    # # rename files leveraging processed metadata in the database
+    # rename_tunes()
 
     # # rename folders containing albums leveraging processed metadata in the database
-    rename_dirs()
+    # rename_dirs()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
