@@ -613,7 +613,7 @@ def establish_environment():
 
     ######################################################################################################
     # TEMP DISABLE
-    # dbcursor.execute("CREATE TABLE IF NOT EXISTS alib_rollback AS SELECT * FROM alib order by __path;")
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS alib_rollback AS SELECT * FROM alib order by __path;")
     ######################################################################################################
 
 
@@ -4305,13 +4305,13 @@ def generate_string_grouper_input():
                         WHERE
                           albumartist IS NOT NULL
                         UNION ALL
-                        SELECT DISTINCT
-                          performer
-                        FROM
-                          alib
-                        WHERE
-                          performer IS NOT NULL
-                        UNION ALL
+                        -- SELECT DISTINCT
+                        --   performer
+                        -- FROM
+                        --   alib
+                        -- WHERE
+                        --   performer IS NOT NULL
+                        -- UNION ALL
                         SELECT DISTINCT
                           composer
                         FROM
@@ -4376,6 +4376,7 @@ def generate_string_grouper_input():
 
     # now grab the lot into a list
     delim_records = [row[0] for row in dbcursor.fetchall()]
+
     # split every string into discrete words
     split_list = [item for sublist in delim_records for item in sublist.split('\\')]
     print(f"Splitting contributor fields with delimited text gives rise to {len(split_list)} rows")
@@ -4405,8 +4406,6 @@ def generate_string_grouper_input():
     # this table is used externally by the user to feed lists to string grouper and find possible namesakes, misspelled arist names, text case differences. irregular spacing, 'the ' etc.
     # the script to reference is grouper-taglib.py
 
-    #dbcursor.executemany("INSERT INTO distinct_contributors (contributor, processed, mbid) VALUES (?,0,NULL)", ((item,) for item in merged_list))
-    #dbcursor.executemany("INSERT INTO distinct_contributors (contributor, lcontributor, processed, mbid) VALUES (?,NULL,0,NULL)", ((item,) for item in merged_list))
     # Use executemany for efficient bulk insertion
     dbcursor.executemany('''INSERT OR IGNORE INTO distinct_contributors (contributor, lcontributor, processed, mbid)
                             VALUES (?, ?, ?, NULL)''', data_to_insert)
@@ -4428,33 +4427,30 @@ def generate_string_grouper_input():
                           lcontributor,
                           (
                             LENGTH (contributor) - LENGTH (REPLACE (contributor, '&', ''))
-                          ) / LENGTH ('&') as ampersands,
+                          ) / LENGTH ('&') AS ampersands,
                           (
                             LENGTH (contributor) - LENGTH (REPLACE (contributor, ',', ''))
-                          ) / LENGTH (',') as commas
+                          ) / LENGTH (',') AS commas
                         FROM
                           distinct_contributors
                         WHERE
                           (
-                            contributor LIKE '%,%'
-                            AND lcontributor NOT IN (
-                              SELECT
-                                lentity
-                              FROM
-                                mb_disambiguated
-                            )
-                            AND contributor NOT IN (
-                              SELECT
-                                contributor
-                              FROM
-                                _REF_matched_on_allmusic
+                            (
+                              contributor LIKE '%,%'
+                              AND lcontributor NOT IN (
+                                SELECT
+                                  lentity
+                                FROM
+                                  mb_disambiguated
+                              )
+                              AND contributor NOT IN (
+                                SELECT
+                                  contributor
+                                FROM
+                                  _REF_matched_on_allmusic
+                              )
                             )
                           ) ON CONFLICT DO NOTHING;''')
-
-
-
-
-
 
     # create table only if it doesn't exist - if it's there preserve prior work
     dbcursor.execute("CREATE TABLE IF NOT EXISTS _INF_contributors_with_ampersand (contributor TEXT UNIQUE, delimit NULL, lcontributor TEXT, ampersands INTEGER, commas INTEGER)")
@@ -4467,10 +4463,10 @@ def generate_string_grouper_input():
                           lcontributor,
                           (
                             LENGTH (contributor) - LENGTH (REPLACE (contributor, '&', ''))
-                          ) / LENGTH ('&') as ampersands,
+                          ) / LENGTH ('&') AS ampersands,
                           (
                             LENGTH (contributor) - LENGTH (REPLACE (contributor, ',', ''))
-                          ) / LENGTH (',') as commas
+                          ) / LENGTH (',') AS commas
                         FROM
                           distinct_contributors
                         WHERE
@@ -4480,12 +4476,12 @@ def generate_string_grouper_input():
                               lentity
                             FROM
                               mb_disambiguated
-                              AND contributor NOT IN (
-                                SELECT
-                                  contributor
-                                FROM
-                                  _REF_matched_on_allmusic
-                              )
+                          )
+                          AND contributor NOT IN (
+                            SELECT
+                              contributor
+                            FROM
+                              _REF_matched_on_allmusic
                           ) ON CONFLICT DO NOTHING;''')
 
 
@@ -4503,10 +4499,10 @@ def generate_string_grouper_input():
     #similarities = matches[matches['similarity'] < 0.9]
 
     # write out to a csv file
-    similarities.to_csv('similar_contributors.csv', index=False, sep = '|')
+    similarities.to_csv('string_grouper_output.csv', index=False, sep = '|')
 
     # write out to a sqlite table
-    similarities.to_sql('string_grouper', conn, index=True, if_exists='replace')
+    similarities.to_sql('string_grouper_output', conn, index=True, if_exists='replace')
 
     # so what we now have is string_grouper's take on likely matches, based on speficied similarity threshold
     # as we have processed records in the past and accepted them as true (1) or false (0), we should delete all matching records from disambiguation table
@@ -4591,6 +4587,60 @@ def compare_large_dataframes(df1, df2):
     return merged_df
 
 
+def compare_dataframes(df1, df2, index_col):
+    """
+    Memory-efficient comparison of two dataframes, returning only different records from df2.
+    
+    Parameters:
+    df1 (pandas.DataFrame): Original dataframe
+    df2 (pandas.DataFrame): Modified dataframe
+    index_col (str): Name of the index column
+    
+    Returns:
+    pandas.DataFrame: Records from df2 that differ from df1
+    dict: Performance metrics including memory usage and execution time
+    """
+    # import time
+    # from sys import getsizeof
+    
+    # start_time = time.time()
+    
+    # Ensure both dataframes have the same columns
+    if not df1.columns.equals(df2.columns):
+        raise ValueError("DataFrames must have identical columns")
+    
+    # Set index for comparison
+    df1 = df1.set_index(index_col)
+    df2 = df2.set_index(index_col)
+    
+    # Get indices present in df2 but not in df1 (new records)
+    new_records_idx = df2.index.difference(df1.index)
+    
+    # For records present in both dataframes, compare values efficiently
+    common_idx = df2.index.intersection(df1.index)
+    
+    # Compare only common records using numpy operations
+    df1_common = df1.loc[common_idx]
+    df2_common = df2.loc[common_idx]
+    
+    # Create boolean mask for changed rows using numpy operations
+    # This is more memory efficient than DataFrame operations
+    changed_mask = np.any(
+        df1_common.values != df2_common.values, 
+        axis=1
+    )
+    
+    # Get indices of changed records
+    changed_idx = common_idx[changed_mask]
+    
+    # Combine changed and new record indices
+    different_idx = changed_idx.union(new_records_idx)
+
+    # Get final result
+    result = df2.loc[different_idx].reset_index()
+
+    return result
+
 
 def disambiguate_contributors():
     '''  Function that leverages Pandas DataFrames to apply metadata changes to artist, performer, albumartist composer, engineer and producer fields in a dataframe 
@@ -4655,20 +4705,23 @@ def disambiguate_contributors():
         disambiguation_dict = {key: value for key, value in disambiguation_records}
 
         # load all artist, performer, albumartist and composer records in alib into a df then process the dataframe
-        df1 = pd.read_sql_query('SELECT rowid AS alib_rowid, artist, performer, albumartist, composer, writer, lyricist, engineer, producer from alib order by __path', conn)
+        df1 = pd.read_sql_query('SELECT rowid AS alib_rowid, artist, albumartist, composer, writer, lyricist, engineer, producer from alib order by __path', conn)
 
         # make a copy against which to apply changes which we'll subsequently compare with df1 to isolate changes
         df2 = df1.copy()
         print(f'Stats relating to records imported from alib table for processing:\n')
 
         # transform the columns of interest by calling innner function convert_dfrow
-        df2[['artist', 'performer', 'albumartist', 'composer', 'writer', 'lyricist', 'engineer', 'producer']] = df2[['artist', 'performer', 'albumartist', 'composer', 'writer', 'lyricist', 'engineer', 'producer']].apply(convert_dfrow)
+        df2[['artist', 'albumartist', 'composer', 'engineer', 'lyricist', 'producer', 'writer']] = df2[['artist', 'albumartist', 'composer', 'engineer', 'lyricist', 'producer', 'writer']].apply(convert_dfrow)
         df2.info(verbose=True)
-        
-        df3 = compare_large_dataframes(df1, df2)
-        print(f'\nStats relating to records changed through disambiguation and homoginisation process:\n')
-        df3.info(verbose=True)
 
+   
+        # df3 = compare_large_dataframes(df1, df2)
+        # print(f'\nStats relating to records changed through disambiguation and homoginisation process:\n')
+        # df3.info(verbose=True)
+
+        df3 = compare_dataframes(df1, df2, 'alib_rowid')
+        df3.info(verbose=True)
 
         # now write changes back to db
 
@@ -4684,14 +4737,12 @@ def disambiguate_contributors():
                                   alib AS target 
                                 SET 
                                   artist = source.artist, 
-                                  performer = source.performer, 
                                   albumartist = source.albumartist, 
                                   composer = source.composer,
-                                  writer = source.writer,
-                                  lyricist = source.lyricist,
                                   engineer = source.engineer,
-                                  producer = source.producer
-
+                                  lyricist = source.lyricist,
+                                  producer = source.producer,
+                                  writer = source.writer
                                 FROM 
                                   disambiguation_updates AS source 
                                 WHERE 
@@ -5303,11 +5354,11 @@ def update_tags():
     # # merge release tag to VERSION tag
     # release_to_version()
 
-    # # get rid of tags we don't want to store
-    # kill_badtags()
+    # get rid of tags we don't want to store
+    kill_badtags()
 
-    # # remove CR & LF from text tags (excluding lyrics & review tags)
-    # trim_and_remove_crlf()
+    # remove CR & LF from text tags (excluding lyrics & review tags)
+    trim_and_remove_crlf()
 
     # # get rid of non-standard apostrophes
     # set_apostrophe()
@@ -5318,13 +5369,13 @@ def update_tags():
     # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
     # feat_artist_to_artist()
 
+    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
+
     # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
     # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
     # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors() if enabled by user
     generate_string_grouper_input()
-
-    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
     # # set all empty tags ('') to NULL
     # nullify_empty_tags()
