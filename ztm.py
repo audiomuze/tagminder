@@ -444,21 +444,30 @@ def create_indexes():
     ''' set up indexes to be used throughout the script operations'''
     print("Creating table indexes...")
     if table_exists('alib'):
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_filepaths ON alib(__path);''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_artists ON alib (artist) WHERE artist IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lartists ON alib (LOWER(artist)) WHERE artist IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_albartists ON alib (albumartist) WHERE albumartist IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lalbartists ON alib (LOWER(albumartist)) WHERE albumartist IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_performers ON alib (performer) WHERE performer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lperformers ON alib (LOWER(performer)) WHERE performer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_composers ON alib (composer) WHERE composer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lcomposers ON alib (LOWER(composer)) WHERE composer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_writers ON alib (writer) WHERE writer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lwriters ON alib (LOWER(writer)) WHERE writer IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_titles ON alib(title) WHERE title IS NOT NULL;''')    
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_ltitles ON alib(LOWER(title)) WHERE title IS NOT NULL;''')    
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_genres ON alib(genre) WHERE genre IS NOT NULL;''')
-        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_styles ON alib(style) WHERE style IS NOT NULL;''')   
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_filepaths ON alib(__path);''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_artists ON alib (artist) WHERE artist IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_lartists ON alib (LOWER(artist)) WHERE artist IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_albartists ON alib (albumartist) WHERE albumartist IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_lalbartists ON alib (LOWER(albumartist)) WHERE albumartist IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_performers ON alib (performer) WHERE performer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_lperformers ON alib (LOWER(performer)) WHERE performer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_composers ON alib (composer) WHERE composer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_lcomposers ON alib (LOWER(composer)) WHERE composer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_writers ON alib (writer) WHERE writer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_lwriters ON alib (LOWER(writer)) WHERE writer IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_titles ON alib(title) WHERE title IS NOT NULL;''')    
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_ltitles ON alib(LOWER(title)) WHERE title IS NOT NULL;''')    
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_genres ON alib(genre) WHERE genre IS NOT NULL;''')
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_alib_styles ON alib(style) WHERE style IS NOT NULL;''')
+
+    if table_exists('mb_entities'):
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_entities_lmb_master on mb_entities(lentity) WHERE entity IS NOT NULL;''')
+    if table_exists('mb_entities'):
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_namesakes_lmb_namesakes on mb_namesakes(lentity) WHERE entity IS NOT NULL;''')
+    if table_exists('_REF_matched_on_allmusic'):
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix__REF_matched_on_allmusic_contributor on _REF_matched_on_allmusic(contributor) WHERE contributor IS NOT NULL;''')
+    if table_exists('mb_disambiguated'):
+        dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_disambiguated_ldisambiguated on mb_disambiguated(lentity) WHERE entity IS NOT NULL;''')
 
 
 def establish_environment():
@@ -611,18 +620,13 @@ def establish_environment():
 
     ''' alib_rollback is a master copy of alib table untainted by any changes made by this script.  if a rollback table already exists we are applying further changes or imports, so leave it intact '''
 
-    ######################################################################################################
-    # TEMP DISABLE
     dbcursor.execute("CREATE TABLE IF NOT EXISTS alib_rollback AS SELECT * FROM alib order by __path;")
-    ######################################################################################################
-
-
 
     # check whether there's a musicbrainz entities table containing distinct names and mbid's.  If it exists, leverage it.  Note, this table is the entire musicbrainz master before removing namesakes.
     # Namesakes need to be dealt with manually in userland, it's not something that can be automated as there's no way to reliably distinguish one namesake from another when considering only name
     if table_exists('mb_entities'):
-            # index it for speed
-            dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lmb_master on mb_entities(lower(entity)) WHERE entity IS NOT NULL;''')
+            # # index it for speed
+            # dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lmb_master on mb_entities(lower(entity)) WHERE entity IS NOT NULL;''')
 
             # given a user may have preferences as to how an artist name is written, check whether any changes need to be made to mb_entities to align with user preference as captured in cleansed_contributors table
             # as an example, most of my tagging over the years leveraged allmusic.com artist names and those are reflected in cleansed_contributors where I've had to make changes to sourced metadata in the past
@@ -635,6 +639,19 @@ def establish_environment():
                                      WHERE (cleansed_contributors.lreplacement_val == mb_entities.lentity AND 
                                            cleansed_contributors.replacement_val != mb_entities.entity);
                     ''')
+
+
+            # do the same for allmusic vetted names if _REF_matched_on_allmusic exists (it contains artist names vetted against allmusic.com, with the Allmustic text case shown)
+            if table_exists('_REF_matched_on_allmusic'):
+
+                dbcursor.execute('''UPDATE mb_entities
+                                       SET entity = '_REF_matched_on_allmusic.contributor',
+                                           updated_from_cleansed_contributors = '1'
+                                      FROM cleansed_contributors
+                                     WHERE (cleansed_contributors.lreplacement_val == mb_entities.lentity AND 
+                                           cleansed_contributors.replacement_val != mb_entities.entity);
+                    ''')
+
 
 
             # create a table of namesakes for users to browse if they need to disambiguate
@@ -656,7 +673,7 @@ def establish_environment():
                                                                                   );''')
 
             # index it for speed
-            #dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_namesakes on mb_namesakes(lower(entity)) WHERE entity IS NOT NULL;''')
+
             dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lmb_namesakes on mb_namesakes(lentity) WHERE entity IS NOT NULL;''')
 
             # create a table of entity names that only appear once in mb_master for use within tagminder when adding mbid's to artist, albumartist, composer, engineer, producer, label and recordinglocation tags
@@ -672,7 +689,6 @@ def establish_environment():
                                                                                            ORDER BY lower(entity) 
                                                                                       );''')
             # index it for speed
-            #dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_disambiguated on mb_disambiguated(lower(entity)) WHERE entity IS NOT NULL;''')
             dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_mb_ldisambiguated on mb_disambiguated(lentity) WHERE entity IS NOT NULL;''')
 
     conn.commit()
@@ -3575,7 +3591,7 @@ def establish_alib_contributors():
                                                                );'''
                     )
                                            
-# create namesakes table from all composers where the composer name appears > 1 alongside an mbid
+    # create namesakes table from all composers where the composer name appears > 1 alongside an mbid
     dbcursor.execute('''CREATE TABLE namesakes_composer AS SELECT *
                                                           FROM (
                                                                WITH GET_NAMESAKES AS (
@@ -4849,38 +4865,6 @@ def set_composer_caps():
                                        SET composer = (?) 
                                      WHERE composer = (?);''', (capitalised_composer, stored_composer))
 
-# def set_artist_caps():
-
-#     dbcursor.execute('''SELECT DISTINCT artist
-#                           FROM alib
-#                          WHERE artist IS NOT NULL
-#                          ORDER BY lower(artist), lower(album);''')
-#     artists = dbcursor.fetchall()
-#     if len(artists) > 0:
-#         for artist in artists:
-
-#             stored_artist = artist[0]
-#             l_stored_artist = stored_artist.lower()
-
-
-#             dbcursor.execute('''SELECT artist
-#                                   FROM mb_disambiguated
-#                                  WHERE lower(artist) == (?);''', (l_stored_artist,))
-
-#             matched_artist = dbcursor.fetchall()
-
-
-#             capitalised_artist = title_case(replace_demimiters(stored_artist, 'artist'))
-
-
-#             if stored_artist != capitalised_artist:
-
-#                 print(f"Current artist name: '{stored_artist}' \nmismatched\nRevised artist name: '{capitalised_artist}'")
-
-#                 dbcursor.execute('''UPDATE alib
-#                                        SET artist = (?) 
-#                                      WHERE artist = (?);''', (capitalised_artist, stored_artist))
-
 
 def set_albumartist_caps():
 
@@ -4936,21 +4920,6 @@ def set_albumartist_caps():
 
                     print(f"Current albumartist name: '{stored_albumartist}' \nmismatched with\nRevised albumartist name: '{mb_artist}'")
                     dbcursor.execute('''UPDATE alib SET albumartist = ? WHERE albumartist = ?''', (mb_artist, stored_albumartist))
-
-
-# def contributors_not_in_mb():
-
-#     dbcursor.execute('''DROP TABLE IF EXISTS contributors_not_in_mbrainz''')
-
-#                     # as there is no match write the name to contributors_not_in_mbrainz
-
-#                     UPDATE contributors_not_in_mbrainz 
-
-
-
-
-
-
 
 
 def rename_tunes():
@@ -5345,14 +5314,14 @@ def update_tags():
     # here you add whatever update and enrichment queries you want to run against the table 
     # comment out anything you don't want run
 
-    # # transfer any unsynced lyrics to LYRICS tag
-    # unsyncedlyrics_to_lyrics()
+    # transfer any unsynced lyrics to LYRICS tag
+    unsyncedlyrics_to_lyrics()
 
-    # # merge [recording location] with RECORDINGLOCATION
-    # merge_recording_locations()
+    # merge [recording location] with RECORDINGLOCATION
+    merge_recording_locations()
 
-    # # merge release tag to VERSION tag
-    # release_to_version()
+    # merge release tag to VERSION tag
+    release_to_version()
 
     # get rid of tags we don't want to store
     kill_badtags()
@@ -5360,14 +5329,60 @@ def update_tags():
     # remove CR & LF from text tags (excluding lyrics & review tags)
     trim_and_remove_crlf()
 
-    # # get rid of non-standard apostrophes
-    # set_apostrophe()
+    # get rid of non-standard apostrophes
+    set_apostrophe()
 
-    # # strip Feat in its various forms from track title and append to ARTIST tag
-    # title_feat_to_artist()
+    # set all empty tags ('') to NULL
+    nullify_empty_tags()
 
-    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    # feat_artist_to_artist()
+    # strip Feat in its various forms from track title and append to ARTIST tag
+    title_feat_to_artist()
+
+    # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    feat_artist_to_artist()
+
+    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    nullify_performers_matching_artists()
+
+    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    strip_live_from_titles()
+
+    # moves known keywords in brackets to subtitle
+    title_keywords_to_subtitle()
+
+    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    square_brackets_to_subtitle()
+
+    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    strip_live_from_album_name()
+
+    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    live_in_subtitle_means_live()
+
+    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    live_means_live_in_subtitle()
+
+    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    kill_singular_discnumber()
+
+    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # set_compilation_flag()
+
+    # set albumartist to NULL for all compilation albums where they are not NULL
+    nullify_albumartist_in_va()
+
+    # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    capitalise_releasetype()
+
+    # determines releasetype for each album if not already populated
+    add_releasetype()
+
+    # add a uuid4 tag to every record that does not have one
+    add_tagminder_uuid()
+
+    # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # dedupe_tags()
+
 
     # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
     disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
@@ -5377,59 +5392,12 @@ def update_tags():
     # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors() if enabled by user
     generate_string_grouper_input()
 
-    # # set all empty tags ('') to NULL
-    # nullify_empty_tags()
 
-    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    # nullify_performers_matching_artists()
+    # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    cleanse_genres_and_styles()
 
-    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    # strip_live_from_titles()
-
-    # # moves known keywords in brackets to subtitle
-    # title_keywords_to_subtitle()
-
-    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    # square_brackets_to_subtitle()
-
-    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    # strip_live_from_album_name()
-
-    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    # live_in_subtitle_means_live()
-
-    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    # live_means_live_in_subtitle()
-
-    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    # kill_singular_discnumber()
-
-    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    # set_compilation_flag()
-
-    # # set albumartist to NULL for all compilation albums where they are not NULL
-    # nullify_albumartist_in_va()
-
-    # # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    # capitalise_releasetype()
-
-    # # determines releasetype for each album if not already populated
-    # add_releasetype()
-
-    # add a uuid4 tag to every record that does not have one
-    # add_tagminder_uuid()
-
-    # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    # dedupe_tags()
-
-    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    # find_duplicate_flac_albums()
-
-    # # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
-    # cleanse_genres_and_styles()
-
-    # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
-    # add_genres_and_styles()
+    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
+    add_genres_and_styles()
 
     # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
     # # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
@@ -5445,8 +5413,8 @@ def update_tags():
     # # ideally it should be turned into a localised function of add_multiartist_mb_entities()
     # #add_mb_entities()
 
-    # # add mbid's for multi-entry artists
-    # add_multiartist_mb_entities()
+    # add mbid's for multi-entry artists
+    add_multiartist_mb_entities()
 
     # # set capitalistion for track titles
     # set_title_caps()
@@ -5455,10 +5423,12 @@ def update_tags():
     # # set capitalistion for album names
     # set_album_caps()
 
+    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    find_duplicate_flac_albums()
 
     # ######################
     # # these should probably go and never be run, because the reality is all entries for contrbutors should in fact be processed against the musicbrainz mbid table once the musicbrainz names in that table have been updated with changes 
-    # # from disambiguation table, which in effect means those changes reflect how the artist name appears on allmusic.com
+    # # from disambiguation table and allmusic vetted table, which in effect means those changes reflect how the artist name appears on allmusic.com
 
     # # set capitalistion for composers
     # set_composer_caps()
@@ -5472,18 +5442,18 @@ def update_tags():
 
 
     # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
-    # tag_non_redbook()
+    tag_non_redbook()
 
-    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    # # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
-    # merge_album_version()
+    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
+    merge_album_version()
 
 
-    # # remove leading 0's from track tags
-    # unpad_tracks()
+    # remove leading 0's from track tags
+    unpad_tracks()
 
-    # # remove leading 0's from discnumber tags
-    # unpad_discnumbers()
+    # remove leading 0's from discnumber tags
+    unpad_discnumbers()
 
     # # rename files leveraging processed metadata in the database
     # rename_tunes()
