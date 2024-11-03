@@ -4568,7 +4568,8 @@ def generate_string_grouper_input():
 
     # get current_val and replacement_val for all records in _REF_disambiguation_workspace where we've dismissed a similarity match (status = 0) into a df so we can eliminate stuff we've already dealt with
     # in future _REF_disambiguation_workspace should become the master and _REF_vetted_contributors may be able to be removed.  The disambiguation update code would then need to reference this table.
-    df3 = pd.read_sql_query("""SELECT current_val, replacement_val from _REF_disambiguation_workspace WHERE status = 0 OR status = '0' ORDER by current_val;""", conn)
+    df3 = pd.read_sql_query("""SELECT current_val, replacement_val from _REF_disambiguation_workspace WHERE status = 0 ORDER by current_val;""", conn)
+    print(f"Removing {len(df3)} previously considered contributor entries from list of posssible namesakes")
 
     # now drop rows from similarities if 'left_contributor', 'right_contributor' in a row matches a row in df3's current_val', 'replacement_val' values
     similarities[~similarities.set_index(['left_contributor', 'right_contributor']).index.isin(df3.set_index(['current_val', 'replacement_val']).index)]
@@ -4780,7 +4781,10 @@ def disambiguate_contributors():
         # df3.info(verbose=True)
 
         df3 = compare_dataframes(df1, df2, 'alib_rowid')
+
+        print(f"\n")
         df3.info(verbose=True)
+        print(f"\n")
 
         # now write changes back to db
 
@@ -4880,7 +4884,7 @@ def set_album_caps():
 
             if stored_album != capitalised_album:
 
-                print(f"Current album name: '{stored_album}' \nmismatched\nRevised album name: '{capitalised_album}'")
+                print(f"Current album name: '{stored_album}' \nmismatched\nRevised album name: '{capitalised_album}'\n")
 
                 dbcursor.execute('''UPDATE alib
                                        SET album = (?) 
@@ -5405,11 +5409,11 @@ def update_tags():
     # remove leading 0's from discnumber tags
     unpad_discnumbers()
 
-    # # rename files leveraging processed metadata in the database
-    # rename_tunes()
+    # rename files leveraging processed metadata in the database
+    rename_tunes()
 
-    # # rename folders containing albums leveraging processed metadata in the database
-    # rename_dirs()
+    # rename folders containing albums leveraging processed metadata in the database
+    rename_dirs()
 
 
     ''' return case sensitivity for LIKE to SQLite default '''
