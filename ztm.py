@@ -4892,6 +4892,178 @@ def set_album_caps():
                                      WHERE album = (?);''', (capitalised_album, stored_album))
 
 
+# _INF_ related queries to generate _INF_ prefixed tables highlighting issues for manual uer intervention
+
+def INF_albums_with_duplicated_tracknumbers():
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_albums_with_duplicated_tracknumbers;''')
+    dbcursor.execute('''CREATE TABLE _INF_albums_with_duplicated_tracknumbers AS
+                        WITH
+                          cte AS (
+                            SELECT
+                              __dirpath || track item,
+                              __dirpath,
+                              count(__dirpath || track) occurences,
+                              track
+                            FROM
+                              alib
+                            WHERE
+                              discnumber IS NULL
+                            GROUP BY
+                              item
+                            HAVING
+                              occurences > 1
+                          )
+                        SELECT DISTINCT
+                          __dirpath
+                        FROM
+                          cte
+                        ORDER BY
+                          __dirpath;''')
+
+
+
+def INF_albums_missing_tracknumbers():
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_missing_tracknumbers;''')
+    dbcursor.execute('''CREATE TABLE _INF_missing_tracknumbers AS
+                        WITH
+                          cte AS (
+                            SELECT
+                              __dirpath,
+                              track
+                            FROM
+                              alib
+                            UNION ALL
+                            SELECT DISTINCT
+                              __dirpath,
+                              '0'
+                            FROM
+                              alib
+                          )
+                        SELECT
+                          dir,
+                          START,
+                          stop
+                        FROM
+                          (
+                            SELECT
+                              cast(m.track AS INTEGER) + 1 START,
+                              (
+                                SELECT
+                                  MIN(cast(track AS INTEGER)) - 1
+                                FROM
+                                  cte x
+                                WHERE
+                                  x.__dirpath = m.__dirpath
+                                  AND cast(x.track AS integer) > cast(m.track AS integer)
+                              ) stop,
+                              m.__dirpath dir
+                            FROM
+                              cte m
+                              LEFT JOIN cte r ON m.__dirpath = r.__dirpath
+                              AND cast(m.track AS integer) = cast(r.track AS integer) - 1
+                            WHERE
+                              r.track IS NULL
+                          )
+                        WHERE
+                          stop IS NOT NULL
+                        ORDER BY
+                          dir,
+                          START,
+                          stop;''')
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_albums_missing_tracknumbers;''')
+    dbcursor.execute('''CREATE TABLE _INF_albums_missing_tracknumbers AS
+                        SELECT DISTINCT
+                          dir AS __dirpath
+                        FROM
+                          _INF_missing_tracknumbers
+                        ORDER BY
+                          __dirpath;''')
+
+
+def INF_albums_with_no_genre():
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_albums_with_no_genre;''')
+    dbcursor.execute('''CREATE TABLE _INF_albums_with_no_genre AS
+                        SELECT DISTINCT
+                          __dirpath
+                        FROM
+                          alib
+                        WHERE
+                          genre IS NULL
+                        ORDER BY
+                          __dirpath;''')
+
+
+def INF_albums_with_no_year():
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_albums_with_no_year;''')
+    dbcursor.execute('''CREATE TABLE _INF_albums_with_no_year AS
+                        SELECT DISTINCT
+                          __dirpath
+                        FROM
+                          alib
+                        WHERE
+                          year IS NULL
+                        ORDER BY
+                          __dirpath;''')
+
+
+def INF_tracks_without_title():
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_albums_with_nameless_tracks;''')
+    dbcursor.execute('''CREATE TABLE _INF_albums_with_nameless_tracks AS
+                        SELECT DISTINCT
+                          __dirpath
+                        FROM
+                          alib
+                        WHERE
+                          title IS NULL
+                        ORDER BY
+                          __dirpath;''')
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_tracks_without_title;''')
+    dbcursor.execute('''CREATE TABLE _INF_tracks_without_title AS
+                        SELECT __filename,
+                          __dirpath
+                        FROM
+                          alib
+                        WHERE
+                          title IS NULL
+                        ORDER BY
+                          __dirpath, __filename;''')
+
+def INF_tracks_without_artist():
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_albums_missing_artist;''')
+    dbcursor.execute('''CREATE TABLE _INF_albums_missing_artist AS
+                        SELECT DISTINCT
+                          __dirpath
+                        FROM
+                          alib
+                        WHERE
+                          artist IS NULL
+                        ORDER BY
+                          __dirpath;''')
+
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_tracks_without_artist;''')
+    dbcursor.execute('''CREATE TABLE _INF_tracks_without_artist AS
+                        SELECT __filename,
+                          __dirpath
+                        FROM
+                          alib
+                        WHERE
+                          artist IS NULL
+                        ORDER BY
+                          __dirpath, __filename;''')
+
+
+
+
+# Functions to rename files and folders based on album metadata
+
 def rename_tunes():
     ''' rename all tunes in alib table leveraging the metadta in alib.  Relies on compilation = 0 to detect VA and OST albums
     DO NOT DEPLOY THIS LIGHTLY YET '''
@@ -5393,9 +5565,6 @@ def update_tags():
     # set capitalistion for album names
     set_album_caps()
 
-    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    # find_duplicate_flac_albums()
-
     # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
     tag_non_redbook()
 
@@ -5410,7 +5579,21 @@ def update_tags():
     # remove leading 0's from discnumber tags
     unpad_discnumbers()
 
-    # # rename files leveraging processed metadata in the database
+    # generate _INF_ tables to assist in cleanups, identifying anomalies etc.
+
+    INF_albums_with_duplicated_tracknumbers()
+    INF_albums_missing_tracknumbers()
+    INF_albums_with_no_genre()
+    INF_albums_with_no_year()
+    INF_tracks_without_title()
+    INF_tracks_without_artist()
+
+    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    # find_duplicate_flac_albums()
+
+
+
+    # rename files leveraging processed metadata in the database
     # rename_tunes()
 
     # # rename folders containing albums leveraging processed metadata in the database
