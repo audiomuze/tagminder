@@ -406,7 +406,7 @@ def tally_mods():
     dbcursor.execute('SELECT SUM(sqlmodded) FROM alib WHERE sqlmodded IS NOT NULL;')
     matches = dbcursor.fetchone()
 
-    if matches[0] == None:
+    if matches[0] is None:
         ''' sqlite returns null from a sum operation if the field values are null, so test for it, because if the script is run iteratively that'll be the case where alib has been readied for export '''
         return 0
     return matches[0]
@@ -610,12 +610,12 @@ def establish_environment():
     "year"]
 
     print("Populating permitted tags table...")
-    dbcursor.execute('drop table if exists permitted_tags;')
-    dbcursor.execute('create table permitted_tags (tagname text);')
+    dbcursor.execute('drop table if exists _TMP_permitted_tags;')
+    dbcursor.execute('create table _TMP_permitted_tags (tagname text);')
 
     for tag in good_tags:
 
-        dbcursor.execute(f"INSERT INTO permitted_tags ('tagname') VALUES ('{tag}')")
+        dbcursor.execute(f"INSERT INTO _TMP_permitted_tags ('tagname') VALUES ('{tag}')")
 
     # create enduring indexes required to operate efficiently
     create_indexes()
@@ -2018,12 +2018,12 @@ def kill_badtags():
     ''' iterate over unwanted tags and set any non NULL values to NULL '''
 
     ''' compare existing tags in alib table against permitted tags and return list of illicit tags '''
-    dbcursor.execute("SELECT name FROM PRAGMA_TABLE_INFO('alib') t1 left join permitted_tags t2 on t2.tagname = t1.name WHERE t2.tagname IS NULL;")
+    dbcursor.execute("SELECT name FROM PRAGMA_TABLE_INFO('alib') t1 left join _TMP_permitted_tags t2 on t2.tagname = t1.name WHERE t2.tagname IS NULL;")
     badtags = dbcursor.fetchall()
+    opening_tally = tally_mods()
     if len(badtags) > 0:
         badtags.sort()
 
-        opening_tally = tally_mods()
         print("\nRemoving spurious tags:")
 
         for tagname in badtags:
@@ -2186,7 +2186,10 @@ def title_feat_to_artist():
     
     feats = ['Feat ', 'Feat:', 'Feat.', 'Feat-', 'Feat -', 'Featuring ', 'Featuring:', 'Featuring.', 'Featuring-',  'Featuring -', 'Ft.', 'ft. ', 'With:' ]
 
+    brackets = ['[', ']', '(', ')', '{', '}']
+
     ''' now process each in sequence '''
+
     for record in records_to_process:
 
         ''' loop through records  and process each string '''
@@ -2195,11 +2198,12 @@ def title_feat_to_artist():
         table_record = record[2] # get rowid
 
         ''' test for bracket enclosed contents, strip brackets'''
-        if '[' in row_title or ']' in row_title or '(' in row_title or ')' or '{' in row_title or '}' in row_title:
+        if any(bracket in row_title for bracket in brackets):
+        # if '[' in row_title or ']' in row_title or '(' in row_title or ')' or '{' in row_title or '}' in row_title:
 
 
             ''' strip bracket components from base'''
-            brackets = ['[', ']', '(', ')', '{', '}']
+            # brackets = ['[', ']', '(', ')', '{', '}']
             for bracket in brackets:
                 row_title = row_title.replace(bracket, '')
                 
@@ -2388,15 +2392,15 @@ def nullify_performers_matching_artists():
 
 
 def cleanse_genres_and_styles():
-    ''' iterate over genre and style tags and remove tag entries that are not in the vetted list defined in vetted_genre_pool(), then merge genre and style tags into genre tag '''
-    ''' the problem we are trying to solve here is five-fold: '''
-    ''' 1) remove unvetted genres and styles from the record '''
-    ''' 2) create a merged, deduplicated genre string from the combination of genre and style tags in the record '''
-    ''' 3) compare both cleansed genres and cleansed styles with a sorted version of what's been read in '''
-    ''' 4) write out a replacement genre entry if, and only if '''
-    '''        the newly composed genre string differs from what's already in the record '''
-    ''' 5) write out a replacement style entry if, and only if '''
-    '''        the newly composed style string differs from what's already in the record '''
+    ''' iterate over genre and style tags and remove tag entries that are not in the vetted list defined in vetted_genre_pool(), then merge genre and style tags into genre tag 
+     the problem we are trying to solve here is five-fold: 
+     1) remove unvetted genres and styles from the record 
+     2) create a merged, deduplicated genre string from the combination of genre and style tags in the record 
+     3) compare both cleansed genres and cleansed styles with a sorted version of what's been read in 
+     4) write out a replacement genre entry if, and only if 
+            the newly composed genre string differs from what's already in the record 
+     5) write out a replacement style entry if, and only if 
+            the newly composed style string differs from what's already in the record '''
 
  
     # get every unique genre, style combo where either genre or style is not null
@@ -3329,6 +3333,8 @@ def nullify_albumartist_in_va():
 
 
 def capitalise_releasetype():
+    ''' Sets First Letter Caps for all instances of RELEASETYPE '''
+
     print("\nSetting 'First Letter Caps' for all instances of releasetype")
     opening_tally = tally_mods()
     dbcursor.execute('''SELECT DISTINCT releasetype FROM alib WHERE releasetype IS NOT NULL;''')
@@ -4155,13 +4161,13 @@ def find_duplicate_flac_albums():
 
     print("\nChecking for FLAC files that do not have an md5sum in the tag header")
 
-    dbcursor.execute("DROP TABLE IF EXISTS nonstandard_FLACS;")
-    dbcursor.execute("CREATE TABLE IF NOT EXISTS nonstandard_FLACS AS SELECT DISTINCT __dirpath FROM alib WHERE (__filetype = 'FLAC' AND (__md5sig = '' OR __md5sig = '0' OR __md5sig is null)) ORDER BY __path;")
-    dbcursor.execute("SELECT __dirpath from nonstandard_FLACS")
+    dbcursor.execute("DROP TABLE IF EXISTS _INF_nonstandard_FLACS;")
+    dbcursor.execute("CREATE TABLE IF NOT EXISTS _INF_nonstandard_FLACS AS SELECT DISTINCT __dirpath FROM alib WHERE (__filetype = 'FLAC' AND (__md5sig = '' OR __md5sig = '0' OR __md5sig is null)) ORDER BY __path;")
+    dbcursor.execute("SELECT __dirpath from _INF_nonstandard_FLACS")
     invalid_flac_albums = dbcursor.fetchall()
     if invalid_flac_albums:
 
-        print("|\nInvalid FLAC albums present.  Be careful not to delete albums with invalid ('0' or empty) __md5sig.\nSee table 'nonstandard_FLACS' for a list of folders containing nonstandard FLAC files that should be re-encoded")
+        print("|\nInvalid FLAC albums present.  Be careful not to delete albums with invalid ('0' or empty) __md5sig.\nSee table '_INF_nonstandard_FLACS' for a list of folders containing nonstandard FLAC files that should be re-encoded")
         
 
     print("\nSearching for duplicated flac albums based on __md5sig")
@@ -4169,15 +4175,15 @@ def find_duplicate_flac_albums():
 
     # Create table in which to store concatenated __md5sig for all __dirnames
 
-    dbcursor.execute('''DROP TABLE IF EXISTS __dirpath_content_concat__md5sig;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF___dirpath_content_concat__md5sig;''')
 
-    dbcursor.execute('''CREATE TABLE __dirpath_content_concat__md5sig (
+    dbcursor.execute('''CREATE TABLE _INF___dirpath_content_concat__md5sig (
                         __dirpath      TEXT,
                         concat__md5sig TEXT);''')
 
     '''populate table with __dirpath and concatenated __md5sig of all files associated with __dirpath (note order by __md5sig to ensure concatenated __md5sig is consistently generated irrespective of physical record sequence). '''
 
-    dbcursor.execute('''INSERT INTO __dirpath_content_concat__md5sig (
+    dbcursor.execute('''INSERT INTO _INF___dirpath_content_concat__md5sig (
                                                                          __dirpath,
                                                                          concat__md5sig
                                                                      )
@@ -4195,9 +4201,9 @@ def find_duplicate_flac_albums():
 
     ''' create table in which to store all __dirnames with identical FLAC contents (i.e. the __md5sig of each FLAC in folder is concatenated and compared) '''
 
-    dbcursor.execute('''DROP TABLE IF EXISTS __dirpaths_with_same_content;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF___dirpaths_with_same_content;''')
 
-    dbcursor.execute('''CREATE TABLE __dirpaths_with_same_content (
+    dbcursor.execute('''CREATE TABLE _INF___dirpaths_with_same_content (
                         killdir        TEXT,
                         __dirpath      TEXT,
                         concat__md5sig TEXT
@@ -4206,16 +4212,16 @@ def find_duplicate_flac_albums():
 
     ''' now write the duplicate records into a separate table listing all __dirname's that have identical FLAC contents '''
 
-    dbcursor.execute('''INSERT INTO __dirpaths_with_same_content (
+    dbcursor.execute('''INSERT INTO _INF___dirpaths_with_same_content (
                                                                      __dirpath, 
                                                                      concat__md5sig
                                                                  )
                                                                  SELECT __dirpath,
                                                                         concat__md5sig
-                                                                   FROM __dirpath_content_concat__md5sig
+                                                                   FROM _INF___dirpath_content_concat__md5sig
                                                                   WHERE concat__md5sig IN (
                                                                             SELECT concat__md5sig
-                                                                              FROM __dirpath_content_concat__md5sig
+                                                                              FROM _INF___dirpath_content_concat__md5sig
                                                                              GROUP BY concat__md5sig
                                                                             HAVING count( * ) > 1
                                                                         )
@@ -4226,36 +4232,36 @@ def find_duplicate_flac_albums():
 
     ''' create table for listing directories in which FLAC files should be deleted as they're duplicates '''
 
-    dbcursor.execute('''DROP TABLE IF EXISTS __dirpaths_with_FLACs_to_kill;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF___dirpaths_with_FLACs_to_kill;''')
 
-    dbcursor.execute('''CREATE TABLE __dirpaths_with_FLACs_to_kill (
+    dbcursor.execute('''CREATE TABLE _INF___dirpaths_with_FLACs_to_kill (
                                                                         __dirpath      TEXT,
                                                                         concat__md5sig TEXT
                                                                     );''')
 
     ''' populate table listing directories in which FLAC files should be deleted as they're duplicates '''
 
-    dbcursor.execute('''INSERT INTO __dirpaths_with_FLACs_to_kill (
+    dbcursor.execute('''INSERT INTO _INF___dirpaths_with_FLACs_to_kill (
                                                                       __dirpath,
                                                                       concat__md5sig
                                                                   )
                                                                   SELECT __dirpath,
                                                                          concat__md5sig
-                                                                    FROM __dirpaths_with_same_content
+                                                                    FROM _INF___dirpaths_with_same_content
                                                                    WHERE rowid NOT IN (
                                                                              SELECT min(rowid) 
-                                                                               FROM __dirpaths_with_same_content
+                                                                               FROM _INF___dirpaths_with_same_content
                                                                               GROUP BY concat__md5sig
                                                                          );''')
 
 
-    dbcursor.execute('''SELECT COUNT(*) FROM __dirpaths_with_same_content''')
+    dbcursor.execute('''SELECT COUNT(*) FROM _INF___dirpaths_with_same_content''')
     duplicated_flac_albums = dbcursor.fetchone()
     if duplicated_flac_albums[0] == 0:
         ''' sqlite returns null from a sum operation if the field values are null, so test for it, because if the script is run iteratively that'll be the case where alib has been readied for export '''
         print("|\nNo duplicated FLAC albums present")
     else:
-        print(f"|\n{duplicated_flac_albums[0]} duplicated FLAC albums present - see table __dirpaths_with_same_content for a listing")
+        print(f"|\n{duplicated_flac_albums[0]} duplicated FLAC albums present - see table _INF___dirpaths_with_same_content for a listing")
 
 
 
@@ -5440,8 +5446,8 @@ def export_changes():
         dbcursor.execute("DROP TABLE IF EXISTS alib_rollback")
         ##############################################temporarily blocked code###############################
         conn.commit()
-        dbcursor.execute("VACUUM;")        
-        ##############################################temporarily blocked code###############################        
+        dbcursor.execute("VACUUM;")
+        ##############################################temporarily blocked code###############################
         print(f"Affected folders have been written out to text file: {dirlist}")
         print(f"\nChanged tags have been written to a database: {export_db} in table alib.\nalib contains only changed records with sqlmodded set to NULL for writing back to underlying file tags.")
         print(f"You can now directly export from this database to the underlying files using tagfromdb3.py.\n\nIf you need to rollback changes you can reinstate tags from table 'alib_rollback' in {export_db}\n")
