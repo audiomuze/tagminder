@@ -4175,15 +4175,15 @@ def find_duplicate_flac_albums():
 
     # Create table in which to store concatenated __md5sig for all __dirnames
 
-    dbcursor.execute('''DROP TABLE IF EXISTS _INF___dirpath_content_concat__md5sig;''')
+    dbcursor.execute('''DROP TABLE IF EXISTS _TMP___dirpath_content_concat__md5sig;''')
 
-    dbcursor.execute('''CREATE TABLE _INF___dirpath_content_concat__md5sig (
+    dbcursor.execute('''CREATE TABLE _TMP___dirpath_content_concat__md5sig (
                         __dirpath      TEXT,
                         concat__md5sig TEXT);''')
 
     '''populate table with __dirpath and concatenated __md5sig of all files associated with __dirpath (note order by __md5sig to ensure concatenated __md5sig is consistently generated irrespective of physical record sequence). '''
 
-    dbcursor.execute('''INSERT INTO _INF___dirpath_content_concat__md5sig (
+    dbcursor.execute('''INSERT INTO _TMP___dirpath_content_concat__md5sig (
                                                                          __dirpath,
                                                                          concat__md5sig
                                                                      )
@@ -4218,10 +4218,10 @@ def find_duplicate_flac_albums():
                                                                  )
                                                                  SELECT __dirpath,
                                                                         concat__md5sig
-                                                                   FROM _INF___dirpath_content_concat__md5sig
+                                                                   FROM _TMP___dirpath_content_concat__md5sig
                                                                   WHERE concat__md5sig IN (
                                                                             SELECT concat__md5sig
-                                                                              FROM _INF___dirpath_content_concat__md5sig
+                                                                              FROM _TMP___dirpath_content_concat__md5sig
                                                                              GROUP BY concat__md5sig
                                                                             HAVING count( * ) > 1
                                                                         )
