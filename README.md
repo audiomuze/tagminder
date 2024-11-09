@@ -168,9 +168,26 @@ tagminder identifies names it thinks might represent the same contributor, then 
 ![image](https://github.com/user-attachments/assets/5bc42222-c8df-4ef0-b022-f86e29c4b369)
 
 #### Identifying different versions of an album
-If you're a music fanatic you may have multiple releases of the same album.  At some point your rational mind may get the better of you and you might want to get rid of a few versions that are substantially the same ... same tracks, same dynamic rangge, same bit depth and sampling rate. Tagminder can point these out for you and auto-select some candidates for culling, leaving you with a table of versions to peruse and edit/override or accept versions it has selected as candidates for removal.  Whilst tagminder will never remove the versions for you, the table contains everything you need to be able to export those versions you're sure you want to let go of.  A bash script can then do the dirty work or you can work through it manually.  Versions can be found in
+If you're a music fanatic you may have multiple releases of the same album.  At some point your rational mind may get the better of you and you might want to get rid of a few versions that are substantially the same ... same track count, same dynamic range, same bit depth and sampling rate. Tagminder can point these out for you and auto-select some candidates for culling, leaving you with a table of versions to peruse and edit/override or accept versions it has selected as candidates for removal.  Tagminder will not flag a version as a candidate for removal if any of the following keywords are present in the directory name:
 
-#### Pointing out missing metdata
+| audiophile label signifier |
+| - |
+| afz|
+| audio fidelity |
+| compact classics |
+| dcc |
+| fim |
+| gzs |
+| mfsl |
+| mobile fidelity |
+| mofi |
+| mastersound |
+| sbm |
+| xrcd |              
+
+Whilst tagminder will never remove the versions for you, the table contains everything you need to be able to export those versions you're sure you want to let go of.  A bash script can then do the dirty work or you can work through it manually.  Versions can be found in
+
+#### Pointing out missing metdata and other useful information
 Whilst assessing and improving your metadata consistency tagminder populates a number of tables along the way.  All tables that begin with _INF_ as a prefix contain data you may want to peruse because they point to metadata or library issues you may want to address.  The taables and their contents are described below:
 
 | table name | purpose |
