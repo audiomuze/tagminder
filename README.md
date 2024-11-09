@@ -57,7 +57,7 @@ lentity - lowercase representation of entity
 
 ### Leaves your files untouched unless you explicitly choose to export changes
 
-tagminder writes changes to a database table and logs which tracks have had metadata changes. It does not make changes to your files unless you explicitly invoke tags2db.py using its export option. All tables in the database can be viewed and edited using a SQLite database editor like [Sqlitestudio](https://github.com/pawelsalawa/sqlitestudio) or [DB Browser for SQLite](https://github.com/sqlitebrowser/sqlitebrowser).  This enables you to browse your metadata and inspect tags to see exactly what would be written to files if you chose to export your changes to the underlying files.
+tagminder writes changes to a database table and logs which tracks have had metadata changes. It does not make changes to your files unless you explicitly invoke tags2db.py using its export option. All tables in the database can be viewed and edited using a SQLite database editor like [SQLiteStudio](https://github.com/pawelsalawa/sqlitestudio) or [DB Browser for SQLite](https://github.com/sqlitebrowser/sqlitebrowser).  This enables you to browse your metadata and inspect tags to see exactly what would be written to files if you chose to export your changes to the underlying files.
 
 In addition to running the automated changes you're also able to manually edit any records using the aforementioned database editors to further enhance/correct metadata issues manually, or code and run your own SQL queries if you're so inclined.
 
