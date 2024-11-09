@@ -171,7 +171,7 @@ tagminder identifies names it thinks might represent the same contributor, then 
 If you're a music fanatic you may have multiple releases of the same album.  At some point your rational mind may get the better of you and you might want to get rid of a few versions that are substantially the same ... same track count, same dynamic range, same bit depth and sampling rate. Tagminder can point these out for you and auto-select some candidates for culling, leaving you with a table of versions to peruse and edit/override or accept versions it has selected as candidates for removal.  Tagminder will not flag a version as a candidate for removal if any of the following keywords are present in the directory name:
 
 | audiophile label signifier |
-| - |
+| -- |
 | afz|
 | audio fidelity |
 | compact classics |
