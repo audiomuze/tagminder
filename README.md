@@ -157,13 +157,18 @@ In all instances [bit depth sample rate] are only included where an album is not
 
 Files and directories are renamed in-situ rather than being moved elsewhere in directory tree.  This means all other files associated with an album remain in the renamed folders.
 
-#### Normalising artist, albumartist, composer, engineer, producer and record label names
+#### Normalising artist, albumartist, composer, engineer and producer names and getting them consistent throughout your collection.  (record labels to be incorporated in future).
 
 Tagminder includes the capability to affect mass changes across hundreds of thousands of records almost instantaneously.  Music Servers typically employ database models that mean 10CC, 10cc and 10cc. are three different artists.  Tagminder includes a transformation function that enables you to transform all instances of names like 10CC, 10cc. and 10 cc to 10cc throughout your collection in a single operation, without having to write any code.  These transformation rules need only be captured once, and are then available for all future metadata ingestion, ensuring that your collection achieves a level of consistency that would otherwise be very difficult (if not impossible) to attain and maintain.  F
 
 To aid in identifying variations of contributor names that may be the same artist (e.g. the 10cc example above) tagminder uses string-grouper to compare all unique contributor names in your metatada and present these to you in a table called  users so inclined, data science techniques such as cosine similarity can be used to identify all likely permuations of 10cc in your data, making it trivial to populate the disambigation table used to drive normalisation of names throughout your music.
 
 tagminder identifies names it thinks might represent the same contributor, then eliminates any you have previously confirmed are false-positives or require replacement by reference to matching names in _REF_disambiguation_workspace where false positives and replacement required are represented as (status=0/1)respectively.  The remaining names can be found in table _INF_string_grouper_possible_namesakes, for consideration by the user.
+
+![image](https://github.com/user-attachments/assets/5bc42222-c8df-4ef0-b022-f86e29c4b369)
+
+#### Identifying different versions of an album
+If you're a music fanatic you may have multiple releases of the same album.  At some point your rational mind may get the better of you and you might want to get rid of a few versions that are substantially the same ... same tracks, same dynamic rangge, same bit depth and sampling rate. Tagminder can point these out for you and auto-select some candidates for culling, leaving you with a table of versions to peruse and edit/override or accept versions it has selected as candidates for removal.  Whilst tagminder will never remove the versions for you, the table contains everything you need to be able to export those versions you're sure you want to let go of.  A bash script can then do the dirty work or you can work through it manually.  Versions can be found in
 
 #### Pointing out missing metdata
 Whilst assessing and improving your metadata consistency tagminder populates a number of tables along the way.  All tables that begin with _INF_ as a prefix contain data you may want to peruse because they point to metadata or library issues you may want to address.  The taables and their contents are described below:
@@ -183,8 +188,7 @@ Whilst assessing and improving your metadata consistency tagminder populates a n
 | _INF_string_grouper_possible_namesakes | possible namesakes for disambiguation or correction to ensure consistenctcy of contributor name |
 | _INF_tracks_without_artist | tracks without an artist tag |
 | _INF_tracks_without_title | tracks without a title tag |
-
-![image](https://github.com/user-attachments/assets/5bc42222-c8df-4ef0-b022-f86e29c4b369)
+| _INF_versions | albums where multiple versions are present in library.  killit == 'Investigate' means version has same key attributes as other versions.  killit == '1' means a higher DR version has been identified that is either same or higher sampling rate and bit depth |
 
 ## TODO: 
 Refer issues list, filter on enhancements.
