@@ -524,7 +524,6 @@ def establish_environment():
     "__vendorstring",
     "__version",
     "tagminder_uuid",    
-    "_releasecomment",
     "acousticbrainz_mood",
     "acoustid_fingerprint",
     "acoustid_id",
@@ -5090,6 +5089,8 @@ def flag_versions():
     dr14.sh leveagages https://github.com/simon-r/dr14_t.meter to generate DR14.txt.
     '''
 
+    print('\nAnalysing album names, trasck count, dynamic range, sampling rate and bit-depth to identify different versions of the same album in your library')
+
   # import drscores created by getdr14.sh
     dbcursor.execute('''DROP TABLE IF EXISTS _TMP_drscores;''')
     dbcursor.execute('''CREATE TABLE IF NOT EXISTS _TMP_drscores (
@@ -5688,7 +5689,7 @@ def show_stats_and_log_changes():
     print(f"{metadata_changes} updates have been processed against {records_changed} records, affecting {dir_count} albums")
     print('─' * messagelen)
 
-def export_changes():
+    #def export_changes():
     ''' get list of all affected __dirpaths '''
     changed_dirpaths = affected_dirpaths()
 
@@ -5762,26 +5763,26 @@ def update_tags():
     # # merge release tag to VERSION tag
     # release_to_version()
 
-    # # get rid of tags we don't want to store
-    # kill_badtags()
+    # get rid of tags we don't want to store
+    kill_badtags()
 
-    # # remove CR & LF from text tags (excluding lyrics & review tags)
-    # trim_and_remove_crlf()
+    # remove CR & LF from text tags (excluding lyrics & review tags)
+    trim_and_remove_crlf()
 
-    # # get rid of non-standard apostrophes
-    # set_apostrophe()
+    # get rid of non-standard apostrophes
+    set_apostrophe()
 
-    # # set all empty tags ('') to NULL
-    # nullify_empty_tags()
+    # set all empty tags ('') to NULL
+    nullify_empty_tags()
 
-    # # strip Feat in its various forms from track title and append to ARTIST tag
-    # title_feat_to_artist()
+    # strip Feat in its various forms from track title and append to ARTIST tag
+    title_feat_to_artist()
 
-    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    # feat_artist_to_artist()
+    # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    feat_artist_to_artist()
 
-    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    # nullify_performers_matching_artists()
+    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    nullify_performers_matching_artists()
 
     # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
     # strip_live_from_titles()
@@ -5801,8 +5802,8 @@ def update_tags():
     # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
     # live_means_live_in_subtitle()
 
-    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    # kill_singular_discnumber()
+    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    kill_singular_discnumber()
 
     # # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
     # # set_compilation_flag()
@@ -5810,8 +5811,8 @@ def update_tags():
     # # set albumartist to NULL for all compilation albums where they are not NULL
     # nullify_albumartist_in_va()
 
-    # # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    # capitalise_releasetype()
+    # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    capitalise_releasetype()
 
     # # determines releasetype for each album if not already populated
     # add_releasetype()
@@ -5823,7 +5824,7 @@ def update_tags():
     # dedupe_tags()
 
 
-    # # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    # # disambiguate entries in artist, albumartist, composer, engineer and producer tags leveraging the outputs of string-grouper
     # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
     # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
@@ -5832,11 +5833,11 @@ def update_tags():
     # generate_string_grouper_input()
 
 
-    # # # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
-    # cleanse_genres_and_styles()
+    # # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    cleanse_genres_and_styles()
 
-    # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
-    # add_genres_and_styles()
+    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
+    add_genres_and_styles()
 
     # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
     # # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
@@ -5870,24 +5871,24 @@ def update_tags():
     # merge_album_version()
 
 
-    # # remove leading 0's from track tags
-    # unpad_tracks()
+    # remove leading 0's from track tags
+    unpad_tracks()
 
-    # # remove leading 0's from discnumber tags
-    # unpad_discnumbers()
+    # remove leading 0's from discnumber tags
+    unpad_discnumbers()
 
     # # generate _INF_ tables to assist in cleanups, identifying anomalies etc.
 
-    # info_albums_with_duplicated_tracknumbers()
-    # info_albums_missing_tracknumbers()
-    # info_albums_with_no_genre()
-    # info_albums_with_no_year()
-    # info_tracks_without_title()
-    # info_tracks_without_artist()
+    info_albums_with_duplicated_tracknumbers()
+    info_albums_missing_tracknumbers()
+    info_albums_with_no_genre()
+    info_albums_with_no_year()
+    info_tracks_without_title()
+    info_tracks_without_artist()
 
 
-    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    # find_duplicate_flac_albums()
+    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    find_duplicate_flac_albums()
 
     # flag albums where multiple versions are present in library
     flag_versions()
@@ -5953,6 +5954,7 @@ if __name__ == '__main__':
     establish_environment()
     update_tags()
     show_stats_and_log_changes()
+    
     # show_table_differences()
 
     conn.commit()
