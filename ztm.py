@@ -175,7 +175,7 @@ def always_upper(word):
         last_char = last_alpha(word) + 1
         word = word[first_char:last_char]
        
-    return word.upper() in ('ABBA', 'AFZ', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'HBO', 'KCRW', 'LP', 'MFSL', 'MOFI', 'MTV', 'NRG', 'NYC', 'UDSACD', 'UMG','USA', 'U.S.A.')
+    return word.upper() in ('ABBA', 'AFZ', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'HBO', 'KCRW', 'LP', 'MFSL', 'MOFI', 'MTV', 'NRG', 'NYC', 'SHM-CDab', 'UDSACD', 'UMG','USA', 'U.S.A.')
 
 
 def capitalise_first_word(sentence):
@@ -4399,7 +4399,7 @@ def establish_alib_contributors():
     split_list = [item for sublist in delim_records for item in sublist.split('\\')]
     # deduplicate and sort split_list
     unique_sorted_split_list = sorted(set(split_list))
-    print(f"Splitting contributor fields with delimited text gives rise to {len(split_list)} rows, which devolves to {len(unique_sorted_split_list)} distrinct contributors")
+    print(f"Splitting contributor fields with delimited text gives rise to {len(split_list)} rows, which devolves to {len(unique_sorted_split_list)} distinct contributors")
 
     # release mem
     split_list.clear()
@@ -5077,10 +5077,290 @@ def info_tracks_without_artist():
                           __dirpath, __filename;''')
 
 
+# functions to identify various versions of the same album wihtout relying on musicbrainz identifiers
+def flag_versions():
+
+
+    ''' Develop code to create the versions analysis
+
+    PREMISE OF CODE
+    normalise all album names by stripping out stuff in brackets and saving to trimalb field in brackets_removed table.
+    whilst at it, populate each record with audio attributes, track count, dynamic range related to the folder contents
+    dynamic range is imported from DR14.txt files in each folder leveraging ~/dr14.sh and ~/getdr14.sh to pull them and write records to a CSV
+    dr14.sh leveagages https://github.com/simon-r/dr14_t.meter to generate DR14.txt.
+    '''
+
+  # import drscores created by getdr14.sh
+    dbcursor.execute('''DROP TABLE IF EXISTS _TMP_drscores;''')
+    dbcursor.execute('''CREATE TABLE IF NOT EXISTS _TMP_drscores (
+                          __dirpath BLOB,
+                          dr_text   TEXT
+                      );''')
+
+    # before running next line, import the dr scores csv file
+
+    dbcursor.execute('''ALTER TABLE _TMP_drscores ADD album_dr INT;''')
+
+    dbcursor.execute('''UPDATE _TMP_drscores
+                      SET
+                        album_dr = CAST(substr (dr_text, 3) AS INT);''')
+
+    # populate table with all albums that have contents in ([ in album title, stripping the stuff including brackets
+    dbcursor.execute('''DROP TABLE IF EXISTS _TMP_brackets_removed;''')
+
+    # deal with albumartists first
+    dbcursor.execute('''CREATE TABLE _TMP_brackets_removed AS
+                      SELECT DISTINCT
+                        lower(
+                          trim(
+                            CASE
+                              WHEN instr (albumartist || ' - ' || album, '(') > 0 THEN substr (
+                                albumartist || ' - ' || album,
+                                0,
+                                instr (albumartist || ' - ' || album, '(')
+                              )
+                              WHEN instr (albumartist || ' - ' || album, '[') > 0 THEN substr (
+                                albumartist || ' - ' || album,
+                                0,
+                                instr (albumartist || ' - ' || album, '[')
+                              )
+                              ELSE albumartist || ' - ' || album
+                            END
+                          )
+                        ) AS trimalb,
+                        NULL AS confirmkill,
+                        NULL AS killit,
+                        CAST(0 AS INTEGER) AS track_count,
+                        CAST(__bitspersample AS INTEGER) AS __bitspersample,
+                        CAST(__frequency_num AS DECIMAL) AS __frequency_num,
+                        CAST(__channels AS INTEGER) AS __channels,
+                        CAST(0 AS INTEGER) AS album_dr,
+                        __dirpath
+                      FROM
+                        alib
+                      WHERE
+                        __dirname NOT LIKE 'cd%'
+                      ORDER BY
+                        trimalb;''')
+
+
+    # now get all versions
+    dbcursor.execute('''DROP TABLE IF EXISTS _INF_versions;''')
+
+    dbcursor.execute('''CREATE TABLE _INF_versions AS
+                      SELECT
+                        *
+                      FROM
+                        _TMP_brackets_removed
+                      WHERE
+                        trimalb IN (
+                          SELECT DISTINCT
+                            trimalb
+                          FROM
+                            (
+                              SELECT
+                                *
+                              FROM
+                                _TMP_brackets_removed
+                              WHERE
+                                trimalb IN (
+                                  SELECT
+                                    trimalb
+                                  FROM
+                                    _TMP_brackets_removed
+                                  GROUP BY
+                                    trimalb
+                                  HAVING
+                                    count(*) > 1
+                                )
+                            )
+                        )
+                      ORDER BY
+                        trimalb,
+                        __channels,
+                        track_count,
+                        __bitspersample,
+                        __frequency_num,
+                        album_dr,
+                        __dirpath;''')
+
+
+    # remove all duplicate __dirpath entries that arise due to mixed res albums (hence __dirpath making as many appearances as resolution variances) - these will need to be investigated manually via a 2nd round 
+    dbcursor.execute('''DELETE FROM _INF_versions
+                      WHERE
+                        __dirpath IN (
+                          SELECT
+                            __dirpath
+                          FROM
+                            _INF_versions
+                          GROUP BY
+                            __dirpath
+                          HAVING
+                            count(*) > 1
+                        );''')
+
+    # remove all DSD albums on premise we'd like to preserve that and a WAV or PCM source
+    dbcursor.execute('''DELETE FROM _INF_versions
+                            WHERE __bitspersample == 1;''')
+
+    # Remove all albums that no longer appear > 1x
+    dbcursor.execute('''DELETE FROM _INF_versions
+                      WHERE
+                        trimalb IN (
+                          SELECT
+                            trimalb
+                          FROM
+                            _INF_versions
+                          GROUP BY
+                            trimalb
+                          HAVING
+                            count(*) == 1
+                        );''')
+
+
+    # get track counts for each __dirpath and update same into  versions
+    dbcursor.execute('''DROP table IF EXISTS _TMP_track_counts;''')
+
+    dbcursor.execute('''CREATE table _TMP_track_counts AS
+                      SELECT
+                        __dirpath,
+                        COUNT(*) AS track_count
+                      FROM
+                        alib
+                      WHERE
+                        __dirpath IN (
+                          SELECT
+                            __dirpath
+                          FROM
+                            _INF_versions
+                        )
+                      GROUP BY
+                        __dirpath
+                      ORDER BY
+                        __dirpath;''')
+
+    dbcursor.execute('''UPDATE _INF_versions
+                      SET
+                        track_count = _TMP_track_counts.track_count
+                      FROM
+                        _TMP_track_counts
+                      WHERE
+                        _INF_versions.__dirpath == _TMP_track_counts.__dirpath;''')
+
+    # load album DR into versions table
+    dbcursor.execute('''UPDATE _INF_versions
+                      SET
+                        album_dr == _TMP_drscores.album_dr
+                      FROM
+                        _TMP_drscores
+                      WHERE
+                        _INF_versions.__dirpath == _TMP_drscores.__dirpath;''')
+
+
+    # fist process albums with identical track count
+    # UPDATE versions
+    #    SET killit = TRUE
+    #  WHERE __dirpath IN (
+    #     SELECT kill.__dirpath
+    #       FROM (
+    #                _INF_versions AS keep
+    #                JOIN
+    #                _INF_versions AS kill USING (
+    #                    trimalb,
+    #                    __channels
+    #                )
+    #            )
+    #      WHERE kill.__dirpath != keep.__dirpath AND 
+    #            kill.track_count == keep.track_count AND 
+    #            kill.__bitspersample <= keep.__bitspersample AND 
+    #            kill.__frequency_num <= keep.__frequency_num AND 
+    #            kill.album_dr <= keep.album_dr 
+    # );''')
+
+
+    # modified to meet my needs by taking into account track_count differences
+    dbcursor.execute('''UPDATE _INF_versions
+                      SET
+                        killit = TRUE
+                      WHERE
+                        __dirpath IN (
+                          SELECT
+                            kill.__dirpath
+                          FROM
+                            (
+                              _INF_versions AS keep
+                              JOIN _INF_versions AS kill USING (trimalb, __channels)
+                            )
+                          WHERE
+                            kill.__dirpath != keep.__dirpath
+                            AND kill.track_count <= keep.track_count
+                            AND kill.__bitspersample <= keep.__bitspersample
+                            AND kill.__frequency_num <= keep.__frequency_num
+                            AND kill.album_dr <= keep.album_dr
+                        );''')
+
+    # now flag albums with identical everything for manual investigation
+    dbcursor.execute('''UPDATE _INF_versions
+                      SET
+                        killit = 'Investigate'
+                      WHERE
+                        __dirpath IN (
+                          SELECT
+                            kill.__dirpath
+                          FROM
+                            (
+                              _INF_versions AS keep
+                              JOIN _INF_versions AS kill USING (
+                                trimalb,
+                                track_count,
+                                __bitspersample,
+                                __frequency_num,
+                                __channels,
+                                album_dr
+                              )
+                            )
+                          WHERE
+                            kill.__dirpath != keep.__dirpath
+                            AND kill.track_count == keep.track_count
+                            AND kill.__bitspersample == keep.__bitspersample
+                            AND kill.__frequency_num == keep.__frequency_num
+                            AND kill.album_dr == keep.album_dr
+                        );''')
+
+    # and finally, ensure all audiophile pressings are not flagged for removal
+
+    dbcursor.execute('''UPDATE _INF_versions
+                      SET
+                        confirmkill = 'Audiophile Release'
+                      WHERE
+                        (
+                          __dirpath LIKE "%afz%"
+                          OR __dirpath LIKE "%audio fidelity%"
+                          OR __dirpath LIKE "%compact classics%"
+                          OR __dirpath LIKE "%dcc%"
+                          OR __dirpath LIKE "%fim%"
+                          OR __dirpath LIKE "%gzs%"
+                          OR __dirpath LIKE "%mfsl%"
+                          OR __dirpath LIKE "%mobile fidelity%"
+                          OR __dirpath LIKE "%mofi%"
+                          OR __dirpath LIKE "%mastersound%"
+                          OR __dirpath LIKE "%sbm%"
+                          OR __dirpath LIKE "%xrcd%"
+                        );''')
+
+    # but make sure we fag all needledrops for removal
+    dbcursor.execute('''UPDATE _INF_versions
+                      SET
+                        confirmkill = '1'
+                      WHERE
+                        __dirpath LIKE "%vinyl%";''')
+
+
+
+
 
 
 # Functions to rename files and folders based on album metadata
-
 def rename_tunes():
     ''' rename all tunes in alib table leveraging the metadta in alib.  Relies on compilation = 0 to detect VA and OST albums
     DO NOT DEPLOY THIS LIGHTLY YET '''
@@ -5473,143 +5753,144 @@ def update_tags():
     # here you add whatever update and enrichment queries you want to run against the table 
     # comment out anything you don't want run
 
-    # transfer any unsynced lyrics to LYRICS tag
-    unsyncedlyrics_to_lyrics()
+    # # transfer any unsynced lyrics to LYRICS tag
+    # unsyncedlyrics_to_lyrics()
 
-    # merge [recording location] with RECORDINGLOCATION
-    merge_recording_locations()
+    # # merge [recording location] with RECORDINGLOCATION
+    # merge_recording_locations()
 
-    # merge release tag to VERSION tag
-    release_to_version()
+    # # merge release tag to VERSION tag
+    # release_to_version()
 
-    # get rid of tags we don't want to store
-    kill_badtags()
+    # # get rid of tags we don't want to store
+    # kill_badtags()
 
-    # remove CR & LF from text tags (excluding lyrics & review tags)
-    trim_and_remove_crlf()
+    # # remove CR & LF from text tags (excluding lyrics & review tags)
+    # trim_and_remove_crlf()
 
-    # get rid of non-standard apostrophes
-    set_apostrophe()
+    # # get rid of non-standard apostrophes
+    # set_apostrophe()
 
-    # set all empty tags ('') to NULL
-    nullify_empty_tags()
+    # # set all empty tags ('') to NULL
+    # nullify_empty_tags()
 
-    # strip Feat in its various forms from track title and append to ARTIST tag
-    title_feat_to_artist()
+    # # strip Feat in its various forms from track title and append to ARTIST tag
+    # title_feat_to_artist()
 
-    # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
-    feat_artist_to_artist()
+    # # remove all instances of artist entries that contain feat or with and replace with a delimited string incorporating all performers
+    # feat_artist_to_artist()
 
-    # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
-    nullify_performers_matching_artists()
+    # # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
+    # nullify_performers_matching_artists()
 
-    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    strip_live_from_titles()
+    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    # strip_live_from_titles()
 
-    # moves known keywords in brackets to subtitle
-    title_keywords_to_subtitle()
+    # # moves known keywords in brackets to subtitle
+    # title_keywords_to_subtitle()
 
-    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    square_brackets_to_subtitle()
+    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    # square_brackets_to_subtitle()
 
-    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    strip_live_from_album_name()
+    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    # strip_live_from_album_name()
 
-    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    live_in_subtitle_means_live()
+    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    # live_in_subtitle_means_live()
 
-    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    live_means_live_in_subtitle()
+    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    # live_means_live_in_subtitle()
 
-    # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
-    kill_singular_discnumber()
+    # # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
+    # kill_singular_discnumber()
 
-    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    # set_compilation_flag()
+    # # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # # set_compilation_flag()
 
-    # set albumartist to NULL for all compilation albums where they are not NULL
-    nullify_albumartist_in_va()
+    # # set albumartist to NULL for all compilation albums where they are not NULL
+    # nullify_albumartist_in_va()
 
-    # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
-    capitalise_releasetype()
+    # # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
+    # capitalise_releasetype()
 
-    # determines releasetype for each album if not already populated
-    add_releasetype()
+    # # determines releasetype for each album if not already populated
+    # add_releasetype()
 
-    # add a uuid4 tag to every record that does not have one
-    add_tagminder_uuid()
+    # # add a uuid4 tag to every record that does not have one
+    # add_tagminder_uuid()
 
-    # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    dedupe_tags()
-
-
-    # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
-    disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
-
-    # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
-    # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
-    # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors() if enabled by user
-    generate_string_grouper_input()
+    # # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # dedupe_tags()
 
 
-    # # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
-    cleanse_genres_and_styles()
+    # # # disambiguate entries in artist, albumartist & composer tags leveraging the outputs of string-grouper
+    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
 
-    # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
-    add_genres_and_styles()
-
-    # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
-    # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
-    # do not run genre and style code if you use per track genres and styles
-    standardise_album_tags('album')
-    standardise_album_tags('genre')
-    standardise_album_tags('style')
-    standardise_album_tags('mood')
-    standardise_album_tags('theme')
-
-    # # if _REF_mb_disambiguated table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    # # not necessary to call this anymore becaise it gets called by add_multiartist_mb_entities()
-    # # ideally it should be turned into a localised function of add_multiartist_mb_entities()
-    # #add_mb_entities()
-
-    # add mbid's for multi-entry artists
-    # add_multiartist_mb_entities()
-
-    # set capitalistion for track titles
-    set_title_caps()
+    # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
+    # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
+    # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors() if enabled by user
+    # generate_string_grouper_input()
 
 
-    # set capitalistion for album names
-    set_album_caps()
+    # # # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    # cleanse_genres_and_styles()
 
-    # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
-    tag_non_redbook()
+    # # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
+    # add_genres_and_styles()
 
-    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
-    merge_album_version()
+    # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
+    # # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
+    # # do not run genre and style code if you use per track genres and styles
+    # standardise_album_tags('album')
+    # standardise_album_tags('genre')
+    # standardise_album_tags('style')
+    # standardise_album_tags('mood')
+    # standardise_album_tags('theme')
 
+    # # # if _REF_mb_disambiguated table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    # # # not necessary to call this anymore becaise it gets called by add_multiartist_mb_entities()
+    # # # ideally it should be turned into a localised function of add_multiartist_mb_entities()
+    # # #add_mb_entities()
 
-    # remove leading 0's from track tags
-    unpad_tracks()
+    # # add mbid's for multi-entry artists
+    # # add_multiartist_mb_entities()
 
-    # remove leading 0's from discnumber tags
-    unpad_discnumbers()
-
-    # generate _INF_ tables to assist in cleanups, identifying anomalies etc.
-
-    info_albums_with_duplicated_tracknumbers()
-    info_albums_missing_tracknumbers()
-    info_albums_with_no_genre()
-    info_albums_with_no_year()
-    info_tracks_without_title()
-    info_tracks_without_artist()
-
-
-    # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
-    find_duplicate_flac_albums()
+    # # set capitalistion for track titles
+    # set_title_caps()
 
 
+    # # set capitalistion for album names
+    # set_album_caps()
+
+    # # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
+    # tag_non_redbook()
+
+    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
+    # merge_album_version()
+
+
+    # # remove leading 0's from track tags
+    # unpad_tracks()
+
+    # # remove leading 0's from discnumber tags
+    # unpad_discnumbers()
+
+    # # generate _INF_ tables to assist in cleanups, identifying anomalies etc.
+
+    # info_albums_with_duplicated_tracknumbers()
+    # info_albums_missing_tracknumbers()
+    # info_albums_with_no_genre()
+    # info_albums_with_no_year()
+    # info_tracks_without_title()
+    # info_tracks_without_artist()
+
+
+    # # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks
+    # find_duplicate_flac_albums()
+
+    # flag albums where multiple versions are present in library
+    flag_versions()
 
     # rename files leveraging processed metadata in the database
     # rename_tunes()
