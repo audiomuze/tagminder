@@ -4616,19 +4616,39 @@ def get_similar_names():
     # now append records from _INF_string_grouper_possible_namesakes to _REF_disambiguation_workspace, in effect adding any new possible matches to the evaluation pool
     # when writing lowercase sort values cv_sort and rv_sort, move "the" to the end of string to make it easier to deal with "Wallflowers vs The Wallflowers" in once place
     # by turning that into "wallflowers vs wallflowers, the"
-    dbcursor.execute('''INSERT INTO
+    # and add names that aren't already present in _REF_disambiguation_workspace
+    dbcursor.execute('''
+                        INSERT INTO
                           _REF_disambiguation_workspace
                         SELECT
                           left_contributor AS current_val,
                           right_contributor AS replacement_val,
                           NULL,
-                          IIF(lower(substr(left_contributor, 1, 4) ) == 'the ', lower(substr(left_contributor, 5) ) || ', ' || lower(substr(left_contributor, 1, 3) ), lower(left_contributor) ) AS cv_sort,
-                          IIF(lower(substr(right_contributor, 1, 4) ) == 'the ', lower(substr(right_contributor, 5) ) || ', ' || lower(substr(right_contributor, 1, 3) ), lower(right_contributor) ) AS rv_sort,
+                          IIF (
+                            lower(substr (left_contributor, 1, 4)) == 'the ',
+                            lower(substr (left_contributor, 5)) || ', ' || lower(substr (left_contributor, 1, 3)),
+                            lower(left_contributor)
+                          ) AS cv_sort,
+                          IIF (
+                            lower(substr (right_contributor, 1, 4)) == 'the ',
+                            lower(substr (right_contributor, 5)) || ', ' || lower(substr (right_contributor, 1, 3)),
+                            lower(right_contributor)
+                          ) AS rv_sort,
                           NULL
                         FROM
                           _INF_string_grouper_possible_namesakes
+                        WHERE
+                          (current_val, replacement_val) NOT IN (
+                            SELECT
+                              current_val,
+                              replacement_val
+                            FROM
+                              _REF_disambiguation_workspace
+                          )
                         ORDER BY
-                          cv_sort, rv_sort;''')
+                          cv_sort,
+                          rv_sort;
+                    ''')
 
     # # generate list of distinct labels --- this needs to follow above logic and then get repeated for recordinglocations
     # # probably best dealt with as a seperate table
@@ -5894,11 +5914,11 @@ def update_tags():
     # # add_multiartist_mb_entities()
 
     # set capitalistion for track titles
-    set_title_caps()
+    # set_title_caps()
 
 
     # set capitalistion for album names
-    set_album_caps()
+    # set_album_caps()
 
     # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
     tag_non_redbook()
