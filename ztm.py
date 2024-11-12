@@ -175,7 +175,7 @@ def always_upper(word):
         last_char = last_alpha(word) + 1
         word = word[first_char:last_char]
        
-    return word.upper() in ('ABBA', 'AFZ', 'BBC', 'BMG', 'EP', 'EU', 'FM', 'HBO', 'KCRW', 'LP', 'MFSL', 'MOFI', 'MTV', 'NRG', 'NYC', 'SHM-CDab', 'UDSACD', 'UMG','USA', 'U.S.A.')
+    return word.upper() in ('A&M', 'ABBA', 'AFZ', 'BBC', 'BBQ', 'BMG', 'CD', 'CD/DVD', 'DSD', 'DVD', 'DVD-A', 'EMI', 'EP', 'EU', 'FM', 'HBO', 'HMV', 'KCRW', 'LP', 'MFSL', 'MCA', 'MOFI', 'MTV', 'NL', 'NRG', 'NYC', 'SACD', 'SHM-CD', 'UDCD', 'UDSACD', 'UK', 'UMG', 'USA', 'U.S.A.', 'XYZ', 'ZZ')
 
 
 def capitalise_first_word(sentence):
@@ -573,6 +573,12 @@ def establish_environment():
     "musicbrainz_releasetrackid",
     "musicbrainz_trackid",
     "musicbrainz_workid",
+    "musicbrainz_arrangerid",
+    "musicbrainz_conductoridid",
+    "musicbrainz_lyricistid",
+    "musicbrainz_mixerid",
+    "musicbrainz_remixerid",
+    "musicbrainz_writerid",
     "originaldate",
     "originalreleasedate",
     "originalyear",
@@ -4608,21 +4614,21 @@ def get_similar_names():
     similarities.to_sql('_INF_string_grouper_possible_namesakes', conn, index=True, if_exists='replace')
 
     # now append records from _INF_string_grouper_possible_namesakes to _REF_disambiguation_workspace, in effect adding any new possible matches to the evaluation pool
-    dbcursor.executemany('''INSERT INTO
-                              _REF_disambiguation_workspace
-                            SELECT
-                              left_contributor AS current_val,
-                              right_contributor AS replacement_val,
-                              NULL,
-                              lower(left_contributor) AS cv_sort,
-                              lower(right_contributor) AS rv_sort,
-                              NULL
-                            FROM
-                              _INF_string_grouper_possible_namesakes
-                            ORDER BY
-                              cv_sort;''')
-
-
+    # when writing lowercase sort values cv_sort and rv_sort, move "the" to the end of string to make it easier to deal with "Wallflowers vs The Wallflowers" in once place
+    # by turning that into "wallflowers vs wallflowers, the"
+    dbcursor.execute('''INSERT INTO
+                          _REF_disambiguation_workspace
+                        SELECT
+                          left_contributor AS current_val,
+                          right_contributor AS replacement_val,
+                          NULL,
+                          IIF(lower(substr(left_contributor, 1, 4) ) == 'the ', lower(substr(left_contributor, 5) ) || ', ' || lower(substr(left_contributor, 1, 3) ), lower(left_contributor) ) AS cv_sort,
+                          IIF(lower(substr(right_contributor, 1, 4) ) == 'the ', lower(substr(right_contributor, 5) ) || ', ' || lower(substr(right_contributor, 1, 3) ), lower(right_contributor) ) AS rv_sort,
+                          NULL
+                        FROM
+                          _INF_string_grouper_possible_namesakes
+                        ORDER BY
+                          cv_sort, rv_sort;''')
 
     # # generate list of distinct labels --- this needs to follow above logic and then get repeated for recordinglocations
     # # probably best dealt with as a seperate table
@@ -5121,7 +5127,7 @@ def flag_versions():
     dr14.sh leveagages https://github.com/simon-r/dr14_t.meter to generate DR14.txt.
     '''
 
-    print('\nAnalysing album names, trasck count, dynamic range, sampling rate and bit-depth to identify different versions of the same album in your library')
+    print('\nAnalysing album names, track count, dynamic range, sampling rate and bit-depth to identify different versions of the same album in your library')
 
   # import drscores created by getdr14.sh
     dbcursor.execute('''DROP TABLE IF EXISTS _TMP_drscores;''')
