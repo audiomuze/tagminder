@@ -3456,7 +3456,7 @@ def add_tagminder_uuid():
     print(f"|\n{tally_mods() - opening_tally} changes were processed")
 
 
-# def establish_alib_contributors():
+# def get_alib_contributors():
 #     ''' build list of unique contibutors by gathering all mbid's found in alib - checking against artist and albumartist and composer fields '''
 
 #     print("\nBuilding a list of unique contibutors (composers, artists & albumartists) that have a single MBID in alib by gathering all mbid's found in alib and checking against artist and albumartist fields\nCheck all namesakes_* tables in database to manually investigate namesakes")
@@ -3784,7 +3784,7 @@ def add_mb_entities():
         # build list of unique contibutors by gathering all mbid's found in alib - checking against artist, albumartist and composer fields
 
         if not table_exists('_TMP_distinct_contributors'):
-            establish_alib_contributors()
+            get_alib_contributors()
 
 
         dbcursor.execute('''CREATE INDEX IF NOT EXISTS ix_lrole_albumartists ON alib(LOWER(albumartist)) WHERE albumartist IS NOT NULL;''')
@@ -4264,7 +4264,7 @@ def find_duplicate_flac_albums():
 
 
 
-def establish_alib_contributors():
+def get_alib_contributors():
 
     # function that basically rebuilds _TMP_distinct_contributors from alib table by splitting all delimited contributors and creating a distinct list of contributors in alib
     # _TMP_distinct_contributors is used by a number of other functions throughout taglib.  It's not a reference table, hence the _TMP_ prefix
@@ -4438,7 +4438,7 @@ def establish_alib_contributors():
 
 
 
-def generate_string_grouper_input():
+def get_similar_names():
 
 
 #    build up table of contributors made up of artist, performers, albumartists and composers, engineers, producers,labels & recordinglocation
@@ -4471,7 +4471,7 @@ def generate_string_grouper_input():
 
 #check we have a _TMP_distinct_contributors table to work with, if not, build it
     if not table_exists('_TMP_distinct_contributors'):
-        establish_alib_contributors()
+        get_alib_contributors()
 
 
 #########################################################################
@@ -4562,7 +4562,7 @@ def generate_string_grouper_input():
     df1 = pd.read_sql_query("SELECT rowid, contributor, FALSE FROM _TMP_distinct_contributors;", conn) # import all distinct contributors derived from alib
 
     # match strings using string grouper capability
-    matches = match_strings(df1['contributor'], min_similarity=0.85) # tweak similarity threshold for your level of precision ... lower score = more records in results
+    matches = match_strings(df1['contributor'], min_similarity=0.85) # tweak similarity threshold for your level of precision ... lower score = more records in results, more false positives
     # Look at only the non-exact matches:
     similarities = matches[matches['left_contributor'] != matches['right_contributor']].head(None)
     #similarities = matches[matches['similarity'] < 0.9]
@@ -4578,9 +4578,25 @@ def generate_string_grouper_input():
     # now drop rows from similarities if left_contributor == current_val
     similarities = similarities[~similarities['left_contributor'].isin(df2['current_val'])]
 
-    # get current_val and replacement_val for all records in _REF_disambiguation_workspace where we've dismissed a similarity match (status = 0) or processed a change previously (status = 1) into a df so we can eliminate stuff we've already dealt with
-    # in future _REF_disambiguation_workspace should become the master and _REF_vetted_contributors may be able to be removed.  The disambiguation update code would then need to reference this table.
+    # get current_val and replacement_val for all records in _REF_disambiguation_workspace where we've dismissed a similarity match as a false-positive (status = 0) or processed a change previously (status = 1) 
+    # into a df so we can eliminate stuff we've already dealt with
+ 
 
+    # REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!!
+    #
+    #
+    #
+    #
+    # in future _REF_disambiguation_workspace should become the master and _REF_vetted_contributors may be able to be removed.  The disambiguation update code would then need to reference this table.
+    #
+    #
+    #
+    #
+    #
+    # REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!!
+
+
+    # load and remove all previously considered names from the dataset
     df3 = pd.read_sql_query("""SELECT current_val, replacement_val from _REF_disambiguation_workspace WHERE status == 0 OR status == 1 ORDER by current_val;""", conn)
     print(f"Removing {len(df3)} previously considered contributor entries from list of posssible namesakes")
 
@@ -4590,6 +4606,22 @@ def generate_string_grouper_input():
     # write out what remains to be considered by the user to a csv file & sqlite table
     similarities.to_csv('_INF_string_grouper_possible_namesakes.csv', index=False, sep = '|')
     similarities.to_sql('_INF_string_grouper_possible_namesakes', conn, index=True, if_exists='replace')
+
+    # now append records from _INF_string_grouper_possible_namesakes to _REF_disambiguation_workspace, in effect adding any new possible matches to the evaluation pool
+    dbcursor.executemany('''INSERT INTO
+                              _REF_disambiguation_workspace
+                            SELECT
+                              left_contributor AS current_val,
+                              right_contributor AS replacement_val,
+                              NULL,
+                              lower(left_contributor) AS cv_sort,
+                              lower(right_contributor) AS rv_sort,
+                              NULL
+                            FROM
+                              _INF_string_grouper_possible_namesakes
+                            ORDER BY
+                              cv_sort;''')
+
 
 
     # # generate list of distinct labels --- this needs to follow above logic and then get repeated for recordinglocations
@@ -4715,7 +4747,7 @@ def compare_dataframes(df1, df2, index_col):
     return result
 
 
-def disambiguate_contributors():
+def cleanse_contributor_names():
     '''  Function that leverages Pandas DataFrames to apply metadata changes to artist, performer, albumartist composer, engineer and producer fields in a dataframe 
     representing these datapoints in the alib table and then writing back the changes to a table (_TMP_disambiguation_updates) in the database.  This 
     table is then used to update records in alib based on matching rowid.'''
@@ -5754,14 +5786,14 @@ def update_tags():
     # here you add whatever update and enrichment queries you want to run against the table 
     # comment out anything you don't want run
 
-    # # transfer any unsynced lyrics to LYRICS tag
-    # unsyncedlyrics_to_lyrics()
+    # transfer any unsynced lyrics to LYRICS tag
+    unsyncedlyrics_to_lyrics()
 
-    # # merge [recording location] with RECORDINGLOCATION
-    # merge_recording_locations()
+    # merge [recording location] with RECORDINGLOCATION
+    merge_recording_locations()
 
-    # # merge release tag to VERSION tag
-    # release_to_version()
+    # merge release tag to VERSION tag
+    release_to_version()
 
     # get rid of tags we don't want to store
     kill_badtags()
@@ -5784,69 +5816,68 @@ def update_tags():
     # set all PERFORMER tags to NULL when they match or are already present in ARTIST tag
     nullify_performers_matching_artists()
 
-    # # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
-    # strip_live_from_titles()
+    # iterate through titles moving text between matching (live) or [live] to SUBTITLE tag and set LIVE=1 if not already tagged accordingly
+    strip_live_from_titles()
 
-    # # moves known keywords in brackets to subtitle
-    # title_keywords_to_subtitle()
+    # moves known keywords in brackets to subtitle
+    title_keywords_to_subtitle()
 
-    # # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
-    # square_brackets_to_subtitle()
+    # last resort moving anything left in square brackets to subtitle.  Cannot do the same with round brackets because chances are you'll be moving part of a song title
+    square_brackets_to_subtitle()
 
-    # # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
-    # strip_live_from_album_name()
+    # strips '(live)'' from end of album name and sets LIVE=1 where this is not already the case
+    strip_live_from_album_name()
 
-    # # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
-    # live_in_subtitle_means_live()
+    # ensure any tracks with 'Live' appearing in subtitle have set LIVE=1
+    live_in_subtitle_means_live()
 
-    # # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
-    # live_means_live_in_subtitle()
+    # ensure any tracks with LIVE=1 also have 'Live' appearing in subtitle 
+    live_means_live_in_subtitle()
 
     # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
     kill_singular_discnumber()
 
-    # # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    # # set_compilation_flag()
+    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    # set_compilation_flag()
 
-    # # set albumartist to NULL for all compilation albums where they are not NULL
-    # nullify_albumartist_in_va()
+    # set albumartist to NULL for all compilation albums where they are not NULL
+    nullify_albumartist_in_va()
 
     # applies firstlettercaps to each entry in releasetype if not already firstlettercaps
     capitalise_releasetype()
 
-    # # determines releasetype for each album if not already populated
-    # add_releasetype()
+    # determines releasetype for each album if not already populated
+    add_releasetype()
 
-    # # add a uuid4 tag to every record that does not have one
-    # add_tagminder_uuid()
+    # add a uuid4 tag to every record that does not have one
+    add_tagminder_uuid()
 
-    # # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
-    # dedupe_tags()
-
-
-    # # disambiguate entries in artist, albumartist, composer, engineer and producer tags leveraging the outputs of string-grouper
-    # disambiguate_contributors() # this only does something if there are records in the disambiguation table that have not yet been processed
-
-    # # generate sg_contributors, which is the table containing all distinct artist, performer, albumartist and composer names in your library
-    # # this is to be processed by string-grouper to generate similarities.csv for investigation and resolution by human endeavour.  The outputs 
-    # # of that endeavour then serve to append new records to the disambiguation table which is then processed via disambiguate_contributors() if enabled by user
-    # generate_string_grouper_input()
+    # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    dedupe_tags()
 
 
-    # # # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
+    # disambiguate entries in artist, albumartist, composer, engineer and producer tags leveraging the outputs of string-grouper
+    cleanse_contributor_names() # this only does something if there are records in _REF_vetted_contributors table, replacing all instances of current_val with replacement_val
+
+    # leverage string-grouper to generate a list of similar names from which to manually improve metadata
+    # every time this is run the dataset is regenerated, so you're always being presented with the latest set of similarities based on latest tag metadata
+    get_similar_names()
+
+
+    # remove genre and style tags that don't appear in the vetted list, merge genres and styles and sort and deduplicate both
     cleanse_genres_and_styles()
 
     # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
     add_genres_and_styles()
 
     # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
-    # # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
-    # # do not run genre and style code if you use per track genres and styles
-    # standardise_album_tags('album')
-    # standardise_album_tags('genre')
-    # standardise_album_tags('style')
-    # standardise_album_tags('mood')
-    # standardise_album_tags('theme')
+    # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
+    # do not run genre and style code if you use per track genres and styles
+    standardise_album_tags('album')
+    standardise_album_tags('genre')
+    standardise_album_tags('style')
+    standardise_album_tags('mood')
+    standardise_album_tags('theme')
 
     # # # if _REF_mb_disambiguated table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
     # # # not necessary to call this anymore becaise it gets called by add_multiartist_mb_entities()
@@ -5856,19 +5887,19 @@ def update_tags():
     # # add mbid's for multi-entry artists
     # # add_multiartist_mb_entities()
 
-    # # set capitalistion for track titles
-    # set_title_caps()
+    # set capitalistion for track titles
+    set_title_caps()
 
 
-    # # set capitalistion for album names
-    # set_album_caps()
+    # set capitalistion for album names
+    set_album_caps()
 
-    # # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
-    # tag_non_redbook()
+    # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
+    tag_non_redbook()
 
-    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    # # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
-    # merge_album_version()
+    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
+    merge_album_version()
 
 
     # remove leading 0's from track tags
@@ -5893,7 +5924,7 @@ def update_tags():
     # flag albums where multiple versions are present in library
     flag_versions()
 
-    # rename files leveraging processed metadata in the database
+    # # rename files leveraging processed metadata in the database
     # rename_tunes()
 
     # # rename folders containing albums leveraging processed metadata in the database
