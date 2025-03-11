@@ -119,12 +119,149 @@ def import_dir(dbpath: str, dirpath: str) -> None:
         dbpath: Path to SQLite database
         dirpath: Directory path to import
     """
+
+    # Define baseline of columns one might expect to see in the tags and set them in the order you want them to appear in the db
+    fixed_columns = [
+        "__path",
+        "__dirpath",
+        "__filename",
+        "__filename_no_ext",
+        "__ext",
+        "__accessed",
+        "__app",
+        "__bitrate",
+        "__bitspersample",
+        "__bitrate_num",
+        "__frequency_num",
+        "__frequency",
+        "__channels",
+        "__created",
+        "__dirname",
+        "__file_access_date",
+        "__file_access_datetime",
+        "__file_access_datetime_raw",
+        "__file_create_date",
+        "__file_create_datetime",
+        "__file_create_datetime_raw",
+        "__file_mod_date",
+        "__file_mod_datetime",
+        "__file_mod_datetime_raw",
+        "__file_size",
+        "__file_size_bytes",
+        "__file_size_kb",
+        "__file_size_mb",
+        "__filetype",
+        "__image_mimetype",
+        "__image_type",
+        "__layer",
+        "__length",
+        "__length_seconds",
+        "__mode",
+        "__modified",
+        "__num_images",
+        "__parent_dir",
+        "__size",
+        "__tag",
+        "__tag_read",
+        "__version",
+        "__vendorstring",
+        "__md5sig",
+        "tagminder_uuid",
+        "sqlmodded",
+        "reflac",
+        "discnumber",
+        "track",
+        "title",
+        "subtitle",
+        "artist",
+        "composer",
+        "arranger",
+        "lyricist",
+        "writer",
+        "albumartist",
+        "album",
+        "version",
+        "_releasecomment",
+        "discsubtitle",
+        "work",
+        "movement",
+        "part",
+        "live",
+        "ensemble",
+        "performer",
+        "personnel",
+        "conductor",
+        "engineer",
+        "producer",
+        "mixer",
+        "remixer",
+        "releasetype",
+        "year",
+        "originaldate",
+        "originalreleasedate",
+        "originalyear",
+        "genre",
+        "style",
+        "mood",
+        "theme",
+        "rating",
+        "compilation",
+        "bootleg",
+        "label",
+        "amgtagged",
+        "amg_album_id",
+        "amg_boxset_url",
+        "amg_url",
+        "musicbrainz_albumartistid",
+        "musicbrainz_albumid",
+        "musicbrainz_artistid",
+        "musicbrainz_composerid",
+        "musicbrainz_discid",
+        "musicbrainz_engineerid",
+        "musicbrainz_producerid",
+        "musicbrainz_releasegroupid",
+        "musicbrainz_releasetrackid",
+        "musicbrainz_trackid",
+        "musicbrainz_workid",
+        "lyrics",
+        "unsyncedlyrics",
+        "performancedate",
+        "acousticbrainz_mood",
+        "acoustid_fingerprint",
+        "acoustid_id",
+        "analysis",
+        "asin",
+        "barcode",
+        "catalog",
+        "catalognumber",
+        "isrc",
+        "media",
+        "country",
+        "discogs_artist_url",
+        "discogs_release_url",
+        "fingerprint",
+        "recordinglocation",
+        "recordingstartdate",
+        "replaygain_album_gain",
+        "replaygain_album_peak",
+        "replaygain_track_gain",
+        "replaygain_track_peak",
+        "review",
+        "roonalbumtag",
+        "roonid",
+        "roonradioban",
+        "roontracktag",
+        "upc",
+        "__albumgain"
+        ]
+
+
     try:
         all_tags = []
         stats = {"processed": 0, "errors": 0}
         
         # First pass: collect all tag dictionaries
-        logging.info("Collecting tags from all files...")
+        logging.info("Ingesting tags from all files...")
         for entry in scantree(dirpath):
             try:
                 logging.debug(f"Reading tags from: {entry.path}")
@@ -156,18 +293,34 @@ def import_dir(dbpath: str, dirpath: str) -> None:
         #     print(item)
 
 
-        # Pander to Polars foibles ... it cracks the shits if the list from which you create a dataframe doesn't have all keys present in all list items, so...
+        # Pander to Polars foibles ... it cracks the shits if the list from which you create a dataframe doesn't have all keys present in all list items, so get got to populate nulls...
         # Get all possible keys from all dictionaries in every list item
-
         all_keys = get_unique_keys(all_tags)
+        # Convert all to lowercase and get rid of any duplicates arising from case differences
+        all_keys = list(set([i.lower() for i in all_keys]))
+
+        # identify and isolate whatever other keys happen to be present in the tags that are not included in fixed_columns
+        # extra_columns = [col.lower() for col in df.columns if col.lower() not in fixed_columns]
+        extra_columns = [col for col in all_keys if col not in fixed_columns]
+
+        # # Print them for posterity
+        # for col in extra_columns:
+        #     print(f"Extra column: {col}")
+
+        # Create final set of columns in the order they are to be written to DF and database
+        final_columns = fixed_columns + extra_columns
+
         # Ensure each dictionary has all keys and set value to None if the dictionary is missing a key
         for item in all_tags:
-            for key in all_keys:
+            for key in final_columns:
                 if key not in item:
                     item[key] = None
 
+        # for col in final_columns:
+        #     print(f"Final column: {col}")
+
         # Create DataFrame from all collected tags
-        logging.info(f"Creating DataFrame with {len(all_tags)} records...")
+        logging.info(f"Creating DataFrame with {len(all_tags)} records.")
 
         df = pl.DataFrame(all_tags, schema_overrides={key: pl.Utf8 for key in all_keys}) # Treat all as strings initially. This gets around Polars' idiotic col string length being determined by the first item in a df col.
 
@@ -179,155 +332,16 @@ def import_dir(dbpath: str, dirpath: str) -> None:
         #     else:
         #         print(f"Discnumber not in df")
 
-        # Define baseline of columns one might expect to see in the tags and set them in the order you want them to appear in the db
-        fixed_columns = [
-            "__path",
-            "__dirpath",
-            "__filename",
-            "__filename_no_ext",
-            "__ext",
-            "__accessed",
-            "__app",
-            "__bitrate",
-            "__bitspersample",
-            "__bitrate_num",
-            "__frequency_num",
-            "__frequency",
-            "__channels",
-            "__created",
-            "__dirname",
-            "__file_access_date",
-            "__file_access_datetime",
-            "__file_access_datetime_raw",
-            "__file_create_date",
-            "__file_create_datetime",
-            "__file_create_datetime_raw",
-            "__file_mod_date",
-            "__file_mod_datetime",
-            "__file_mod_datetime_raw",
-            "__file_size",
-            "__file_size_bytes",
-            "__file_size_kb",
-            "__file_size_mb",
-            "__filetype",
-            "__image_mimetype",
-            "__image_type",
-            "__layer",
-            "__length",
-            "__length_seconds",
-            "__mode",
-            "__modified",
-            "__num_images",
-            "__parent_dir",
-            "__size",
-            "__tag",
-            "__tag_read",
-            "__version",
-            "__vendorstring",
-            "__md5sig",
-            "tagminder_uuid",
-            "sqlmodded",
-            "reflac",
-            "discnumber",
-            "track",
-            "title",
-            "subtitle",
-            "artist",
-            "composer",
-            "arranger",
-            "lyricist",
-            "writer",
-            "albumartist",
-            "album",
-            "version",
-            "_releasecomment",
-            "discsubtitle",
-            "work",
-            "movement",
-            "part",
-            "live",
-            "ensemble",
-            "performer",
-            "personnel",
-            "conductor",
-            "engineer",
-            "producer",
-            "mixer",
-            "remixer",
-            "releasetype",
-            "year",
-            "originaldate",
-            "originalreleasedate",
-            "originalyear",
-            "genre",
-            "style",
-            "mood",
-            "theme",
-            "rating",
-            "compilation",
-            "bootleg",
-            "label",
-            "amgtagged",
-            "amg_album_id",
-            "amg_boxset_url",
-            "amg_url",
-            "musicbrainz_albumartistid",
-            "musicbrainz_albumid",
-            "musicbrainz_artistid",
-            "musicbrainz_composerid",
-            "musicbrainz_discid",
-            "musicbrainz_engineerid",
-            "musicbrainz_producerid",
-            "musicbrainz_releasegroupid",
-            "musicbrainz_releasetrackid",
-            "musicbrainz_trackid",
-            "musicbrainz_workid",
-            "lyrics",
-            "unsyncedlyrics",
-            "performancedate",
-            "acousticbrainz_mood",
-            "acoustid_fingerprint",
-            "acoustid_id",
-            "analysis",
-            "asin",
-            "barcode",
-            "catalog",
-            "catalognumber",
-            "isrc",
-            "media",
-            "country",
-            "discogs_artist_url",
-            "discogs_release_url",
-            "fingerprint",
-            "recordinglocation",
-            "recordingstartdate",
-            "replaygain_album_gain",
-            "replaygain_album_peak",
-            "replaygain_track_gain",
-            "replaygain_track_peak",
-            "review",
-            "roonalbumtag",
-            "roonid",
-            "roonradioban",
-            "roontracktag",
-            "upc",
-            "__albumgain"
-            ]
-
-
-
-        # Pick up whatever other columns happen to be present in the tags
-        extra_columns = [col for col in df.columns if col not in fixed_columns]
-
-        # Define final column order: fixed columns first, extras in original order
-        final_columns = [col for col in fixed_columns if col in df.columns] + extra_columns
+        # for col in final_columns:
+        #     print(col)
+        # input()
 
         # Reorder the DataFrame
         df = df.select(final_columns)
+    
+        logging.info(f"{len(final_columns)} tag names and associated values ingested from {df.height} files.")
+    
       
-
-
-
         # Write to SQLite in one operation
         logging.info("Writing to SQLite database...")
         
@@ -347,7 +361,9 @@ def import_dir(dbpath: str, dirpath: str) -> None:
                 columns_sql.append(f'"{col}" blob PRIMARY KEY')
             else:
                 columns_sql.append(f'"{col}" text')
-                
+        # for x in columns_sql:
+        #     print(x)
+        # input()
         create_table_sql = f"CREATE TABLE alib ({', '.join(columns_sql)})"
         conn.execute(create_table_sql)
         
@@ -392,22 +408,18 @@ def clean_value_for_export(value: Any) -> Any:
         # Split by double backslash which is how we stored the multi-value tags
         items = value.split('\\\\')
         # Convert filter object to list before passing to remove_dupes
-        return remove_dupes(list(filter(None, items)))
+        # return remove_dupes(list(filter(None, items)))
+        return list(filter(None, items))
     
     return value
 
 
 def export_db(dbpath: str, dirpath: str) -> None:
-    """Export database to audio files using DataFrame.
-    
-    Args:
-        dbpath: Path to SQLite database
-        dirpath: Directory path to export to
-    """
+    """Export database to audio files using DataFrame."""
     try:
-        # Connect to database and read entire table into DataFrame
+        # Connect to database
         logging.info(f"Reading database from {dbpath}...")
-        conn = sqlite3.connect(dbpath)
+        conn = sqlite3.connect(dbpath, detect_types=sqlite3.PARSE_DECLTYPES)
         
         # First query just the paths
         query = "SELECT __path FROM alib"
@@ -420,19 +432,26 @@ def export_db(dbpath: str, dirpath: str) -> None:
         # Filter for paths in the target directory
         paths = paths_df["__path"].to_list()
         target_paths = [p for p in paths if issubfolder(dirpath, p)]
-        
         if not target_paths:
             logging.warning(f"No files in database are located in {dirpath}.")
             return
-            
-        logging.info(f"Found {len(target_paths)} files in the target directory.")
+
+        # Query schema information to get column names
+        schema_query = "PRAGMA table_info(alib)"
+        schema_df = pl.read_database(query=schema_query, connection=conn)
         
-        # Query full records for the filtered paths
+        # Build schema dict where every column is pl.Utf8
+        table_schema = {col_name: pl.Utf8 for col_name in schema_df["name"]}
+        
+        # Query the actual data with our explicit schema
         placeholders = ",".join(["?"] * len(target_paths))
         query = f"SELECT * FROM alib WHERE __path IN ({placeholders})"
-        
-        # Read database into DataFrame using SQL parameters
-        df = pl.read_database(query=query, connection=conn, parameters=target_paths)
+        df = pl.read_database(
+            query=query, 
+            connection=conn, 
+            execute_options={"parameters": target_paths},
+            schema_overrides=table_schema  # Use our explicit schema
+        )
         conn.close()
         
         # Process files
@@ -445,7 +464,7 @@ def export_db(dbpath: str, dirpath: str) -> None:
             filepath = record['__path']
             
             try:
-                logging.info(f'Updating {filepath}')
+                # logging.info(f'Updating {filepath}')
                 
                 # Clean all values
                 for key, value in record.items():
