@@ -2,7 +2,7 @@
 Tagging music has (for me) always been a time consuming, mind-numbing, prone to human error and inconsistency, and laborious task.  Tagminder has reduced it to something that is now almost entirely automated, ensuring consistency throughout your digital music library.
 
 
-tagminder is comprised of two Python scripts.  One imports audio metadata from underlying audio files into a dynamically created SQLite database and can export metadata back to the underlying files (but only if you specifically ask it to).  The other processes the imported metadata in the SQLite database in order to correct anomalies, improve consistenct and enrich the metadata where possible.
+tagminder is comprised of two Python scripts.  One imports audio metadata from underlying audio files into a dynamically created SQLite database and can export metadata back to the underlying files (but only if you specifically ask it to).  The other processes the imported metadata in the SQLite database in order to correct anomalies, improve consistency and enrich the metadata where possible.
 
 It enables you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files. It leverages the [puddletag](https://github.com/puddletag/puddletag) codebase to read/write tags so you need to either install puddletag, or at least pull it from the git repo to be able to access its code, specifically puddletag/puddlestuff/audioinfo. 
 
@@ -25,7 +25,7 @@ from string_grouper import match_strings, match_most_similar, \
     StringGrouper
 ```
 
-Furthermore, it's a great tool to use when adding new music to your music collection and wanting to ensure consistency in tag treatment, contributor names, MBIDs, file naming and directory naming.  It's now at a point functionally where I tag using Picard to pull MusicBrainz metadata), then run tagminder against the files, export its changes sight unseen and do a final review using Puddletag to pick up the few edge cases that aren't worth otherwise coding to automate.
+Furthermore, it's a great tool to use when adding new music to your music collection and wanting to ensure consistency in tag treatment, contributor names, MBIDs, file naming and directory naming.  It's now at a point functionally where I tag using Picard (to pull MusicBrainz metadata), then run tagminder against the files, export its changes sight unseen and do a final review using Puddletag to pick up the few edge cases that aren't worth otherwise coding to automate.
 
 ## General philosophy and rationale
 
@@ -38,7 +38,7 @@ Taggers are great but can only take you so far. Tag sources also vary in consist
 tagminder lets you automatically address these sorts of issues and does a lot of cleanup work that is difficult to do at scale or consistently using a tagger. It delivers consistent and repeatable results, whether you're handling 1,000 or 1,000,000 tracks; this is simply an impossible task prone to inconsistency and human error when tackled via a tagger.
 
 ### Preserve your prior work
-tagminder takes your existing tags as a given, not trying to second guess you by replacing your metadata with externally sourced metadata, but rather it looks for common issues in your metadata and solves those automatically where it is possible to get a reliable result.  It also leverages existing metadata related to tracks and contributors already in your library to enrich albums without for e.g. composer metadata or tracks/albums without any genre metadata.
+tagminder takes your existing tags as a given, not trying to second guess you by replacing your metadata with externally sourced metadata, but rather it looks for common issues in your metadata and solves those automatically where it is possible to get a reliable result.  It also leverages existing metadata related to tracks and contributors already in your library to enrich albums without e.g. composer metadata or tracks/albums without any genre metadata.
 
 ### MusicBrainz aware
 
@@ -67,11 +67,11 @@ All originally-ingested records are written to a rollback table, so in the event
 
 ### Reducing the need for incremental file backups
 
-If your music collection is static in terms of filename and location, you can also use the metadata database as a means of backing up and versioning metadata simply by keeping various iterations of the database.  This obviates the need to overwrite a previous backup of the underlying music files, reducing storage needs, backup times and complexity.
+If your music collection is static in terms of filename and location, you can also use the metadata database as a means of backing up and versioning metadata simply by keeping various iterations of the database.  This obviates the need to overwrite a previous backup of the underlying music files, reducing storage needs, backup times and complexity.  
 
 Getting metadata current after restoring a dated backup of your music files is as simple as exporting the most recent database against the restored files. The added benefit is it eliminates the need to create incremental backups of your music files simply because you've augmented the metadata - just backup the database and as long as your file locations remain static you have everything you need - the audio files and their metadata.
 
-By default tagminder generates a gen4 uuid for all files, which would be added to your tags on exporting changes.  A future update will remove dependency on static filenames and locations by instead referencing the UUID to ascertain which files to write to on exporting changes from the database.  The UUID would then be referenced rather than file path.  This would have the effect of making your metadata impervious to file move and rename operations.
+By default tagminder generates a gen4 uuid for all files, which would be added to your tags on exporting changes.  A future update will remove dependency on static filenames and locations by instead referencing the UUID to ascertain which files to write to on exporting changes from the database.  The UUID would then be referenced rather than file path.  This would have the effect of making your metadata impervious to file move and rename operations (the code has been written, I've just not had a chance to incorporate it - will do so as I work to refactor tagminder and carry out most operations in a Polars dataframe to enhance tagminder's speed and efficiency by leveraging vectorised operations.
 
 ## Understanding the scripts
 
@@ -93,7 +93,7 @@ A user executed bash shell script addsec2modtime.sh reads that file and adds 1 s
 
 
 
-At present, Tagminder's specific capabilitirs are as follows:
+At present, Tagminder's specific capabilities are as follows:
 
 #### General tag cleanup
 
@@ -115,17 +115,17 @@ At present, Tagminder's specific capabilitirs are as follows:
 
 - adds [bit depth/sampling rate kHz], [Mixed Res] or [DSD] to end of all album names where an album is not redbook (16/44.1).  This is because very few music servers differentiate different releases properly if they share exactly the same name, and the dev's typically don't see getting this right as a priority, and if they do they completely overengineer their solution rather than use tags
 
-- sets COMPILATION = 1 for all Various Artists albums and 0 for all others. Tests for presence or otherwise of ALBUMARTIST and whether __dirname of album begins with ‘VA -’  to make its determination.  Does the same for all albums where the __dirname begins with ‘OST - ’.
+- sets COMPILATION = 1 for all Various Artists albums and 0 for all others. Tests for presence or otherwise of ALBUMARTIST and whether __dirname of album begins with ‘VA -’  to make its determination.  Does the same for all albums where the __dirname begins with ‘OST - ’ (denoting Orignal Sountrack).
 
-- removes 'Various Artists' from ALBUMARTIST
+- removes 'Various Artists' from ALBUMARTIST tag
 
-- writes out multiple TAGNAME=value entries rather than TAGNAME=value1\\value2 delimited tag entries, and in doing so respects the underlying file type's tagging 'specification' (if one considers the bull that's been conjured over the years to be standards).
+- writes out multiple TAGNAME=value entries rather than TAGNAME=value1\\value2 delimited tag entries, and in doing so respects the underlying file type's tagging 'specification' (if one considers the bull that's been conjured over the years to be standards)
 
-- normalises RELEASETYPE entries to `First Letter Caps` for better presentation in music server front-ends that leverage RELEASETYPE (support for RELEASETYPE was recently added to Logitechmediaserver massively improving its ability to list an artist's work in a meanigful manner rather than as one long unstructured list)
+- normalises RELEASETYPE entries to `First Letter Caps` for better presentation in music server front-ends that leverage RELEASETYPE (support for RELEASETYPE was added to Logitechmediaserver massively improving its ability to list an artist's work in a meaningful manner rather than as one long unstructured list)
 
-- adds MusicBrainz identifiers to contributors (artists, albumartists, composers, engineers and producers) leveraging what already exists in your file tags or where a master table of MBID's exists it leverages that. Where a contributor name is associated with > 1 MBID in your tags these contributors are ignored so as not to conflate contributors.  Check for tables _INF_namesakes_* for contributors requiring manual disambiguation.
+- adds MusicBrainz identifiers to contributors (artists, albumartists, composers, engineers and producers) leveraging what already exists in your file tags or where a master table of MBID's exists it leverages that. Where a contributor name is associated with > 1 MBID in your tags these contributors are ignored so as not to conflate contributors.  Check for tables _INF_namesakes_* for contributors requiring manual disambiguation and confirmation
 
-- Makes albumartist, artist, composer, engineer, producer text case consistent with their representation in the MusicBrainz ecosystem.  If they don't exist it converts them to Firstlettercaps.  Can also replace the test case of artist names in _REF_mb_disambiguated with matching names found in table _REF_contributor_matched_on_allmusic.  So if you want to change the text case of a contributor throughout your collection, just add a record to _REF_contributor_matched_on_allmusic and populate the name in the text case of your choosing - records in _REF_mb_disambiguated are always updated to reflect the text case in _REF_contributor_matched_on_allmusic prior to being applied elsewhere.
+- Makes albumartist, artist, composer, engineer, producer text case consistent with their representation in the MusicBrainz ecosystem.  If they don't exist in MusicBrainz it converts them to Firstlettercaps.  Can also replace the text case of artist names in _REF_mb_disambiguated with matching names found in table _REF_contributor_matched_on_allmusic.  So if you want to change the text case of a contributor throughout your collection, just add a record to _REF_contributor_matched_on_allmusic and populate the name in the text case of your choosing - records in _REF_mb_disambiguated are always updated to reflect the text case in _REF_contributor_matched_on_allmusic prior to being applied elsewhere.
 
 - removes zero padding from discnumber and track tags
 
@@ -141,7 +141,7 @@ At present, Tagminder's specific capabilitirs are as follows:
 
 #### Handling of Feat. in track title and artist tags
 
-- removes most instances and variations of Feat. entries from ARTIST and TITLE tags and appends the delimited performer names to the ARTIST tag
+- removes most instances and variations of Feat. entries from ARTIST and TITLE tags and appends \\ delimited performer names to the ARTIST tag
 
 #### Identifying duplicated FLAC audio content
 
@@ -159,11 +159,9 @@ Files and directories are renamed in-situ rather than being moved elsewhere in d
 
 #### Normalising artist, albumartist, composer, engineer and producer names and getting them consistent throughout your collection.  (record labels to be incorporated in future).
 
-Tagminder includes the capability to affect mass changes across hundreds of thousands of records almost instantaneously.  Music Servers typically employ database models that mean 10CC, 10cc and 10cc. are three different artists.  Tagminder includes a transformation function that enables you to transform all instances of names like 10CC, 10cc. and 10 cc to 10cc throughout your collection in a single operation, without having to write any code.  These transformation rules need only be captured once, and are then available for all future metadata ingestion, ensuring that your collection achieves a level of consistency that would otherwise be very difficult (if not impossible) to attain and maintain.  F
+Tagminder includes the capability to affect mass changes across hundreds of thousands of records almost instantaneously.  Music Servers typically employ database models that mean '10CC', '10cc', '10 cc' and '10cc.' are four different artists.  Tagminder includes a transformation function that enables you to transform all instances of names like 10CC, 10cc. and 10 cc to 10cc throughout your collection in a single operation, without having to write any code.  These transformation rules need only be captured once, and are then available for all future metadata ingestion, ensuring that your collection achieves a level of consistency that would otherwise be very difficult (if not impossible) to attain and maintain.
 
-To aid in identifying variations of contributor names that may be the same artist (e.g. the 10cc example above) tagminder uses string-grouper to compare all unique contributor names in your metatada and present these to you in a table called  users so inclined, data science techniques such as cosine similarity can be used to identify all likely permuations of 10cc in your data, making it trivial to populate the disambigation table used to drive normalisation of names throughout your music.
-
-tagminder identifies names it thinks might represent the same contributor, then eliminates any you have previously confirmed are false-positives or require replacement by reference to matching names in _REF_disambiguation_workspace where false positives and replacement required are represented as (status=0/1)respectively.  The remaining names can be found in table _INF_string_grouper_possible_namesakes, for consideration by the user.
+To aid in identifying variations of contributor names that may be the same artist (e.g. the 10cc examples above) tagminder uses string-grouper to compare all unique contributor names in your metatada and present these to you in a table showing possible matches with a condifence level.  All that's required from you is to insert 1 or 0 in the field indicating whether or not the name on the left should be replaced with the name on the right, making it trivial to populate the disambigation table used to drive normalisation of names throughout your music.  tagminder identifies names it thinks might represent the same contributor, then eliminates any you have previously confirmed are false-positives or require replacement by reference to matching names in _REF_disambiguation_workspace where false positives and replacement required are represented as (status=0/1)respectively.  The remaining names can be found in table _INF_string_grouper_possible_namesakes, for consideration by the user.
 
 ![image](https://github.com/user-attachments/assets/5bc42222-c8df-4ef0-b022-f86e29c4b369)
 
@@ -185,10 +183,10 @@ If you're a music fanatic you may have multiple releases of the same album.  At 
 | sbm |
 | xrcd |              
 
-Whilst tagminder will never remove the versions for you, the table contains everything you need to be able to export those versions you're sure you want to let go of.  A bash script can then do the dirty work or you can work through it manually.  Versions can be found in
+Whilst tagminder will never remove the versions for you, the table contains everything you need to be able to export the directory paths of those versions you're sure you want to let go of.  A bash script can then do the dirty work or you can work through it manually.  Versions can be found in the table _INF_versions.
 
 #### Pointing out missing metdata and other useful information
-Whilst assessing and improving your metadata consistency tagminder populates a number of tables along the way.  All tables that begin with _INF_ as a prefix contain data you may want to peruse because they point to metadata or library issues you may want to address.  The taables and their contents are described below:
+Whilst assessing and improving your metadata consistency tagminder populates a number of tables along the way.  All tables that begin with _INF_ as a prefix contain data you may want to peruse because they point to metadata or library issues you may want to address.  The tables and their contents are described below:
 
 | table name | purpose |
 | - | - |
@@ -208,13 +206,13 @@ Whilst assessing and improving your metadata consistency tagminder populates a n
 | _INF_versions | albums where multiple versions are present in library.  killit == 'Investigate' means version has same key attributes as other versions.  killit == '1' means a higher DR version has been identified that is either same or higher sampling rate and bit depth |
 
 ## TODO: 
-Refer issues list, filter on enhancements.
+Refer issues list, filter on enhancements.  Refactor all code to leverage Polars DF wherever possible, leveraging vectorisation and significantly improving performance.
 
 ## USAGE:
 
 I generally tag with Picard or another semi-automted metadata source, then run the lot though tagminder, then use Puddletag for fine tuning, then re-process the lot through tagminder to ensure I've not introduced any inconsistencies through manual tagging.
 
-I strongly suggest writing the SQLite database to /tmp as its 'alib' table is dynamically modified every time a new tag is encountered when tags are being imported from audio files. 
+I strongly suggest writing the SQLite database to /tmp as its 'alib' table is dynamically modified every time a new tag is encountered when tags are being imported from audio files. (albeit the refactored code handles the entire import in memory and only writes the database at the end).
 
 It'll work on physical disk, but it'll take longer. It'll also trigger a lot of writes whilst ingesting metadata and dynamically altering the table to ingest new tags, so you probably want to avoid hammering a SSD by ensuring that you're not writing the database directly to SSD. Use /tmp!
 
