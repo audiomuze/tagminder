@@ -1,3 +1,22 @@
+"""
+Script Name: dropgenres-polars.py
+
+Purpose:
+    This script processes all records in alib and validates genre and style tags,
+    removing any erntries that don't appear in the table _ref_genres.
+
+    It is the de-facto way of getting rid of genre metadata you don't want in your music collection.
+    It is part of tagminder.
+
+Usage:
+    python dropgenres-polars.py
+    uv run dropgenres-polars.py
+
+Author: audiomuze
+Created: 2025-04-18
+"""
+
+
 import polars as pl
 import sqlite3
 import logging

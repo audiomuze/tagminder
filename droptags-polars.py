@@ -1,3 +1,22 @@
+"""
+Script Name: droptags-polars.py
+
+Purpose:
+    This script processes all records in alib and sets tag values to null for all unauthorised tags
+    (i.e. any tagnames that don't appear in fixed_columns defined in main()
+
+    It is the de-facto way of getting rid of tags you don't want in your music collection.
+    It is part of tagminder.
+
+Usage:
+    python droptags-polars.py
+    uv run droptags-polars.py
+
+Author: audiomuze
+Created: 2025-04-13
+"""
+
+
 import polars as pl
 import sqlite3
 import logging
@@ -39,50 +58,6 @@ def sqlite_to_polars(conn: sqlite3.Connection, query: str, id_column: str = None
 
     df = pl.DataFrame(data)
     return df
-
-# def cleanup_dataframe(df: pl.DataFrame, fixed_columns: List[str]) -> tuple[pl.DataFrame, Dict[str, int]]:
-#     """
-#     Identify and nullify columns not in fixed_columns where values are non-null,
-#     incrementing sqlmodded accordingly, and report changes by column.
-
-#     Args:
-#         df: Input Polars DataFrame
-#         fixed_columns: List of columns to retain
-
-#     Returns:
-#         A tuple containing:
-#             - Updated Polars DataFrame with nullified columns and updated sqlmodded.
-#             - A dictionary reporting the count of nullifications per dropped column.
-#     """
-#     columns_to_drop = [col for col in df.columns if col not in fixed_columns and col != "rowid" and col != "sqlmodded"]
-#     updated_df = df.clone()  # Create a copy to avoid modifying the original during change tracking
-#     changes_by_column: Dict[str, int] = {col: 0 for col in columns_to_drop}
-
-#     for col in columns_to_drop:
-#         mask = updated_df[col].is_not_null()
-#         count = mask.sum()
-#         if count > 0:
-#             updated_df = updated_df.with_columns(pl.lit(None).alias(col))
-#             changes_by_column[col] = count
-
-#     if "sqlmodded" in updated_df.columns:
-#         total_changes = sum(changes_by_column.values())
-#         if total_changes > 0:
-#             updated_df = updated_df.with_columns(
-#                 (pl.col("sqlmodded") + 1).alias("sqlmodded")
-#             )
-#         else:
-#             updated_df = updated_df.with_columns(
-#                 pl.col("sqlmodded").fill_null(0).alias("sqlmodded")
-#             )
-#     else:
-#         total_changes = sum(changes_by_column.values())
-#         updated_df = updated_df.with_columns(
-#             pl.when(pl.lit(total_changes > 0)).then(pl.lit(1)).otherwise(pl.lit(0)).alias("sqlmodded")
-#         )
-
-#     return updated_df, changes_by_column
-
 
 def cleanup_dataframe(df: pl.DataFrame, fixed_columns: List[str]) -> tuple[pl.DataFrame, Dict[str, int]]:
     columns_to_drop = [col for col in df.columns if col not in fixed_columns and col != "rowid" and col != "sqlmodded"]
