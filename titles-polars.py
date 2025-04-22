@@ -16,9 +16,12 @@ FEATURE_PREFIXES = ("with", "w/", "feat", "feat.")
 LIVE_PREFIX = "live"
 SUBTITLE_PREFIXES = (
     "remix", "rmx", "remaster", "remastered",
-    "demo", "outtake", "alt", "alternate", "alt. take",
-    "mix", "early mix"
+    "demo", "outtake", "alt", "alternate", "alt.",
+    "mix", "early mix", "instrumental", "bonus", "radio",
+    "reprise", "unplugged", "acoustic", "electric", "akoesties",
+    "acoustic", "orchestral", "piano", "dj"
 )
+TRAILING_MATCHES = {"mix", "session", "demos", "remaster", "remastered", "remix"}
 
 # ---------- Logging ----------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -82,6 +85,11 @@ def apply_suffix_extraction(df: pl.DataFrame) -> pl.DataFrame:
                 rest_wrapped = f"[{rest_clean}]" if rest_clean else ""
                 changed_cols = []
 
+                trailing_word_match = False
+                bracket_words = bracket_content.lower().split()
+                if bracket_words and bracket_words[-1] in TRAILING_MATCHES:
+                    trailing_word_match = True
+
                 if first_word in FEATURE_PREFIXES and rest_clean:
                     new_title = re.sub(BRACKET_PATTERN, "", title).strip()
                     if new_title != title:
@@ -106,13 +114,13 @@ def apply_suffix_extraction(df: pl.DataFrame) -> pl.DataFrame:
                         row["live"] = "1"
                         changed_cols.append("live")
 
-                elif first_word in SUBTITLE_PREFIXES and rest_clean:
+                elif first_word in SUBTITLE_PREFIXES or trailing_word_match:
                     new_title = re.sub(BRACKET_PATTERN, "", title).strip()
                     if new_title != title:
                         row["title"] = new_title
                         changed_cols.append("title")
 
-                    if rest_wrapped not in subtitle:
+                    if rest_wrapped and rest_wrapped not in subtitle:
                         row["subtitle"] = f"{subtitle}{DELIM}{rest_wrapped}" if subtitle else rest_wrapped
                         changed_cols.append("subtitle")
 
