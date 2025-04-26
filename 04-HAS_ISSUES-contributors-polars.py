@@ -24,6 +24,9 @@ import sqlite3
 from typing import Dict, List, Tuple, Any, Union
 import logging
 from datetime import datetime, timezone
+import re
+
+
 
 # ---------- Config ----------
 SCRIPT_NAME = "contributors-polars.py"
@@ -131,6 +134,32 @@ def write_updates_to_db(
     logging.info(f"Updated {updated_count} rows and logged all changes.")
     return updated_count
 
+
+SPLIT_PATTERN = re.compile(r'(?:\\\\|;|/|,(?!\s*(?:jr|sr)\b))')
+
+def normalize_contributors_field(x: Union[str, None], contributors_dict: Dict[str, str]) -> Union[str, None]:
+    if x is None:
+        return None
+
+    parts = SPLIT_PATTERN.split(x)
+    normalized_parts = []
+    seen = set()
+
+    for part in parts:
+        stripped = part.strip()
+        lowered = stripped.lower()
+        normalized = contributors_dict.get(lowered)
+        if normalized is None:
+            # No match in contributors_dict, so sentence-case manually
+            normalized = stripped.title()
+
+        if normalized not in seen:
+            normalized_parts.append(normalized)
+            seen.add(normalized)
+
+    return "\\\\".join(normalized_parts) if normalized_parts else None
+
+
 # ---------- Main ----------
 def main():
     db_path = '/tmp/amg/dbtemplate.db'
@@ -142,11 +171,17 @@ def main():
         logging.info("Fetching contributors data...")
         contributors = sqlite_to_polars(
             conn,
-            "SELECT current_val, replacement_val FROM _REF_vetted_contributors"
+            "SELECT entity, lentity FROM _REF_mb_disambiguated"
         )
+
+        contributors = contributors.with_columns([
+            pl.col("entity").str.strip_chars(),
+            pl.col("lentity").str.strip_chars()
+        ])
+
         contributors_dict = dict(zip(
-            contributors["current_val"].str.to_lowercase(),
-            contributors["replacement_val"]
+            contributors["lentity"].to_list(),
+            contributors["entity"].to_list()
         ))
 
         # Fetch track data
@@ -156,7 +191,7 @@ def main():
             """
             SELECT rowid,
                    artist, composer, arranger, lyricist, writer,
-                   albumartist, ensemble, performer, personnel,
+                   albumartist, ensemble, performer, 
                    conductor, producer, engineer, mixer, remixer,
                    COALESCE(sqlmodded, 0) AS sqlmodded
             FROM alib
@@ -167,7 +202,7 @@ def main():
 
         columns_to_replace = [
             "artist", "composer", "arranger", "lyricist", "writer",
-            "albumartist", "ensemble", "performer", "personnel",
+            "albumartist", "ensemble", "performer", 
             "conductor", "producer", "engineer", "mixer", "remixer"
         ]
 
@@ -185,7 +220,7 @@ def main():
         for col in columns_to_replace:
             updated_tracks = updated_tracks.with_columns(
                 pl.col(col).map_elements(
-                    lambda x: contributors_dict.get(x.lower(), x) if x is not None else None,
+                    lambda x: normalize_contributors_field(x, contributors_dict),
                     return_dtype=pl.Utf8
                 ).alias(col)
             )
