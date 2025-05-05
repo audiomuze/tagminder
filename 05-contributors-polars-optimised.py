@@ -131,50 +131,50 @@ def smart_title(text):
 
 #------------------------------------
 
-
-
 # def normalize_contributor_entry(x: Union[str, None], contributors_dict: Dict[str, str]) -> Union[str, None]:
 #     if x is None:
 #         return None
 
-#     parts = SPLIT_PATTERN.split(x)
-#     normalized_parts = []
-#     seen = set()
+#     if DELIMITER in x:
+#         items = x.split(DELIMITER)
+#         normalized_items = []
+#         for item in items:
+#             stripped_item = item.strip()
+#             lowered_item = stripped_item.lower()
+#             if lowered_item in contributors_dict:
+#                 normalized_items.append(contributors_dict[lowered_item])
+#             else:
+#                 parts = SPLIT_PATTERN.split(stripped_item)
+#                 normalized_parts = []
+#                 seen = set()
+#                 for part in parts:
+#                     stripped = part.strip()
+#                     lowered = stripped.lower()
+#                     normalized = contributors_dict.get(lowered, smart_title(stripped))
+#                     if normalized not in seen:
+#                         normalized_parts.append(normalized)
+#                         seen.add(normalized)
+#                 normalized_items.append(DELIMITER.join(normalized_parts) if normalized_parts else stripped_item) # changed from None to stripped_item
+#         return DELIMITER.join(normalized_items)
+#     else:
+#         lowered_x = x.lower()
+#         if lowered_x in contributors_dict:
+#             return contributors_dict[lowered_x]  # Use standardized name directly
 
-#     for part in parts:
-#         stripped = part.strip()
-#         lowered = stripped.lower()
-#         # normalized = contributors_dict.get(lowered, stripped.title())
-#         normalized = contributors_dict.get(lowered, smart_title(stripped))
+#         parts = SPLIT_PATTERN.split(x)
+#         normalized_parts = []
+#         seen = set()
 
-#         if normalized not in seen:
-#             normalized_parts.append(normalized)
-#             seen.add(normalized)
+#         for part in parts:
+#             stripped = part.strip()
+#             lowered = stripped.lower()
+#             normalized = contributors_dict.get(lowered, smart_title(stripped))
 
-#     return DELIMITER.join(normalized_parts) if normalized_parts else None
+#             if normalized not in seen:
+#                 normalized_parts.append(normalized)
+#                 seen.add(normalized)
 
-# def normalize_contributor_entry(x: Union[str, None], contributors_dict: Dict[str, str]) -> Union[str, None]:
-#     if x is None:
-#         return None
-
-#     lowered_x = x.lower()
-#     if lowered_x in contributors_dict:
-#         return contributors_dict[lowered_x]  # Use standardized name directly
-
-#     parts = SPLIT_PATTERN.split(x)
-#     normalized_parts = []
-#     seen = set()
-
-#     for part in parts:
-#         stripped = part.strip()
-#         lowered = stripped.lower()
-#         normalized = contributors_dict.get(lowered, smart_title(stripped))
-
-#         if normalized not in seen:
-#             normalized_parts.append(normalized)
-#             seen.add(normalized)
-
-#     return DELIMITER.join(normalized_parts) if normalized_parts else None
+#         return DELIMITER.join(normalized_parts) if normalized_parts else None
 
 
 def normalize_contributor_entry(x: Union[str, None], contributors_dict: Dict[str, str]) -> Union[str, None]:
@@ -191,25 +191,28 @@ def normalize_contributor_entry(x: Union[str, None], contributors_dict: Dict[str
                 normalized_items.append(contributors_dict[lowered_item])
             else:
                 parts = SPLIT_PATTERN.split(stripped_item)
-                normalized_parts = []
-                seen = set()
-                for part in parts:
+                for part in parts:  # Removed inner deduplication logic
                     stripped = part.strip()
                     lowered = stripped.lower()
                     normalized = contributors_dict.get(lowered, smart_title(stripped))
-                    if normalized not in seen:
-                        normalized_parts.append(normalized)
-                        seen.add(normalized)
-                normalized_items.append(DELIMITER.join(normalized_parts) if normalized_parts else stripped_item) # changed from None to stripped_item
-        return DELIMITER.join(normalized_items)
+                    normalized_items.append(normalized)
+        # Deduplicate the entire normalized_items list
+        final_normalized_items = []
+        seen = set()
+        for item in normalized_items:
+            if item not in seen:
+                final_normalized_items.append(item)
+                seen.add(item)
+
+        return DELIMITER.join(final_normalized_items)
     else:
         lowered_x = x.lower()
         if lowered_x in contributors_dict:
-            return contributors_dict[lowered_x]  # Use standardized name directly
+            return contributors_dict[lowered_x]
 
         parts = SPLIT_PATTERN.split(x)
         normalized_parts = []
-        seen = set()
+        seen = set()  # This 'seen' is still necessary for single-name deduplication
 
         for part in parts:
             stripped = part.strip()
