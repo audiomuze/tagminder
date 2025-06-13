@@ -161,14 +161,6 @@ python tags2db-polars-multidrive.py import db.sqlite D:\Music --chunk-size 500 -
 
 ## When to Adjust It
 
-*For completeness, you might want to add a "When to Adjust It" section for workers similar to your chunk-size guide, covering scenarios like:*
-- HDD vs SSD systems
-- Multi-drive configurations
-- RAM constraints
-- Shared/VPS environments
-
-## When to Adjust It
-
 | Scenario               | Recommended `--workers` | Reason |
 |------------------------|------------------------|--------|
 | Multi-drive (HDDs)     | 8                      | Avoids I/O contention (HDDs hate parallel seeks) |
