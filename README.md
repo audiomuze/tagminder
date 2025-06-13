@@ -168,7 +168,7 @@ python tags2db-polars-multidrive.py import db.sqlite D:\Music --chunk-size 500 -
 | Background Task        | 4                      | Leaves CPU free for other apps |
 | Debugging              | 1                      | Easier error tracing (single-threaded) |
 
-Example: Optimizing for Your Ryzen 7 PRO 4750GE
+Example: Optimizing for an AMD Ryzen 7 PRO 4750GE
 
 ```
 # Max performance (16 threads, SSD)
