@@ -138,12 +138,12 @@ python tags2db-polars-multidrive.py import db.sqlite D:\Music --chunk-size 500 -
 ## TL;DR
 
 - **Smaller `--chunk-size`**:
-  - ✅ Safer for RAM
-  - ❌ Worse for CPU utilization
+  - Safer for RAM
+  - Worse for CPU utilization
 
 - **Larger `--chunk-size`**:
-  - ✅ Faster for big libraries
-  - ❌ Needs more RAM
+  - Faster for big libraries
+  - Needs more RAM
 
 - **Sweet spot**: Start with 2000 and adjust based on your system monitor.
 
