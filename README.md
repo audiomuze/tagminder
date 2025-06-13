@@ -4,7 +4,7 @@ Tagging music has (for me) always been a time consuming, mind-numbing, prone to 
 
 tagminder is comprised of two Python scripts.  One imports audio metadata from underlying audio files into a dynamically created SQLite database and can export metadata back to the underlying files (but only if you specifically ask it to).  The other processes the imported metadata in the SQLite database in order to correct anomalies, improve consistency and enrich the metadata where possible.
 
-It enables you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files. It leverages the [puddletag](https://github.com/puddletag/puddletag) codebase to read/write tags so you need to either install puddletag, or at least pull it from the git repo to be able to access its code, specifically puddletag/puddlestuff/audioinfo. 
+It enables you to affect mass updates / changes using SQL and ultimately write those changes back to the underlying files. It leverages the [puddletag](https://github.com/puddletag/puddletag) codebase to read/write tags so you need to either install puddletag, or at least pull it from the git repo to be able to access its code, specifically puddletag/puddlestuff/audioinfo.
 
 Tags are read/written using the Mutagen library as used in puddletag. Requires Python 3.x. and the following Python libraries:
 
@@ -27,11 +27,27 @@ from string_grouper import match_strings, match_most_similar, \
 
 Furthermore, it's a great tool to use when adding new music to your music collection and wanting to ensure consistency in tag treatment, contributor names, MBIDs, file naming and directory naming.  It's now at a point functionally where I tag using Picard (to pull MusicBrainz metadata), then run tagminder against the files, export its changes sight unseen and do a final review using Puddletag to pick up the few edge cases that aren't worth otherwise coding to automate.
 
+### It's a Work in Progress:
+I work on tagminder when I have the time.  ztm.py is a pretty complete standlone tag processor and is the codebase of the original tagminder.  I've since been working on rewriting components of tagminder leveraging Polars and the vectorised processing it offers, making some very significant improvements in processing speed, especially when handling large collections.  The recoded functionality is being written as standalone scripts for the time being and are named a...z and also represent the logical sequence you'd want to run them in as some of the scripts leverage the work of what comes before them in order to get the best outcomes in terms of metadata quality and consistency.  Ultimately I plan on bringing all the scripts that make up tagminder into a more modularised codebase leveraging common functions rather than duplicating code unnecessarily.
+
+Apart from the advantages that come with Polars, the biggest change to tagminder is that it now maintains a changelog of all changes it processes to tags in your music, recording the rowid, the tag affected, the old value, the replacement value, the responsible script, and the date and timestamp of the change.
+
+This makes inspecting changes pretty simple in that every row in the changelog is easily reviewed by browsing the changelog table itself, or you can add context to the change by linking it back to the underlying track metadata using an inner join based on rowid e.g.
+
+query to inspect outcomes:
+```
+select distinct old_value,new_value from changelog order by old_value;
+```
+inspect changelog:
+```
+select changelog.rowid, alib.albumartist, alib.album, column, old_value, alib.releasetype from changelog inner join alib on alib.rowid == changelog.rowid;
+```
+
 ## General philosophy and rationale
 
 ### Make sense from chaos
 
-I have a relatively large music collection and rely on good metadata to enhance my ability to explore and listen to my music collection in useful and interesting ways. 
+I have a relatively large music collection and rely on good metadata to enhance my ability to explore and listen to my music collection in useful and interesting ways.
 
 Taggers are great but can only take you so far. Tag sources also vary in consistency and quality, often times including issues like adding 'feat. artist' entries to track titles or artist and performer tags.  This makes it more difficult for a music server to correctly identify performers and identify a track as a performance of a particular song, and thus include the performance alongside other performances of the same song.  It also means 'feat. xx ' type entries don't give rise to metadata in a form that can be used to browse your library.
 
@@ -42,7 +58,7 @@ tagminder takes your existing tags as a given, not trying to second guess you by
 
 ### MusicBrainz aware
 
-Music servers are increasingly leveraging MusicBrainz MBIDs when present.  tagminder seeks to add MusicBrainz MBIDs to your metadata where MBIDs are already available in your existing metadata e.g. if one performance by an artist happens to have a MBID included in its metadata, tagminder will replicate that MBID in every other performance that contains the same performer name. 
+Music servers are increasingly leveraging MusicBrainz MBIDs when present.  tagminder seeks to add MusicBrainz MBIDs to your metadata where MBIDs are already available in your existing metadata e.g. if one performance by an artist happens to have a MBID included in its metadata, tagminder will replicate that MBID in every other performance that contains the same performer name.
 
 To do this, it builds a table of distinct artist/performer/composer and albumartist names that have an associated MBID in your tags and then replicates that MBID to all occurences of that artist/performer/composer in your tag metadata. If your music server is MusicBrainz aware, there's a good chance adding MBID's to your tags will prevent it from merging the work of unrelated artists in your music collection that share the same name.
 
@@ -67,7 +83,7 @@ All originally-ingested records are written to a rollback table, so in the event
 
 ### Reducing the need for incremental file backups
 
-If your music collection is static in terms of filename and location, you can also use the metadata database as a means of backing up and versioning metadata simply by keeping various iterations of the database.  This obviates the need to overwrite a previous backup of the underlying music files, reducing storage needs, backup times and complexity.  
+If your music collection is static in terms of filename and location, you can also use the metadata database as a means of backing up and versioning metadata simply by keeping various iterations of the database.  This obviates the need to overwrite a previous backup of the underlying music files, reducing storage needs, backup times and complexity.
 
 Getting metadata current after restoring a dated backup of your music files is as simple as exporting the most recent database against the restored files. The added benefit is it eliminates the need to create incremental backups of your music files simply because you've augmented the metadata - just backup the database and as long as your file locations remain static you have everything you need - the audio files and their metadata.
 
@@ -75,19 +91,109 @@ By default tagminder generates a gen4 uuid for all files, which would be added t
 
 ## Understanding the scripts
 
-### tags2db.py
+### tags2db-polars-multidrive.py (used to import / expport tracks between files and database)
 
-Handles the import and export from/to the underlying files and SQLite database. It is the means of getting your tags in and out of your underlying audio files. 
+Handles the import and export from/to the underlying files and SQLite database. It is the means of getting your tags in and out of your underlying audio files.
 
-This is where the puddletag dependency originates. I've modified Keith's (puddletag's original author) Python 2.x tags to database code to run under Python 3. To get it to work, all that's required is that you pull a copy of [puddletag source](https://github.com/puddletag/puddletag) then copy tags2db.py into the puddletag root folder so that it has access to puddletag's code library. 
+This is where the puddletag dependency originates. I've modified Keith's (puddletag's original author) Python 2.x tags to database code to run under Python 3. To get it to work, all that's required is that you pull a copy of [puddletag source](https://github.com/puddletag/puddletag) then copy tags2db.py into the puddletag root folder so that it has access to puddletag's code library.
 
 You do not need a functioning puddletag with all dependencies installed to be able to use tags2db.py, albeit in time you might find puddletag handy for some cleansing/ editing that's best left to human intervention.
 
-### tagminder.py (currently parading as ztm.py)
+This code uses parallel processing and is able to concurrently ingest tags from multiple drives, providing massive gains over sequential processing without thrashing drives or causing I/O bottlenecks.  Be careful not to specify two ingestion paths on the same drive because that will only serve to thrash the drive making it do what drives hate most - parallel reads.
+
+# What `--chunk-size` does
+
+`--chunk-size` controls how many files are processed per batch (chunk) by each worker.
+
+## Key Behaviors
+
+| Setting          | Effect                                      | Trade-offs                              |
+|------------------|---------------------------------------------|-----------------------------------------|
+| Small (e.g., 500) | - More frequent updates<br>- Lower memory use per worker | - Higher overhead (more scheduling)<br>- Slower for large libraries |
+| Medium (e.g., 2000) | - Balanced throughput/memory<br>- Default in your script | - Moderate overhead<br>- Good for most systems |
+| Large (e.g., 5000) | - Maximizes CPU utilization<br>- Fewer sync delays | - Higher RAM use<br>- Delayed progress updates |
+
+## When to Adjust It
+
+| Scenario          | Recommended `--chunk-size` | Reason |
+|-------------------|---------------------------|--------|
+| Low RAM (<32GB)   | 500–1000                  | Avoids memory spikes |
+| High RAM (64GB+)  | 2000–5000                 | Maximizes CPU usage (fewer chunks = less overhead) |
+| Network Storage   | 1000–2000                 | Balances I/O latency and CPU |
+| Debugging         | 100                       | Faster feedback (smaller batches complete quicker) |
+
+Example: Optimizing for Your AMD Ryzen 7 PRO 4750GE
+With 64GB RAM and 16 threads:
+```
+# High-throughput setting (large chunks)
+python tags2db-polars-multidrive.py import db.sqlite D:\Music --chunk-size 5000 --workers 16
+
+# Balanced setting (default)
+python tags2db-polars-multidrive.py import db.sqlite D:\Music --chunk-size 2000 --workers 16
+
+# Low-memory setting (for background tasks)
+python tags2db-polars-multidrive.py import db.sqlite D:\Music --chunk-size 500 --workers 8
+```
+
+## TL;DR
+
+- **Smaller `--chunk-size`**:
+  - ✅ Safer for RAM
+  - ❌ Worse for CPU utilization
+
+- **Larger `--chunk-size`**:
+  - ✅ Faster for big libraries
+  - ❌ Needs more RAM
+
+- **Sweet spot**: Start with 2000 and adjust based on your system monitor.
+
+# What `--workers` does
+
+`--workers` sets the number of parallel processes (CPU cores/threads) used to scan files and process tags.
+
+## Key Behaviors
+
+| Setting           | Effect                                      | Trade-offs |
+|-------------------|---------------------------------------------|------------|
+| Low (e.g., 4)     | - Light on CPU/RAM<br>- Good for HDDs or shared systems | - Slower processing<br>- Underutilizes modern CPUs |
+| Default (None)    | - Auto-scales to (drives × 8)<br>- Capped at 32 (your `max_total_workers`) | - Balanced for most systems |
+| High (e.g., 16)   | - Maximizes CPU usage (Ryzen 7 PRO 4750GE = 16 threads)<br>- Fastest for SSDs | - Risk of I/O bottlenecks on HDDs<br>- Higher RAM use |
+
+## When to Adjust It
+
+*For completeness, you might want to add a "When to Adjust It" section for workers similar to your chunk-size guide, covering scenarios like:*
+- HDD vs SSD systems
+- Multi-drive configurations
+- RAM constraints
+- Shared/VPS environments
+
+## When to Adjust It
+
+| Scenario               | Recommended `--workers` | Reason |
+|------------------------|------------------------|--------|
+| Multi-drive (HDDs)     | 8                      | Avoids I/O contention (HDDs hate parallel seeks) |
+| Single SSD             | 16                     | Maximizes Ryzen 7's 16 threads |
+| Background Task        | 4                      | Leaves CPU free for other apps |
+| Debugging              | 1                      | Easier error tracing (single-threaded) |
+
+Example: Optimizing for Your Ryzen 7 PRO 4750GE
+
+```
+# Max performance (16 threads, SSD)
+python tags2db-polars-multidrive.py import db.sqlite D:\Music --workers 16 --chunk-size 5000
+
+# Balanced (8 threads, HDD)
+python tags2db-polars-multidrive.py import db.sqlite D:\Music --workers 8 --chunk-size 2000
+
+# Default (auto-scales to drives × 8)
+python tags2db-polars-multidrive.py import db.sqlite D:\Music E:\Music  # Uses 16 workers (2 drives × 8)
+```
+
+### tagminder.py (currently parading as ztm.py as it'll be deprecated at some juncture)
 
 Does the heavy lifting where metadata is concerned, handling the cleanup of tags in the SQL table 'alib'. A SQL trigger flags any changed records, whether they're changed by way of a SQL update or a manual edit (the trigger field 'sqlmodded' is incremented every time a tag value in a record is updated).
 
-This enables tagminder to generate a database 'export.db' containing only changed records, enabling you to write changes only to those files that have had their metadata modified in the database by tagminder or the user.  
+This enables tagminder to generate a database 'export.db' containing only changed records, enabling you to write changes only to those files that have had their metadata modified in the database by tagminder or the user.
 As a bonus tagminder creates a text file called affected_files.csv every time it is run, listing the individual files that have been upated.
 A user executed bash shell script addsec2modtime.sh reads that file and adds 1 second to the last modified date of every file listed therein.  This ensures that any update scan by a music server (whether batch or real-time) is able to detect the underlying files that need rescanning as opposed to rescanning all files in your collection.
 
@@ -181,7 +287,7 @@ If you're a music fanatic you may have multiple releases of the same album.  At 
 | mofi |
 | mastersound |
 | sbm |
-| xrcd |              
+| xrcd |
 
 Whilst tagminder will never remove the versions for you, the table contains everything you need to be able to export the directory paths of those versions you're sure you want to let go of.  A bash script can then do the dirty work or you can work through it manually.  Versions can be found in the table _INF_versions.
 
@@ -205,7 +311,7 @@ Whilst assessing and improving your metadata consistency tagminder populates a n
 | _INF_tracks_without_title | tracks without a title tag |
 | _INF_versions | albums where multiple versions are present in library.  killit == 'Investigate' means version has same key attributes as other versions.  killit == '1' means a higher DR version has been identified that is either same or higher sampling rate and bit depth |
 
-## TODO: 
+## TODO:
 Refer issues list, filter on enhancements.  Refactor all code to leverage Polars DF wherever possible, leveraging vectorisation and significantly improving performance.
 
 ## USAGE:
