@@ -122,7 +122,7 @@ This code uses parallel processing and is able to concurrently ingest tags from 
 | Network Storage   | 1000–2000                 | Balances I/O latency and CPU |
 | Debugging         | 100                       | Faster feedback (smaller batches complete quicker) |
 
-Example: Optimizing for Your AMD Ryzen 7 PRO 4750GE
+Example: Optimizing for an AMD Ryzen 7 PRO 4750GE
 With 64GB RAM and 16 threads:
 ```
 # High-throughput setting (large chunks)
