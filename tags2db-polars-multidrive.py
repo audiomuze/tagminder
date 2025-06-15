@@ -3,7 +3,7 @@ Script Name: tags2db3-polarsv2.py
 
 Purpose:
     This script imports/exports all metadata tags from the folder tree it is run in or passed as an argument and writes it to a SQLite database table alib.
-    
+
     It is part of tagminder.
 
 Usage:
@@ -213,11 +213,11 @@ def issubfolder(parent: str, child: str) -> bool:
     # Normalize paths for cross-platform compatibility
     parent = os.path.normpath(parent)
     child = os.path.normpath(child)
-    
+
     # Ensure paths end with path separator for proper subfolder checking
     if not parent.endswith(os.path.sep):
         parent += os.path.sep
-        
+
     return child.startswith(parent)
 
 def parallel_scantree(dirpaths: List[str], workers: int) -> Dict[str, List[str]]:
@@ -239,7 +239,7 @@ def parallel_scantree(dirpaths: List[str], workers: int) -> Dict[str, List[str]]
 def scantree(path: str) -> Iterator[str]:
     """Recursively yield file paths for given directory."""
     audio_extensions = {'.flac', '.wv', '.mp3', '.m4a', '.ape'}
-    
+
     try:
         for entry in scandir(path):
             if entry.is_dir(follow_symlinks=False):
@@ -257,16 +257,16 @@ def scantree(path: str) -> Iterator[str]:
 
 def tag_to_dict(tag: Any) -> Dict[str, Any]:
     """Convert a puddlestuff Tag object to a dictionary suitable for DataFrame.
-    
+
     Args:
         tag: The Tag object
-        
+
     Returns:
         Dictionary representation of the tag
     """
     tag_dict = dict(tag)
     tag_dict['__path'] = tag.filepath
-    
+
     # Handle list values
     for k, v in list(tag_dict.items()):
         # Remove quotes from tag names (they're illegal in SQLite column names and shouldn't appear in tag names either)
@@ -278,7 +278,7 @@ def tag_to_dict(tag: Any) -> Dict[str, Any]:
         # Convert lists to string with \\ delimiter
         if not isinstance(v, (int, float, str)):
             tag_dict[k] = "\\\\".join(str(item) for item in v)
-            
+
     return tag_dict
 
 
@@ -298,14 +298,14 @@ def import_dir(
     max_total_workers: int = 32
 ) -> None:
     """Import directory/directories of audio files into database using parallel processing.
-    
+
     Args:
         dbpath: Path to SQLite database
         dirpaths: Single directory path or list of paths to import
         workers: Total workers to use (None for automatic calculation)
         chunk_size: Number of files to process per worker chunk (default: 2000)
         max_total_workers: Maximum total workers across all drives (default: 32)
-        
+
     Raises:
         ValueError: If invalid parameters are provided
         sqlite3.Error: If database operations fail
@@ -316,11 +316,11 @@ def import_dir(
         raise ValueError("dbpath and dirpaths must be specified")
     if chunk_size < 1:
         raise ValueError("chunk_size must be ≥ 1")
-    
+
     # Convert single path to list for uniform handling
     if isinstance(dirpaths, str):
         dirpaths = [dirpaths]
-    
+
     # Calculate total workers
     if workers is not None:
         if workers < 1:
@@ -332,14 +332,14 @@ def import_dir(
         workers_per_drive = 8
         total_workers = min(workers_per_drive * len(dirpaths), max_total_workers)
         workers_info = f"{total_workers} workers ({workers_per_drive} per drive)"
-    
+
     try:
         # --- PARALLEL SCANNING SECTION ---
         logging.info(f"Scanning {len(dirpaths)} directories in parallel...")
         scan_workers = min(len(dirpaths), max_total_workers)
         drive_files = parallel_scantree(dirpaths, scan_workers)
         total_files = sum(len(files) for files in drive_files.values())
-        
+
         # Validate scan results
         missing_dirs = [p for p in dirpaths if p not in drive_files]
         if missing_dirs:
@@ -348,22 +348,22 @@ def import_dir(
         if total_files == 0:
             logging.warning("No audio files found to import.")
             return
-        
+
         # --- PARALLEL PROCESSING SECTION ---
         logging.info(f"Processing {total_files} files with {workers_info}...")
         start_time = time.time()
         stats = {"processed": 0, "errors": 0}
         all_tags: List[Dict[str, Any]] = []
-        
+
         with ProcessPoolExecutor(max_workers=total_workers) as executor:
             futures = []
-            
+
             # Submit chunks per drive
             for drive_path, files in drive_files.items():
                 for i in range(0, len(files), chunk_size):
                     chunk = files[i:i + chunk_size]
                     futures.append(executor.submit(process_chunk, chunk))
-            
+
             # Process completed futures
             for future in concurrent.futures.as_completed(futures):
                 try:
@@ -371,7 +371,7 @@ def import_dir(
                     all_tags.extend(chunk_tags)
                     stats["processed"] += chunk_stats["processed"]
                     stats["errors"] += chunk_stats["errors"]
-                    
+
                     # Progress reporting
                     elapsed = time.time() - start_time
                     rate = stats["processed"] / elapsed if elapsed > 0 else 0
@@ -383,7 +383,7 @@ def import_dir(
                 except Exception as e:
                     logging.error(f"Chunk processing failed: {str(e)}")
                     stats["errors"] += chunk_size
-        
+
         if not all_tags:
             logging.warning("No valid tags found to import.")
             return
@@ -413,21 +413,21 @@ def import_dir(
         df = pl.DataFrame(all_tags, schema_overrides={key: pl.Utf8 for key in all_keys})
         df = df.select(final_columns)  # Force the exact column order we want
 
-        
+
         logging.info("Writing to SQLite database...")
         conn = sqlite3.connect(dbpath)
         try:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA synchronous = NORMAL")
             conn.execute("DROP TABLE IF EXISTS alib")
-            
+
             # Create table with dynamic schema
             columns_sql = [
                 f'"{col}" blob PRIMARY KEY' if col == "__path" else f'"{col}" text'
                 for col in df.columns
             ]
             conn.execute(f"CREATE TABLE alib ({', '.join(columns_sql)})")
-            
+
             # Batch insert
             conn.executemany(
                 f"INSERT OR REPLACE INTO alib ({', '.join(f'"{col}"' for col in df.columns)}) "
@@ -435,13 +435,13 @@ def import_dir(
                 df.to_numpy().tolist()
             )
             conn.commit()
-            
+
         except sqlite3.Error as e:
             conn.rollback()
             raise
         finally:
             conn.close()
-        
+
         # --- FINAL STATS ---
         elapsed_total = time.time() - start_time
         logging.info(
@@ -450,7 +450,7 @@ def import_dir(
             f"Time: {elapsed_total:.1f} seconds, "
             f"Rate: {stats['processed']/elapsed_total:.1f} files/sec"
         )
-        
+
     except OSError as e:
         logging.error(f"Directory operation failed: {str(e)}")
         raise
@@ -462,7 +462,7 @@ def process_chunk(chunk: List[str]) -> Tuple[List[Dict], Dict]:
     """Process a chunk of file paths and return tags and stats."""
     chunk_tags = []
     chunk_stats = {"processed": 0, "errors": 0}
-    
+
     for filepath in chunk:
         try:
             tag = audioinfo.Tag(filepath)
@@ -475,28 +475,28 @@ def process_chunk(chunk: List[str]) -> Tuple[List[Dict], Dict]:
         except Exception as e:
             logging.error(f"Could not read tags from: {filepath}: {str(e)}")
             chunk_stats["errors"] += 1
-    
+
     return chunk_tags, chunk_stats
 
 def clean_value_for_export(value: Any) -> Any:
     """Clean values for export to audio files.
-    
+
     Args:
         value: Value to clean
-        
+
     Returns:
         Cleaned value
     """
     if not value:
         return value
-        
+
     if isinstance(value, memoryview):
         return str(value)
     elif isinstance(value, str) and '\\\\' in value:
         # Split by double backslash which is how we stored the multi-value tags
         items = value.split('\\\\')
         return list(filter(None, items))
-    
+
     return value
 
 
@@ -506,15 +506,15 @@ def export_db(dbpath: str, dirpath: str) -> None:
         # Connect to database
         logging.info(f"Reading database from {dbpath}...")
         conn = sqlite3.connect(dbpath, detect_types=sqlite3.PARSE_DECLTYPES)
-        
+
         # First query just the paths
         query = "SELECT __path FROM alib ORDER BY __path"
         paths_df = pl.read_database(query=query, connection=conn)
-        
+
         if paths_df.is_empty():
             logging.warning("No records found in database.")
             return
-            
+
         # Filter for paths in the target directory
         paths = paths_df["__path"].to_list()
         target_paths = [p for p in paths if issubfolder(dirpath, p)]
@@ -522,46 +522,70 @@ def export_db(dbpath: str, dirpath: str) -> None:
             logging.warning(f"No files in database are located in {dirpath}.")
             return
 
+        # Create temporary table for target paths
+        conn.execute("DROP TABLE IF EXISTS temp_paths")
+        conn.execute("CREATE TEMP TABLE temp_paths(__path TEXT PRIMARY KEY)")
+        conn.executemany("INSERT INTO temp_paths(__path) VALUES (?)", [(p,) for p in target_paths])
+
+        # # Query schema information to get column names
+        # schema_query = "PRAGMA table_info(alib)"
+        # schema_df = pl.read_database(query=schema_query, connection=conn)
+
+        # # Build schema dict where every column is pl.Utf8
+        # table_schema = {col_name: pl.Utf8 for col_name in schema_df["name"]}
+
+        # # Query the actual data with our explicit schema
+        # placeholders = ",".join(["?"] * len(target_paths))
+        # query = f"SELECT * FROM alib WHERE __path IN ({placeholders}) ORDER BY __path"
+        # df = pl.read_database(
+        #     query=query,
+        #     connection=conn,
+        #     execute_options={"parameters": target_paths},
+        #     schema_overrides=table_schema  # Use our explicit schema
+        # )
+
         # Query schema information to get column names
         schema_query = "PRAGMA table_info(alib)"
         schema_df = pl.read_database(query=schema_query, connection=conn)
-        
+
         # Build schema dict where every column is pl.Utf8
         table_schema = {col_name: pl.Utf8 for col_name in schema_df["name"]}
-        
-        # Query the actual data with our explicit schema
-        placeholders = ",".join(["?"] * len(target_paths))
-        query = f"SELECT * FROM alib WHERE __path IN ({placeholders}) ORDER BY __path"
+
+        # Query using join against temp_paths
+        query = """
+        SELECT alib.* FROM alib
+        JOIN temp_paths USING (__path)
+        ORDER BY __path
+        """
         df = pl.read_database(
-            query=query, 
-            connection=conn, 
-            execute_options={"parameters": target_paths},
-            schema_overrides=table_schema  # Use our explicit schema
+            query=query,
+            connection=conn,
+            schema_overrides=table_schema
         )
         conn.close()
-        
+
         # Process files
         stats = {"processed": 0, "errors": 0, "skipped": 0}
-        
+
         # Convert DataFrame to list of dictionaries
         records = df.to_dicts()
-        
+
         for record in records:
             filepath = record['__path']
-            
+
             try:
                 # logging.info(f'Updating {filepath}')
-                
+
                 # Clean all values
                 for key, value in record.items():
                     record[key] = clean_value_for_export(value)
-                
+
                 # Extract non-system values
                 new_values = {k: v for k, v in record.items() if not k.startswith('__')}
-                
+
                 try:
                     tag = audioinfo.Tag(filepath)
-                    
+
                     # Update tag values
                     for key, value in new_values.items():
                         if value is None or value == "":
@@ -569,23 +593,23 @@ def export_db(dbpath: str, dirpath: str) -> None:
                                 del tag[key]
                         else:
                             tag[key] = value
-                    
+
                     # Save tag back to file
                     tag.save()
                     audioinfo.setmodtime(tag.filepath, tag.accessed, tag.modified)
                     stats["processed"] += 1
                     logging.info(f'Updated tag for {filepath}')
-                    
+
                 except Exception as e:
                     stats["errors"] += 1
                     logging.error(f'Could not save tag to {filepath}: {str(e)}')
             except Exception as e:
                 stats["errors"] += 1
                 logging.error(f'Error processing {filepath}: {str(e)}')
-        
+
         logging.info(f'Export complete. Processed: {stats["processed"]}, '
                     f'Errors: {stats["errors"]}, Skipped: {stats["skipped"]}')
-    
+
     except Exception as e:
         logging.error(f"Error during export: {str(e)}")
         raise
@@ -593,7 +617,7 @@ def export_db(dbpath: str, dirpath: str) -> None:
 
 def setup_logging(level: str) -> None:
     """Set up logging configuration.
-    
+
     Args:
         level: Logging level
     """
@@ -603,7 +627,7 @@ def setup_logging(level: str) -> None:
     except AttributeError:
         level = logging.INFO
         print(f"Invalid log level: {level}, defaulting to INFO", file=sys.stderr)
-    
+
     logging.basicConfig(
         level=level,
         format=log_format,
@@ -619,7 +643,7 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest='action', help='Action to perform')
     subparsers.required = True
-    
+
     # Import subcommand
     import_parser = subparsers.add_parser('import', help='Import audio files to database')
     import_parser.add_argument('dbpath', help='Path to SQLite database')
@@ -640,12 +664,12 @@ def main() -> None:
         default=1000,
         help='Number of files processed per worker chunk'
     )
-    
+
     # Export subcommand
     export_parser = subparsers.add_parser('export', help='Export database to audio files')
     export_parser.add_argument('dbpath', help='Path to SQLite database')
     export_parser.add_argument('musicdir', help='Path to music directory to export to')
-    
+
     # Common arguments
     for p in [import_parser, export_parser]:
         p.add_argument(
@@ -654,50 +678,50 @@ def main() -> None:
             default='INFO',
             help='Log level'
         )
-    
+
     try:
         args = parser.parse_args()
         setup_logging(args.log)
-        
+
         # Validate paths
         if args.action == 'import':
             invalid_paths = [p for p in args.musicdirs if not os.path.exists(p)]
             if invalid_paths:
                 logging.error(f"Directory does not exist: {', '.join(invalid_paths)}")
                 sys.exit(1)
-                
+
             dbpath = os.path.realpath(args.dbpath)
             musicdirs = [os.path.realpath(p) for p in args.musicdirs]
-            
+
             logging.info(f"Starting import operation on {len(musicdirs)} directories:")
             for i, path in enumerate(musicdirs, 1):
                 logging.info(f"  {i}. {path}")
-            
+
             if args.workers is not None and args.workers < 1:
                 logging.warning("Worker count must be ≥1, using default")
                 args.workers = None
-                
+
             import_dir(
                 dbpath=dbpath,
                 dirpaths=musicdirs,
                 workers=args.workers,
                 chunk_size=args.chunk_size
             )
-            
+
         else:  # export
             if not os.path.exists(args.musicdir):
                 logging.error(f"Directory does not exist: {args.musicdir}")
                 sys.exit(1)
-                
+
             dbpath = os.path.realpath(args.dbpath)
             musicdir = os.path.realpath(args.musicdir)
-            
+
             logging.info(f"Starting export operation on {musicdir}")
             export_db(dbpath, musicdir)
-            
+
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}", exc_info=True)
         sys.exit(1)
-    
+
 if __name__ == '__main__':
     main()
