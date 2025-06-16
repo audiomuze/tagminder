@@ -129,52 +129,6 @@ def smart_title(text):
 
     return processed_text
 
-#------------------------------------
-
-# def normalize_contributor_entry(x: Union[str, None], contributors_dict: Dict[str, str]) -> Union[str, None]:
-#     if x is None:
-#         return None
-
-#     if DELIMITER in x:
-#         items = x.split(DELIMITER)
-#         normalized_items = []
-#         for item in items:
-#             stripped_item = item.strip()
-#             lowered_item = stripped_item.lower()
-#             if lowered_item in contributors_dict:
-#                 normalized_items.append(contributors_dict[lowered_item])
-#             else:
-#                 parts = SPLIT_PATTERN.split(stripped_item)
-#                 normalized_parts = []
-#                 seen = set()
-#                 for part in parts:
-#                     stripped = part.strip()
-#                     lowered = stripped.lower()
-#                     normalized = contributors_dict.get(lowered, smart_title(stripped))
-#                     if normalized not in seen:
-#                         normalized_parts.append(normalized)
-#                         seen.add(normalized)
-#                 normalized_items.append(DELIMITER.join(normalized_parts) if normalized_parts else stripped_item) # changed from None to stripped_item
-#         return DELIMITER.join(normalized_items)
-#     else:
-#         lowered_x = x.lower()
-#         if lowered_x in contributors_dict:
-#             return contributors_dict[lowered_x]  # Use standardized name directly
-
-#         parts = SPLIT_PATTERN.split(x)
-#         normalized_parts = []
-#         seen = set()
-
-#         for part in parts:
-#             stripped = part.strip()
-#             lowered = stripped.lower()
-#             normalized = contributors_dict.get(lowered, smart_title(stripped))
-
-#             if normalized not in seen:
-#                 normalized_parts.append(normalized)
-#                 seen.add(normalized)
-
-#         return DELIMITER.join(normalized_parts) if normalized_parts else None
 
 
 def normalize_contributor_entry(x: Union[str, None], contributors_dict: Dict[str, str]) -> Union[str, None]:

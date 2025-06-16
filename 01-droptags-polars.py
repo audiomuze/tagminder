@@ -355,7 +355,7 @@ def main():
         "discogs_artist_url", "discogs_release_url", "fingerprint", "recordinglocation",
         "recordingstartdate", "replaygain_album_gain", "replaygain_album_peak",
         "replaygain_track_gain", "replaygain_track_peak", "review", "roonalbumtag", "roonid",
-        "roonradioban", "roontracktag", "upc", "__albumgain"
+        "roonradioban", "roontracktag", "upc", "__albumgain", "album_dr", "bliss_analysis"
     ]
 
     db_path = '/tmp/amg/dbtemplate.db'
