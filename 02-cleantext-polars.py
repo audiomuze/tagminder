@@ -8,12 +8,6 @@ Purpose:
     '' (empty strings)
     wrong_apostrophes: r'’', r' ́', replace with "\'"
 
-
-
-    (i.e. any tagnames that don't appear in fixed_columns defined in main()
-
-    It is the de-facto way of getting rid of tags you don't want in your music collection.
-
     It is part of tagminder.
 
 Usage:

@@ -339,7 +339,7 @@ def main():
         "__file_size_kb", "__file_size_mb", "__filetype", "__image_mimetype", "__image_type",
         "__layer", "__length", "__length_seconds", "__mode", "__modified", "__num_images",
         "__parent_dir", "__size", "__tag", "__tag_read", "__version", "__vendorstring",
-        "__md5sig", "tagminder_uuid", "sqlmodded", "reflac", "discnumber", "track", "title",
+        "__md5sig", "tagminder_uuid", "sqlmodded", "reflac", "disc", "discnumber", "track", "title",
         "subtitle", "artist", "composer", "arranger", "lyricist", "writer", "albumartist",
         "discsubtitle", "album", "live", "version", "_releasecomment", "work", "movement",
         "part", "ensemble", "performer", "personnel", "conductor", "engineer", "producer",

@@ -11,7 +11,7 @@ Purpose:
         'producer': 'musicbrainz_producerid'
 
     adding mbid's where missing and ensuring that mbid's appear in the same order as the urelated contributor tag.
-    Where there is no matching MBID it writes the value _NO_MBID_FOUND into the relevant mbid tag.
+    Where there is no matching MBID it writes the value 125ec42a-7229-4250-afc5-e057484327fe (the MBID for [unknown] (Special Purpose Artist)) into the relevant mbid tag.
     This provides the ability to easily identify contributors that need to be added to MusicBrainz to generate a MBID
 
     It is the de-facto way of ensuring contributors and associated mbid's are accurately recorded in your tags throughout
@@ -193,7 +193,7 @@ def process_chunk(conn: sqlite3.Connection, contributors_dict: Dict[str, str],
                 if entity in contributors_dict:
                     matched_mbids.append(contributors_dict[entity])
                 else:
-                    matched_mbids.append('_NO_MBID_FOUND')
+                    matched_mbids.append('125ec42a-7229-4250-afc5-e057484327fe') # (the MBID for [unknown] (Special Purpose Artist)) 
             
             if not matched_mbids:
                 continue
@@ -516,7 +516,7 @@ def process_full_database(conn: sqlite3.Connection):
                     if entity in contributors_dict:
                         matched_mbids.append(contributors_dict[entity])
                     else:
-                        matched_mbids.append('_NO_MBID_FOUND')
+                        matched_mbids.append('125ec42a-7229-4250-afc5-e057484327fe') # (the MBID for [unknown] (Special Purpose Artist)) 
                 
                 if not matched_mbids:
                     continue
