@@ -19,95 +19,71 @@ logging.basicConfig(
 # select distinct old_value,new_value from changelog order by old_value;
 # inspect changelog:
 # select changelog.rowid, alib.albumartist, alib.album, column, old_value, alib.releasetype from changelog inner join alib on alib.rowid == changelog.rowid;
+
 RELEASE_TYPE_MAPPING = {
-    "album\\audiobook": "Studio Album",
+    "album\\\\audiobook": "Studio Album\\\\Audiobook",
     "album\\\\audio drama": "Studio Album",
-    "album\\bootleg": "Demos, Soundboards & Bootlegs",
-    "album\\bootleg\\live": "Demos, Soundboards & Bootlegs\\\\Live Album",
-    "album\\compilation\\dj-mix": "Remix",
-    "album\\compilation": "Greatest Hits & Anthologies",
-    "album\\\\compilation": "Greatest Hits & Anthologies\\\\Studio Album",
-    "album\\compilation\\soundtrack": "Soundtrack",
+    "album\\\\bootleg": "Demos, Soundboards & Bootlegs",
+    "album\\\\bootleg\\\\live": "Demos, Soundboards & Bootlegs\\\\Live Album",
+    "album\\\\compilation\\\\dj-mix": "Remix",
+    "album\\\\compilation": "Greatest Hits & Anthologies",
+    "album\\\\compilation\\\\live": "Greatest Hits & Anthologies\\\\Live Album",
+    "album\\\\compilation\\\\soundtrack": "Soundtrack",
     "album\\\\demo": "Demos, Soundboards & Bootlegs",
     "album\\\\dj-mix": "Remix\\\\DJ-Mix",
+    "album\\\\interview": "Studio Album\\\\Interview",
     "album\\\\live": "Live Album",
-    "album\\mixtape/street": "Mixtape/Street",
+    "album\\\\mixtape/street": "Mixtape/Street",
+    "album\\\\remix": "Remix",
+    "album\\\\live\\\\soundtrack": "Soundtrack\\\\Live Album",
     "album\\\\soundtrack": "Soundtrack\\\\Studio Album",
     "album": "Studio Album",
     "anthology": "Greatest Hits & Anthologies",
-    "audio drama\\\\broadcast": "Live Album",
+    "audio drama\\\\broadcast": "Live Album\\\\Broadcast",
     "bootleg\\\\soundboard": "Demos, Soundboards & Bootlegs",
     "box set": "Box Set",
     "box set\\\\live album": "Box Set\\\\Live Album",
-    "broadcast\\live": "Live Album",
-    "compilation\\\\album": "Greatest Hits & Anthologies\\\\Studio Album",
+    "broadcast\\\\live": "Live Album\\\\Broadcast",
+    "compilation\\\\album": "Greatest Hits & Anthologies",
+    "compilation\\\\demo\\\\ep": "Demos, Soundboards & Bootlegs\\\\Extended Play",
+    "compilation\\\\ep": "Demos, Soundboards & Bootlegs\\\\Extended Play",
+    "compilation\\\\live": "Greatest Hits & Anthologies\\\\Live Album",
+    "compilation\\\\live album": "Greatest Hits & Anthologies\\\\Live Album",
     "compilation": "Greatest Hits & Anthologies",
     "composite reissue": "Studio Album",
     "demo": "Demos, Soundboards & Bootlegs",
-    "demo\\\\ep": "Demos, Soundboards & Bootlegs",
+    "demo\\\\ep": "Demos, Soundboards & Bootlegs\\\\Extended Play",
     "ep": "Extended Play",
     "ep\\\\live": "Extended Play\\\\Live Album",
-    "ep\\mixtape/street": "Mixtape/Street\\\\Extended Play",
-    "ep\\\\remix": "Remix",
+    "ep\\\\mixtape/street": "Mixtape/Street\\\\Extended Play",
+    "ep\\\\remix": "Remix\\\\Extended Play",
     "ep\\\\soundtrack": "Soundtrack\\\\Extended Play",
     "extended play": "Extended Play",
-    "extended play\\remix": "Extended Play\\\\Remix",
+    "extended play\\\\remix": "Remix\\\\Extended Play",
+    "interview\\\\single": "Single\\\\Interview",
     "live album": "Live Album",
     "live\\\\album": "Live Album",
     "live\\\\ep": "Extended Play\\\\Live Album",
     "live": "Live Album",
     "live\\\\single": "Single\\\\Live Album",
     "mixtape/street": "Mixtape/Street",
+    "other": "Studio Album",
     "remix": "Remix",
+    "remix\\\\single": "Remix\\\\Single",
     "single\\\\live": "Single\\\\Live Album",
     "single": "Single",
+    "single\\\\soundtrack": "Single\\\\Soundtrack",
     "soundtrack\\\\album": "Soundtrack\\\\Studio Album",
     "soundtrack": "Soundtrack",
+    "studio album\\\\compilation": "Greatest Hits & Anthologies",
+    "studio album\\\\compilation\\\\remix": "Remix",
+    "studio album\\\\demo": "Demos, Soundboards & Bootlegs",
+    "studio album\\\\remix": "Remix",
     "studio album": "Studio Album",
-    "studio album\\compilation\\remix": "Remix",
-    "studio album\\demo": "Demos, Soundboards & Bootlegs",
-    "studio album\\remix": "Remix"
+    "various artists": "Various Artists Compilation"
 }
+
 DELIMITER = '\\\\'
-
-
-"album\\compilation\\live"
-
-
-"album\\interview"
-"album\\live"
-"album\\live\\soundtrack"
-"album\\remix"
-"album\\soundtrack"
-"audio drama\\broadcast"
-"compilation\\demo\\ep"
-"compilation\\ep"
-"compilation\\live album"
-"compilation\\single"
-"composite reissue"
-"interview\\single"
-"live"
-"live album"
-"live\\single"
-"other"
-"remix\\single"
-"single"
-"single\\remix"
-"single\\soundtrack"
-"soundtrack"
-"soundtrack\\studio album"
-"studio album"
-"studio album\\compilation"
-
-
-
-
-
-
-
-
-
-
 
 # ---------- Helpers ----------
 def sqlite_to_polars(conn: sqlite3.Connection, query: str) -> pl.DataFrame:
@@ -153,17 +129,18 @@ def apply_multi_value_mappings(x: Union[str, None], mapping: Dict[str, str]) -> 
     if x is None:
         return None
 
-    # Apply direct string replacement for multi-value mappings (exact match)
-    if x in mapping:
-        return mapping[x]
+    # Apply direct string replacement for multi-value mappings (case-insensitive exact match)
+    lowercase_x = x.lower()
+    if lowercase_x in mapping:
+        return mapping[lowercase_x]
 
     return x
 
 
 def normalize_single_value_entry(x: Union[str, None], mapping: Dict[str, str]) -> Union[str, None]:
     """
-    Normalize a release type entry by splitting on delimiter, mapping single values,
-    deduplicating, and rejoining.
+    Normalize a release type entry by direct mapping lookup.
+    No splitting logic needed since all keys in single-value mappings contain no delimiters.
 
     Args:
         x: The release type string to normalize (can be None)
@@ -175,38 +152,17 @@ def normalize_single_value_entry(x: Union[str, None], mapping: Dict[str, str]) -
     if x is None:
         return None
 
-    if DELIMITER in x:
-        # Split delimited values
-        items = x.split(DELIMITER)
-        normalized_items = []
-
-        for item in items:
-            stripped_item = item.strip()
-            # Apply mapping (case sensitive)
-            normalized = mapping.get(stripped_item, stripped_item)
-            normalized_items.append(normalized)
-
-        # Deduplicate while preserving order
-        final_normalized_items = []
-        seen = set()
-        for item in normalized_items:
-            if item not in seen:
-                final_normalized_items.append(item)
-                seen.add(item)
-
-        return DELIMITER.join(final_normalized_items)
-    else:
-        # Single value
-        stripped_x = x.strip() if x else x
-        return mapping.get(stripped_x, stripped_x)
+    # Single value direct mapping (case insensitive)
+    stripped_x = x.strip() if x else x
+    lowercase_x = stripped_x.lower() if stripped_x else stripped_x
+    return mapping.get(lowercase_x, stripped_x)
 
 
 def batch_normalize_release_types(df: pl.DataFrame, mapping: Dict[str, str]) -> pl.DataFrame:
     """
     Apply release type normalization to the releasetype column using two-stage vectorized operations.
-    Stage 1: Apply only mappings where left side contains delimiter (no splitting)
-    Stage 2: Apply only mappings where left side doesn't contain delimiter (with splitting)
-    Both stages process ALL rows.
+    Stage 1: Apply only mappings where left side contains delimiter (no splitting) to ALL rows
+    Stage 2: Apply only mappings where left side doesn't contain delimiter (with splitting) to rows NOT processed in Stage 1
 
     Args:
         df: Input DataFrame
@@ -220,24 +176,161 @@ def batch_normalize_release_types(df: pl.DataFrame, mapping: Dict[str, str]) -> 
     single_value_mapping = {k: v for k, v in mapping.items() if DELIMITER not in k}
 
     result_df = df
+    stage1_processed_rowids = []
 
     # Stage 1: Apply multi-value mappings (direct string replacement) to ALL rows
     if multi_value_mapping:
         logging.info(f"Stage 1: Applying {len(multi_value_mapping)} multi-value mappings to all rows...")
+
+        # Track which rows were actually changed in stage 1
+        original_releasetype = result_df["releasetype"]
+
         multi_expr = pl.col("releasetype").map_elements(
             lambda x: apply_multi_value_mappings(x, multi_value_mapping),
             return_dtype=pl.Utf8
         ).alias("releasetype")
         result_df = result_df.with_columns(multi_expr)
 
-    # Stage 2: Apply single-value mappings (with splitting and deduplication) to ALL rows
+        # Identify rows that were changed in stage 1
+        stage1_changed_mask = (
+            (original_releasetype.is_not_null()) &
+            (original_releasetype != result_df["releasetype"])
+        )
+        stage1_processed_rowids = result_df.filter(stage1_changed_mask)["rowid"].to_list()
+        logging.info(f"Stage 1 processed {len(stage1_processed_rowids)} rows")
+
+    # Stage 2: Apply single-value mappings (with splitting and deduplication) to rows NOT processed in stage 1
     if single_value_mapping:
-        logging.info(f"Stage 2: Applying {len(single_value_mapping)} single-value mappings to all rows...")
-        single_expr = pl.col("releasetype").map_elements(
-            lambda x: normalize_single_value_entry(x, single_value_mapping),
-            return_dtype=pl.Utf8
-        ).alias("releasetype")
-        result_df = result_df.with_columns(single_expr)
+        logging.info(f"Stage 2: Applying {len(single_value_mapping)} single-value mappings to unprocessed rows...")
+
+        if stage1_processed_rowids:
+            # Only process rows that were NOT changed in stage 1
+            unprocessed_mask = ~pl.col("rowid").is_in(stage1_processed_rowids)
+
+            single_expr = pl.when(unprocessed_mask).then(
+                pl.col("releasetype").map_elements(
+                    lambda x: normalize_single_value_entry(x, single_value_mapping),
+                    return_dtype=pl.Utf8
+                )
+            ).otherwise(pl.col("releasetype")).alias("releasetype")
+
+            result_df = result_df.with_columns(single_expr)
+
+            # Count how many additional rows were processed in stage 2
+            stage2_count = result_df.filter(unprocessed_mask).height
+            logging.info(f"Stage 2 processed {stage2_count} rows")
+        else:
+            # No rows were processed in stage 1, so process all rows in stage 2
+            single_expr = pl.col("releasetype").map_elements(
+                lambda x: normalize_single_value_entry(x, single_value_mapping),
+                return_dtype=pl.Utf8
+            ).alias("releasetype")
+            result_df = result_df.with_columns(single_expr)
+            logging.info(f"Stage 2 processed all {result_df.height} rows")
+
+    return result_df
+
+
+def assign_release_types_for_null_values(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Assign release types to albums that currently have null release types.
+    Implements the logic from the legacy add_releasetype() function using vectorized operations.
+
+    Logic:
+    1. Singles: ≤3 tracks per __dirpath (excluding Classical/Jazz genres)
+    2. Extended Play: 4-6 tracks per __dirpath (excluding Classical/Jazz genres)
+    3. Soundtrack: __dirpath contains '/OST'
+    4. Studio Album: >6 tracks per __dirpath OR Classical/Jazz genres (for remaining null values)
+
+    Args:
+        df: DataFrame with album data including __dirpath, releasetype, and genre columns
+
+    Returns:
+        DataFrame with release types assigned to previously null values
+    """
+    logging.info("Starting release type assignment for null values...")
+
+    # Create a copy to work with
+    result_df = df.clone()
+
+    # Get track counts per directory for null release types, excluding Classical/Jazz
+    track_counts = (
+        result_df
+        .filter(
+            (pl.col("releasetype").is_null()) &
+            (~pl.col("genre").str.contains("(?i)classical", literal=False)) &
+            (~pl.col("genre").str.contains("(?i)jazz", literal=False))
+        )
+        .group_by("__dirpath")
+        .agg(pl.len().alias("track_count"))
+    )
+
+    logging.info(f"Found {track_counts.height} directories with null release types (excluding Classical/Jazz)")
+
+    # Assign Singles (≤3 tracks)
+    singles_dirs = track_counts.filter(pl.col("track_count") <= 3)["__dirpath"].to_list()
+    if singles_dirs:
+        singles_mask = (
+            (pl.col("releasetype").is_null()) &
+            (pl.col("__dirpath").is_in(singles_dirs)) &
+            (~pl.col("genre").str.contains("(?i)classical", literal=False)) &
+            (~pl.col("genre").str.contains("(?i)jazz", literal=False))
+        )
+        result_df = result_df.with_columns(
+            pl.when(singles_mask)
+            .then(pl.lit("Single"))
+            .otherwise(pl.col("releasetype"))
+            .alias("releasetype")
+        )
+        singles_count = result_df.filter(singles_mask).height
+        logging.info(f"Assigned 'Single' to {singles_count} tracks in {len(singles_dirs)} directories")
+
+    # Assign Extended Play (4-6 tracks)
+    ep_dirs = track_counts.filter((pl.col("track_count") > 3) & (pl.col("track_count") <= 6))["__dirpath"].to_list()
+    if ep_dirs:
+        ep_mask = (
+            (pl.col("releasetype").is_null()) &
+            (pl.col("__dirpath").is_in(ep_dirs)) &
+            (~pl.col("genre").str.contains("(?i)classical", literal=False)) &
+            (~pl.col("genre").str.contains("(?i)jazz", literal=False))
+        )
+        result_df = result_df.with_columns(
+            pl.when(ep_mask)
+            .then(pl.lit("Extended Play"))
+            .otherwise(pl.col("releasetype"))
+            .alias("releasetype")
+        )
+        ep_count = result_df.filter(ep_mask).height
+        logging.info(f"Assigned 'Extended Play' to {ep_count} tracks in {len(ep_dirs)} directories")
+
+    # Assign Soundtrack (directories containing '/OST')
+    ost_mask = (
+        (pl.col("releasetype").is_null()) &
+        (pl.col("__dirpath").str.contains("/OST"))
+    )
+    if result_df.filter(ost_mask).height > 0:
+        result_df = result_df.with_columns(
+            pl.when(ost_mask)
+            .then(pl.lit("Soundtrack"))
+            .otherwise(pl.col("releasetype"))
+            .alias("releasetype")
+        )
+        ost_count = result_df.filter(ost_mask).height
+        logging.info(f"Assigned 'Soundtrack' to {ost_count} tracks in OST directories")
+
+    # Final step: Assign Studio Album to all remaining null values
+    remaining_null_count = result_df.filter(pl.col("releasetype").is_null()).height
+    if remaining_null_count > 0:
+        logging.info(f"Assigning 'Studio Album' to remaining {remaining_null_count} tracks with null release types...")
+
+        result_df = result_df.with_columns(
+            pl.when(pl.col("releasetype").is_null())
+            .then(pl.lit("Studio Album"))
+            .otherwise(pl.col("releasetype"))
+            .alias("releasetype")
+        )
+
+        logging.info(f"Assigned 'Studio Album' to {remaining_null_count} tracks")
 
     return result_df
 
@@ -326,37 +419,62 @@ def main():
     conn = sqlite3.connect(DB_PATH)
 
     try:
-        # Fetch data
+        # Fetch data - now including __dirpath and genre for assignment logic
         logging.info("Fetching release type data...")
         tracks = sqlite_to_polars(
             conn,
             """
-            SELECT rowid, releasetype, COALESCE(sqlmodded, 0) AS sqlmodded
+            SELECT rowid, releasetype, __dirpath, genre, COALESCE(sqlmodded, 0) AS sqlmodded
             FROM alib
-            WHERE releasetype IS NOT NULL
             ORDER BY rowid
             """
         )
 
-        logging.info(f"Processing {tracks.height} tracks with release type data...")
+        logging.info(f"Processing {tracks.height} total tracks...")
 
-        # Normalize release types in batch
-        updated_tracks = batch_normalize_release_types(tracks, RELEASE_TYPE_MAPPING)
+        # Step 1: Normalize existing release types (only for non-null values)
+        tracks_with_releasetype = tracks.filter(pl.col("releasetype").is_not_null())
+        if tracks_with_releasetype.height > 0:
+            logging.info(f"Normalizing {tracks_with_releasetype.height} tracks with existing release types...")
+            normalized_tracks = batch_normalize_release_types(tracks_with_releasetype, RELEASE_TYPE_MAPPING)
 
-        # Detect changes using vectorized comparison
-        change_expr = (
-            (pl.col("releasetype").is_not_null()) &
-            (tracks["releasetype"] != updated_tracks["releasetype"])
+            # Update the main dataframe with normalized values
+            tracks = tracks.update(
+                normalized_tracks.select(["rowid", "releasetype"]),
+                on="rowid"
+            )
+
+        # Step 2: Assign release types to null values
+        tracks_with_null = tracks.filter(pl.col("releasetype").is_null())
+        if tracks_with_null.height > 0:
+            logging.info(f"Assigning release types to {tracks_with_null.height} tracks with null values...")
+            tracks = assign_release_types_for_null_values(tracks)
+
+        # Detect all changes using vectorized comparison with original data
+        original_tracks = sqlite_to_polars(
+            conn,
+            """
+            SELECT rowid, releasetype, __dirpath, genre, COALESCE(sqlmodded, 0) AS sqlmodded
+            FROM alib
+            ORDER BY rowid
+            """
         )
 
-        changed_rowids = updated_tracks.filter(change_expr)["rowid"].to_list()
-        logging.info(f"Found {len(changed_rowids)} tracks with changes")
+        # Compare original vs updated, accounting for null values
+        change_expr = (
+            (original_tracks["releasetype"] != tracks["releasetype"]) |
+            (original_tracks["releasetype"].is_null() & tracks["releasetype"].is_not_null()) |
+            (original_tracks["releasetype"].is_not_null() & tracks["releasetype"].is_null())
+        )
+
+        changed_rowids = tracks.filter(change_expr)["rowid"].to_list()
+        logging.info(f"Found {len(changed_rowids)} tracks with changes total")
 
         if changed_rowids:
             num_updated = write_updates_to_db(
                 conn,
-                updated_df=updated_tracks,
-                original_df=tracks,
+                updated_df=tracks,
+                original_df=original_tracks,
                 changed_rowids=changed_rowids
             )
             logging.info(f"Successfully updated {num_updated} tracks in the database")
