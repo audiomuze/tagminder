@@ -11,8 +11,8 @@ import uuid
 import pandas as pd
 import numpy as np
 from string_grouper import match_strings, match_most_similar, \
-    group_similar_strings, compute_pairwise_similarities, \
-    StringGrouper
+     group_similar_strings, compute_pairwise_similarities, \
+     StringGrouper
 
 
 
@@ -640,6 +640,20 @@ def establish_environment():
 
             # given a user may have preferences as to how an artist name is written, check whether any changes need to be made to _REF_mb_entities to align with user preference as captured in _REF_vetted_contributors table
             # as an example, most of my tagging over the years leveraged allmusic.com artist names and those are reflected in _REF_vetted_contributors where I've had to make changes to sourced metadata in the past
+
+            # REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!!
+            #
+            #
+            #
+            #
+            # in future _REF_contributors_workspace should become the master and _REF_vetted_contributors may be able to be removed.  The disambiguation update code would then need to reference this table.
+            #
+            #
+            #
+            #
+            #
+            # REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!! REMINDER!!!
+
             if table_exists('_REF_vetted_contributors'):
 
                 dbcursor.execute('''UPDATE _REF_mb_entities
@@ -3048,7 +3062,7 @@ def strip_live_from_titles():
 
     #     exhausted_queries = 1
 
-    print(f"Asessing {record_count} records...")
+    print(f"Assessing {record_count} records...")
 
 
     ''' now process each in sequece '''
@@ -4584,7 +4598,7 @@ def get_similar_names():
     # now drop rows from similarities if left_contributor == current_val
     similarities = similarities[~similarities['left_contributor'].isin(df2['current_val'])]
 
-    # get current_val and replacement_val for all records in _REF_disambiguation_workspace where we've dismissed a similarity match as a false-positive (status = 0) or processed a change previously (status = 1) 
+    # get current_val and replacement_val for all records in _REF_contributors_workspace where we've dismissed a similarity match as a false-positive (status = 0) or processed a change previously (status = 1) 
     # into a df so we can eliminate stuff we've already dealt with
  
 
@@ -4593,7 +4607,7 @@ def get_similar_names():
     #
     #
     #
-    # in future _REF_disambiguation_workspace should become the master and _REF_vetted_contributors may be able to be removed.  The disambiguation update code would then need to reference this table.
+    # in future _REF_contributors_workspace should become the master and _REF_vetted_contributors may be able to be removed.  The disambiguation update code would then need to reference this table.
     #
     #
     #
@@ -4603,7 +4617,7 @@ def get_similar_names():
 
 
     # load and remove all previously considered names from the dataset
-    df3 = pd.read_sql_query("""SELECT current_val, replacement_val from _REF_disambiguation_workspace WHERE status == 0 OR status == 1 ORDER by current_val;""", conn)
+    df3 = pd.read_sql_query("""SELECT current_val, replacement_val from _REF_contributors_workspace WHERE status == 0 OR status == 1 ORDER by current_val;""", conn)
     print(f"Removing {len(df3)} previously considered contributor entries from list of posssible namesakes")
 
     # now drop rows from similarities if 'left_contributor', 'right_contributor' in a row matches a row in df3's current_val', 'replacement_val' values
@@ -4613,13 +4627,13 @@ def get_similar_names():
     similarities.to_csv('_INF_string_grouper_possible_namesakes.csv', index=False, sep = '|')
     similarities.to_sql('_INF_string_grouper_possible_namesakes', conn, index=True, if_exists='replace')
 
-    # now append records from _INF_string_grouper_possible_namesakes to _REF_disambiguation_workspace, in effect adding any new possible matches to the evaluation pool
+    # now append records from _INF_string_grouper_possible_namesakes to _REF_contributors_workspace, in effect adding any new possible matches to the evaluation pool
     # when writing lowercase sort values cv_sort and rv_sort, move "the" to the end of string to make it easier to deal with "Wallflowers vs The Wallflowers" in once place
     # by turning that into "wallflowers vs wallflowers, the"
-    # and add names that aren't already present in _REF_disambiguation_workspace
+    # and add names that aren't already present in _REF_contributors_workspace
     dbcursor.execute('''
                         INSERT INTO
-                          _REF_disambiguation_workspace
+                          _REF_contributors_workspace
                         SELECT
                           left_contributor AS current_val,
                           right_contributor AS replacement_val,
@@ -4643,7 +4657,7 @@ def get_similar_names():
                               current_val,
                               replacement_val
                             FROM
-                              _REF_disambiguation_workspace
+                              _REF_contributors_workspace
                           )
                         ORDER BY
                           cv_sort,
@@ -5863,8 +5877,8 @@ def update_tags():
     # set DISCNUMBER = NULL where DISCNUMBER = '1' for all tracks and folder is not part of a boxset
     kill_singular_discnumber()
 
-    # # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
-    # set_compilation_flag()
+    # set compilation = '1' when __dirname starts with 'VA -' and '0' otherwise.  Note, it does not look for and correct incorrectly flagged compilations and visa versa - consider enhancing
+    set_compilation_flag()
 
     # set albumartist to NULL for all compilation albums where they are not NULL
     nullify_albumartist_in_va()
@@ -5878,7 +5892,7 @@ def update_tags():
     # add a uuid4 tag to every record that does not have one
     add_tagminder_uuid()
 
-    # # # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
+    # Sorts delimited text strings in tags, dedupes them and compares the result against the original tag contents.  When there's a mismatch the newly deduped, sorted string is written back to the underlying table
     dedupe_tags()
 
 
@@ -5896,52 +5910,52 @@ def update_tags():
     # add genres where an album has no genres and a single albumartist.  Genres added will be amalgamation of the same artist's other work in your library.
     add_genres_and_styles()
 
-    # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
-    # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
-    # do not run genre and style code if you use per track genres and styles
-    standardise_album_tags('album')
-    standardise_album_tags('genre')
-    standardise_album_tags('style')
-    standardise_album_tags('mood')
-    standardise_album_tags('theme')
+    # # # # standardise genres, styles, moods, themes: merges tag entries for every distinct __dirpath, dedupes and sorts them then writes them back to the __dirpath in question
+    # # # this meaans all tracks in __dirpath will have the same album, genre style, mood and theme tags
+    # # # do not run genre and style code if you use per track genres and styles
+    # standardise_album_tags('album')
+    # standardise_album_tags('genre')
+    # standardise_album_tags('style')
+    # standardise_album_tags('mood')
+    # standardise_album_tags('theme')
 
-    # # # if _REF_mb_disambiguated table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
-    # # # not necessary to call this anymore becaise it gets called by add_multiartist_mb_entities()
-    # # # ideally it should be turned into a localised function of add_multiartist_mb_entities()
-    # # #add_mb_entities()
+    # # # # # if _REF_mb_disambiguated table exists adds musicbrainz identifiers to artists, albumartists & composers (we're adding musicbrainz_composerid of our own volition for future app use)
+    # # # # # not necessary to call this anymore becaise it gets called by add_multiartist_mb_entities()
+    # # # # # ideally it should be turned into a localised function of add_multiartist_mb_entities()
+    # # # # #add_mb_entities()
 
-    # # add mbid's for multi-entry artists
+    # # # add mbid's for multi-entry artists
     # # add_multiartist_mb_entities()
 
-    # set capitalistion for track titles
+    # # set capitalistion for track titles
     # set_title_caps()
 
 
-    # set capitalistion for album names
-    # set_album_caps()
+    # # set capitalistion for album names
+    # # set_album_caps()
 
-    # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
-    tag_non_redbook()
+    # # add resolution info to VERSION tag for all albums where > 16/44.1 and/or mixed resolution albums
+    # tag_non_redbook()
 
-    # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
-    # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
-    merge_album_version()
+    # # merge ALBUM and VERSION tags to stop Logiechmediaserver, Navidrome etc. conflating multiple releases of an album into a single album.  It preserves VERSION tag to make it easy to remove VERSION from ALBUM tag in future
+    # # must be run AFTER tag_non_redbook() as it doesn't append non redbook metadata
+    # merge_album_version()
 
 
-    # remove leading 0's from track tags
-    unpad_tracks()
+    # # remove leading 0's from track tags
+    # unpad_tracks()
 
-    # remove leading 0's from discnumber tags
-    unpad_discnumbers()
+    # # remove leading 0's from discnumber tags
+    # unpad_discnumbers()
 
-    # # generate _INF_ tables to assist in cleanups, identifying anomalies etc.
+    # # # # generate _INF_ tables to assist in cleanups, identifying anomalies etc.
 
-    info_albums_with_duplicated_tracknumbers()
-    info_albums_missing_tracknumbers()
-    info_albums_with_no_genre()
-    info_albums_with_no_year()
-    info_tracks_without_title()
-    info_tracks_without_artist()
+    # info_albums_with_duplicated_tracknumbers()
+    # info_albums_missing_tracknumbers()
+    # info_albums_with_no_genre()
+    # info_albums_with_no_year()
+    # info_tracks_without_title()
+    # info_tracks_without_artist()
 
 
     # runs a query that detects duplicated albums based on the sorted md5sum of the audio stream embedded in FLAC files and writes out a few tables to ease identification and (manual) deletion tasks

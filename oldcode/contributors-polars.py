@@ -1,3 +1,25 @@
+"""
+Script Name: contributors-polars.py
+
+Purpose:
+    This script processes all records in alib containing one or more contributor entries.  
+    For each track it checks if any contributor names match entries in the reference dictionary (case-insensitive)
+    and replaces them with the standardized versions from _REF_vetted_contributors if they differ.
+
+    It is the de-facto way of ensuring artist name consistency throughout your music collection.
+    To update MBIDs in alib you should run mbids-pandas.py afterward.
+    It is part of tagminder.
+
+Usage:
+    python contributors-polars.py
+    uv run contributors-polars.py
+
+Author: audiomuze
+Created: 2025-04-18
+"""
+
+
+
 import polars as pl
 import sqlite3
 from typing import Dict, List, Tuple, Any
@@ -144,7 +166,7 @@ def main():
         logging.info("Fetching tracks data...")
         tracks = sqlite_to_polars(
             conn, 
-            "SELECT rowid, artist, composer, arranger, lyricist, writer, albumartist, ensemble, performer, personnel, conductor, producer, engineer, mixer, remixer, sqlmodded FROM alib ORDER BY rowid", 
+            "SELECT rowid, artist, composer, arranger, lyricist, writer, albumartist, ensemble, performer, personnel, conductor, producer, engineer, mixer, remixer, , COALESCE(sqlmodded, 0) AS sqlmodded FROM alib ORDER BY rowid", 
             id_column="rowid"
         )
         
