@@ -3,8 +3,11 @@ PLEASE NOTE TAGMINDER IS A WORK IN PROGRESS AND IN THE PROCESS OF BEING REDEVELO
 Legacy code is contained in ztm.py (the main, monolitchic script) and tags2db3-polarsv2.py (the import/export tags to/from database script).
 
 The rewritten code is for the time being comprised of standalone scripts:
+
 tags2db-polars-multidrive-optimised.py - ingests and exports tags from / to a SQlite database and your music files
-01...xx.py accomplish specific things working on the database creted by ingesting tags
+
+01...xx.py accomplish specific things working on the database created by ingesting tags
+
 each of these scripts write to a changelog table showing the rowid, tagname, old value and new value determined by the script, so you can inspect the changes before exporting back to tags.
 
 
