@@ -118,7 +118,7 @@ ALBUM_INFO_SCHEMA = {
     "__md5sig": pl.Utf8,
     "bliss_analysis": pl.Utf8,
     "tagminder_uuid": pl.Utf8,
-    "sqlmodded": pl.Utf8,
+    "sqlmodded": pl.Int64,
     "reflac": pl.Utf8,
     "disc": pl.Utf8,
     "discnumber": pl.Utf8,
@@ -352,38 +352,6 @@ def clean_and_normalize_tags_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(expressions)
 
 
-# def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
-#     """
-#     Builds a Polars DataFrame from a list of tag dictionaries, enforcing a predefined schema.
-#     Missing columns are added with null values, and existing columns are cast to the correct dtype.
-#     """
-#     if not all_tags:
-#         # Return an empty DataFrame with the correct schema if no tags are processed
-#         return pl.DataFrame({}, schema=ALBUM_INFO_SCHEMA)
-
-#     # Create DataFrame from raw tags. Polars will infer types and handle missing columns.
-#     df_raw = pl.DataFrame(all_tags)
-
-#     # Apply vectorized cleaning and normalization *after* initial DataFrame creation
-#     df_cleaned_normalized = clean_and_normalize_tags_vectorized(df_raw)
-
-#     # Ensure all schema columns exist and cast them to their specified types.
-#     # Also handle reordering to match the desired schema order.
-#     # Start with an empty DF of the target schema
-#     final_df_columns = []
-#     for col, dtype in ALBUM_INFO_SCHEMA.items():
-#         if col in df_cleaned_normalized.columns:
-#             # Cast existing column to the target dtype
-#             final_df_columns.append(pl.col(col).cast(dtype))
-#         else:
-#             # Add missing columns with null values and the correct dtype
-#             final_df_columns.append(pl.lit(None).cast(dtype).alias(col))
-
-#     # Create the final DataFrame by selecting and reordering all columns according to the schema
-#     final_df = df_cleaned_normalized.with_columns(final_df_columns).select(list(ALBUM_INFO_SCHEMA.keys()))
-
-#     return final_df
-
 def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
     """
     Builds a Polars DataFrame from a list of tag dictionaries, enforcing a predefined schema.
@@ -394,15 +362,24 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
         return pl.DataFrame({}, schema=ALBUM_INFO_SCHEMA)
 
     # Create DataFrame with explicit schema to avoid inference conflicts
-    # First, ensure all dictionaries have all required keys with None defaults
+    # First, ensure all dictionaries have all required keys with proper defaults
     normalized_tags = []
     for tag_dict in all_tags:
         normalized_dict = {}
         for col in ALBUM_INFO_SCHEMA.keys():
             if col in tag_dict:
-                normalized_dict[col] = tag_dict[col]
+                value = tag_dict[col]
+                # Special handling for sqlmodded: set to 0 if None
+                if col == "sqlmodded" and value is None:
+                    normalized_dict[col] = 0
+                else:
+                    normalized_dict[col] = value
             else:
-                normalized_dict[col] = None
+                # Default values for missing columns
+                if col == "sqlmodded":
+                    normalized_dict[col] = 0
+                else:
+                    normalized_dict[col] = None
         normalized_tags.append(normalized_dict)
 
     # Create DataFrame with explicit schema - this prevents inference conflicts
@@ -412,6 +389,7 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
     df_cleaned_normalized = clean_and_normalize_tags_vectorized(df_raw)
 
     return df_cleaned_normalized
+
 
 def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection):
     """
