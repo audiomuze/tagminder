@@ -352,44 +352,97 @@ def clean_and_normalize_tags_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(expressions)
 
 
+# def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
+#     """
+#     Builds a Polars DataFrame from a list of tag dictionaries, enforcing a predefined schema.
+#     Missing columns are added with null values, and existing columns are cast to the correct dtype.
+#     """
+#     if not all_tags:
+#         # Return an empty DataFrame with the correct schema if no tags are processed
+#         return pl.DataFrame({}, schema=ALBUM_INFO_SCHEMA)
+
+#     # Create DataFrame with explicit schema to avoid inference conflicts
+#     # First, ensure all dictionaries have all required keys with proper defaults
+#     normalized_tags = []
+#     for tag_dict in all_tags:
+#         normalized_dict = {}
+#         for col in ALBUM_INFO_SCHEMA.keys():
+#             if col in tag_dict:
+#                 value = tag_dict[col]
+#                 # Special handling for sqlmodded: set to 0 if None
+#                 if col == "sqlmodded" and value is None:
+#                     normalized_dict[col] = 0
+#                 else:
+#                     normalized_dict[col] = value
+#             else:
+#                 # Default values for missing columns
+#                 if col == "sqlmodded":
+#                     normalized_dict[col] = 0
+#                 else:
+#                     normalized_dict[col] = None
+#         normalized_tags.append(normalized_dict)
+
+#     # Create DataFrame with explicit schema - this prevents inference conflicts
+#     df_raw = pl.DataFrame(normalized_tags, schema=ALBUM_INFO_SCHEMA)
+
+#     # Apply vectorized cleaning and normalization
+#     df_cleaned_normalized = clean_and_normalize_tags_vectorized(df_raw)
+
+#     return df_cleaned_normalized
+
 def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
     """
-    Builds a Polars DataFrame from a list of tag dictionaries, enforcing a predefined schema.
-    Missing columns are added with null values, and existing columns are cast to the correct dtype.
+    Builds a Polars DataFrame from a list of tag dictionaries, enforcing a dynamic schema
+    where all tag fields are treated as Utf8 to prevent type conflicts during creation.
     """
     if not all_tags:
         # Return an empty DataFrame with the correct schema if no tags are processed
         return pl.DataFrame({}, schema=ALBUM_INFO_SCHEMA)
 
-    # Create DataFrame with explicit schema to avoid inference conflicts
-    # First, ensure all dictionaries have all required keys with proper defaults
-    normalized_tags = []
+    # 1. Discover all unique keys from all tags to prevent dropping unknown tags.
+    #    Also, ensure all keys from the static schema are included for consistency.
+    all_keys = set(ALBUM_INFO_SCHEMA.keys())
     for tag_dict in all_tags:
-        normalized_dict = {}
-        for col in ALBUM_INFO_SCHEMA.keys():
-            if col in tag_dict:
-                value = tag_dict[col]
-                # Special handling for sqlmodded: set to 0 if None
-                if col == "sqlmodded" and value is None:
-                    normalized_dict[col] = 0
+        all_keys.update(tag_dict.keys())
+
+    # 2. Per the request, create an ingestion schema where all columns are treated as pl.Utf8
+    #    to prevent type errors on creation. The original schema's `Int64` for `sqlmodded`
+    #    is respected as it's an internal field, not a "tag".
+    ingestion_schema = {key: pl.Utf8 for key in all_keys}
+    if 'sqlmodded' in ingestion_schema:
+        ingestion_schema['sqlmodded'] = pl.Int64
+
+    # 3. Pre-process the raw tag data. The primary goal is to convert list values
+    #    into strings BEFORE they are passed to the DataFrame constructor. This avoids
+    #    the `ComputeError: could not append value: [...] of type: list[str]`.
+    pre_processed_tags = []
+    for tag_dict in all_tags:
+        processed_dict = {}
+        # Iterate over all possible keys to ensure dictionaries have a consistent structure
+        for key in all_keys:
+            if key in tag_dict:
+                value = tag_dict[key]
+                if isinstance(value, list):
+                    # Convert list to a delimited string.
+                    processed_dict[key] = "\\\\".join(map(str, value))
                 else:
-                    normalized_dict[col] = value
+                    processed_dict[key] = value
             else:
-                # Default values for missing columns
-                if col == "sqlmodded":
-                    normalized_dict[col] = 0
-                else:
-                    normalized_dict[col] = None
-        normalized_tags.append(normalized_dict)
+                processed_dict[key] = None
 
-    # Create DataFrame with explicit schema - this prevents inference conflicts
-    df_raw = pl.DataFrame(normalized_tags, schema=ALBUM_INFO_SCHEMA)
+        # Ensure 'sqlmodded' has a default value if missing/None.
+        if processed_dict.get('sqlmodded') is None:
+            processed_dict['sqlmodded'] = 0
 
-    # Apply vectorized cleaning and normalization
-    df_cleaned_normalized = clean_and_normalize_tags_vectorized(df_raw)
+        pre_processed_tags.append(processed_dict)
 
-    return df_cleaned_normalized
+    # 4. Create the DataFrame using the pre-processed data and the dynamically generated
+    #    schema. This single step now correctly handles all known and unknown tags without type errors.
+    df = pl.DataFrame(pre_processed_tags, schema=ingestion_schema)
 
+    # 5. The original call to `clean_and_normalize_tags_vectorized` is no longer necessary
+    #    as its work (list conversion, ensuring columns) is now done *before* DataFrame creation.
+    return df
 
 def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection):
     """
@@ -421,6 +474,63 @@ def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection):
 
 
 # --- Optimization Implementation: Dedicated Workers/Pools for each drive ---
+
+# def process_single_drive(
+#     drive_path: str,
+#     files: List[str],
+#     chunk_size: int,
+#     workers_per_drive: int
+# ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+#     """
+#     Processes all files for a single drive in parallel using a dedicated ProcessPoolExecutor.
+#     This function is designed to be run by an outer ThreadPoolExecutor (e.g., drive_manager_executor)
+#     to manage concurrent processing of multiple drives.
+
+#     Args:
+#         drive_path (str): The path to the current drive/mount point.
+#         files (List[str]): A list of all audio file paths found on this drive.
+#         chunk_size (int): The number of files to process per chunk.
+#         workers_per_drive (int): The maximum number of worker processes to use for this specific drive's pool.
+
+#     Returns:
+#         Tuple[List[Dict[str, Any]], Dict[str, Any]]: A tuple containing:
+#             - A list of all successfully parsed tag dictionaries from this drive.
+#             - A dictionary of total statistics for this drive (e.g., "processed_files", "failed_files").
+#     """
+#     logging.info(f"Starting parallel processing for drive: {drive_path} with {len(files)} files")
+
+#     # --- START OF CHANGE ---
+#     # Sort the files list for the current drive to improve locality of reference
+#     files.sort()
+#     # --- END OF CHANGE ---
+
+#     drive_all_tags = []
+#     drive_total_stats = {"processed_files": 0, "failed_files": 0}
+
+#     # Each drive gets its own ProcessPoolExecutor, ensuring dedicated workers
+#     # that focus their I/O on that specific physical disk.
+#     with ProcessPoolExecutor(max_workers=workers_per_drive) as executor:
+#         futures = []
+#         # Submit chunks of files from this drive to its dedicated pool
+#         for i in range(0, len(files), chunk_size):
+#             chunk = files[i:i + chunk_size]
+#             futures.append(executor.submit(process_chunk_optimized, chunk))
+
+#         # Collect results from this drive's chunks as they complete
+#         for future in concurrent.futures.as_completed(futures):
+#             try:
+#                 chunk_tags, chunk_stats = future.result()
+#                 drive_all_tags.extend(chunk_tags)
+#                 drive_total_stats["processed_files"] += chunk_stats["processed"]
+#                 drive_total_stats["failed_files"] += chunk_stats["failed"]
+#             except Exception as e:
+#                 logging.error(f"Error processing chunk for drive {drive_path}: {e}")
+#                 # A rough estimate: if a chunk fails completely, assume all files in it failed
+#                 drive_total_stats["failed_files"] += len(chunk)
+
+#     logging.info(f"Finished processing drive: {drive_path}. Processed {drive_total_stats['processed_files']} files, failed {drive_total_stats['failed_files']}.")
+#     return drive_all_tags, drive_total_stats
+
 
 def process_single_drive(
     drive_path: str,
@@ -454,6 +564,10 @@ def process_single_drive(
     drive_all_tags = []
     drive_total_stats = {"processed_files": 0, "failed_files": 0}
 
+    # Calculate total chunks for progress tracking
+    total_chunks = (len(files) + chunk_size - 1) // chunk_size
+    completed_chunks = 0
+
     # Each drive gets its own ProcessPoolExecutor, ensuring dedicated workers
     # that focus their I/O on that specific physical disk.
     with ProcessPoolExecutor(max_workers=workers_per_drive) as executor:
@@ -470,13 +584,24 @@ def process_single_drive(
                 drive_all_tags.extend(chunk_tags)
                 drive_total_stats["processed_files"] += chunk_stats["processed"]
                 drive_total_stats["failed_files"] += chunk_stats["failed"]
+
+                # Progress tracking
+                completed_chunks += 1
+                progress_percent = (completed_chunks / total_chunks) * 100
+                logging.info(f"Drive {drive_path}: {completed_chunks}/{total_chunks} chunks completed ({progress_percent:.1f}%)")
+
             except Exception as e:
                 logging.error(f"Error processing chunk for drive {drive_path}: {e}")
                 # A rough estimate: if a chunk fails completely, assume all files in it failed
                 drive_total_stats["failed_files"] += len(chunk)
+                # Still increment completed chunks for progress tracking
+                completed_chunks += 1
+                progress_percent = (completed_chunks / total_chunks) * 100
+                logging.info(f"Drive {drive_path}: {completed_chunks}/{total_chunks} chunks completed ({progress_percent:.1f}%) - chunk failed")
 
     logging.info(f"Finished processing drive: {drive_path}. Processed {drive_total_stats['processed_files']} files, failed {drive_total_stats['failed_files']}.")
     return drive_all_tags, drive_total_stats
+
 
 def import_dir_optimized(
     dbpath: str,
