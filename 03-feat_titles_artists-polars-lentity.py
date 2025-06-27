@@ -87,48 +87,68 @@ def fetch_data(conn: sqlite3.Connection) -> pl.DataFrame:
 
     return pl.DataFrame(data)
 
+
+def fetch_disambiguated_artists(conn: sqlite3.Connection) -> pl.DataFrame:
+    """Fetch disambiguated artist names with both original and lowercase versions"""
+    cursor = conn.cursor()
+    cursor.execute("SELECT entity, lentity FROM _REF_mb_disambiguated")
+    return pl.DataFrame(cursor.fetchall(), schema=["entity", "lentity"], orient="row")
+
+
 # ---------- Clean Artist Field from Feature Prefixes ----------
-def clean_artist_feature_prefixes(df: pl.DataFrame) -> pl.DataFrame:
+def clean_artist_feature_prefixes(df: pl.DataFrame, disambiguated_df: pl.DataFrame) -> pl.DataFrame:
     """
-    Removes FEATURE_PREFIXES (feat., featuring, with, w/) from the artist field,
-    preserving all artist names and inserting the DELIM if needed between main and featured parts.
-    Increments sqlmodded if a real change occurs.
+    Processes artist tags with these rules:
+    1. First checks if lowercase artist matches any lentity in disambiguated_df
+    2. If match found:
+       - If artist matches entity exactly: skip processing
+       - If case differs: replace artist with entity value
+    3. If no match: process feature prefixes as before
     """
-    updated_rows = []
+    # Create a lookup dictionary {lentity: entity}
+    case_map = dict(zip(disambiguated_df["lentity"].to_list(),
+                      disambiguated_df["entity"].to_list()))
 
     feature_pattern = re.compile(r"\s+(feat\.?|featuring|with|w/)\s+", flags=re.IGNORECASE)
 
-    for row in df.to_dicts():
-        artist = row["artist"] or ""
-        changed_cols = []
+    def process_artist(artist: str) -> dict:
+        if not artist:
+            return {"artist": None, "modded": 0}
 
+        lower_artist = artist.lower()
+        if lower_artist in case_map:
+            # Case-sensitive comparison and correction
+            canonical = case_map[lower_artist]
+            if artist != canonical:
+                return {"artist": canonical, "modded": 1}
+            return {"artist": artist, "modded": 0}  # Exact match, no change needed
+
+        # Only process feature prefixes if not in disambiguated list
         match = feature_pattern.search(artist)
         if match:
-            # Split artist into main part and featured part at the first feature keyword
             split_result = feature_pattern.split(artist, maxsplit=1)
             if len(split_result) >= 2:
                 main_part = split_result[0].strip()
                 featured_part = split_result[2].strip()
-
                 if main_part and featured_part:
-                    # Recombine with DELIM
                     cleaned_artist = f"{main_part}{DELIM}{featured_part}".strip()
-
                     if cleaned_artist != artist:
-                        row["artist"] = cleaned_artist
-                        row["sqlmodded"] += 1
-                        changed_cols.append("artist")
+                        return {"artist": cleaned_artist, "modded": 1}
+        return {"artist": artist, "modded": 0}
 
-        updated_rows.append(row)
+    # Process all artists in vectorized operation
+    results = df["artist"].map_elements(
+        lambda x: process_artist(x) if x is not None else {"artist": None, "modded": 0},
+        return_dtype=pl.Struct([
+            pl.Field("artist", pl.Utf8),
+            pl.Field("modded", pl.Int8)
+        ])
+    ).struct.unnest()
 
-    return pl.DataFrame({
-        "rowid": pl.Series("rowid", [r["rowid"] for r in updated_rows], dtype=pl.Int64),
-        "title": pl.Series("title", [r["title"] for r in updated_rows], dtype=pl.Utf8),
-        "subtitle": pl.Series("subtitle", [r["subtitle"] for r in updated_rows], dtype=pl.Utf8),
-        "artist": pl.Series("artist", [r["artist"] for r in updated_rows], dtype=pl.Utf8),
-        "live": pl.Series("live", [r["live"] for r in updated_rows], dtype=pl.Utf8),
-        "sqlmodded": pl.Series("sqlmodded", [r["sqlmodded"] for r in updated_rows], dtype=pl.Int64),
-    })
+    return df.with_columns([
+        pl.coalesce(results["artist"], pl.lit(None)).alias("artist"),
+        (pl.col("sqlmodded") + results["modded"]).alias("sqlmodded")
+    ])
 
 
 # ---------- Apply Bracketed Suffix Rules ----------
@@ -140,7 +160,7 @@ def apply_suffix_extraction(df: pl.DataFrame) -> pl.DataFrame:
         subtitle = row["subtitle"] or ""
         artist = row["artist"] or ""
         live = row["live"] or "0"
-        sqlmodded = row["sqlmodded"]
+        sqlmodded = row["sqlmodded"] or 0
 
         match = re.search(BRACKET_PATTERN, title, re.IGNORECASE)
         if match:
@@ -208,8 +228,8 @@ def apply_suffix_extraction(df: pl.DataFrame) -> pl.DataFrame:
 
                 # No fallback: unmatched suffix is ignored
 
-                sqlmodded += len(changed_cols)
                 if changed_cols:
+                    sqlmodded = (sqlmodded or 0) + len(changed_cols)
                     row["sqlmodded"] = sqlmodded
 
         updated_rows.append(row)
@@ -279,21 +299,25 @@ def main():
     conn = sqlite3.connect(DB_PATH)
 
     try:
+        # Load disambiguated artists with case information
+        disambiguated_df = fetch_disambiguated_artists(conn)
+        logging.info(f"Loaded {disambiguated_df.height} disambiguated artist references")
+
+        # Load main data
         df = fetch_data(conn)
-        logging.info(f"Loaded {df.height} rows")
+        logging.info(f"Loaded {df.height} tracks for processing")
 
         original_df = df.clone()
-        df = clean_artist_feature_prefixes(df)
+        df = clean_artist_feature_prefixes(df, disambiguated_df)
         updated_df = apply_suffix_extraction(df)
 
         changed_rows = updated_df.filter(pl.col("sqlmodded") > original_df["sqlmodded"]).height
-        logging.info(f"Detected {changed_rows} rows with changes")
+        logging.info(f"Detected {changed_rows} modified rows")
 
         if changed_rows > 0:
             write_updates(conn, original_df, updated_df)
     finally:
         conn.close()
-        logging.info("Database connection closed.")
 
 if __name__ == "__main__":
     main()

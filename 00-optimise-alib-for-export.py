@@ -73,6 +73,35 @@ def read_tags_from_file(filepath: str) -> List[str]:
         raise IOError(f"Error reading tags file {filepath}: {e}")
 
 
+def get_changelog_columns(conn: sqlite3.Connection, changelog_table: str = 'changelog') -> List[str]:
+    """Get distinct column names from changelog table if it exists and has data.
+
+    Args:
+        conn: SQLite connection
+        changelog_table: Name of the changelog table (default: 'changelog')
+
+    Returns:
+        List of distinct column names from changelog, empty list if table doesn't exist or has no data
+    """
+    try:
+        # Check if changelog table exists
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (changelog_table,)
+        )
+        if not cursor.fetchone():
+            return []
+
+        # Check if table has data and get distinct column names
+        cursor = conn.execute(f"SELECT DISTINCT column FROM {changelog_table}")
+        columns = [row[0] for row in cursor.fetchall() if row[0]]  # Filter out None/empty values
+        
+        return columns
+    except sqlite3.Error:
+        # If any error occurs (e.g., column doesn't exist), return empty list
+        return []
+
+
 def validate_tags(conn: sqlite3.Connection, tags_to_keep: List[str], table_name: str) -> tuple[List[str], List[str]]:
     """Validate that specified tags exist in the table.
 
@@ -310,7 +339,7 @@ def main() -> None:
     )
 
     # Mutually exclusive group for specifying tags
-    tag_group = parser.add_mutually_exclusive_group(required=True)
+    tag_group = parser.add_mutually_exclusive_group(required=False)
     tag_group.add_argument(
         '--keep',
         nargs='+',
@@ -359,12 +388,23 @@ def main() -> None:
         # Get tags to keep
         if args.keep:
             tags_to_keep = args.keep
-        else:  # args.keep_file
+        elif args.keep_file:
             try:
                 tags_to_keep = read_tags_from_file(args.keep_file)
             except (FileNotFoundError, IOError) as e:
                 logging.error(str(e))
                 sys.exit(1)
+        else:
+            # Auto-detect from changelog
+            conn = sqlite3.connect(args.db)
+            try:
+                tags_to_keep = get_changelog_columns(conn)
+                if not tags_to_keep:
+                    logging.error("No changelog table found or no data in changelog, and no tags specified")
+                    sys.exit(1)
+                logging.info(f"Auto-detected {len(tags_to_keep)} columns from changelog table")
+            finally:
+                conn.close()
 
         if not tags_to_keep:
             logging.error("No tags specified to keep")
@@ -379,12 +419,20 @@ def main() -> None:
         if args.dry_run:
             logging.info("Running in DRY RUN mode - no changes will be made")
 
+        # optimise_table_columns(
+        #     dbpath=args.db,
+        #     tags_to_keep=tags_to_keep,
+        #     table_name=args.table,
+        #     dry_run=args.dry_run
+        # )
+
         optimise_table_columns(
-            dbpath=args.db,
-            tags_to_keep=tags_to_keep,
-            table_name=args.table,
-            dry_run=args.dry_run
-        )
+                    dbpath=args.db,
+                    tags_to_keep=tags_to_keep,
+                    table_name=args.table,
+                    dry_run=args.dry_run,
+                    vacuum=args.vacuum
+                )
 
         if not args.dry_run:
             logging.info("Optimization completed successfully")

@@ -1,3 +1,28 @@
+"""
+Script Name: 12-release_type_normalizer.py
+
+Purpose:
+    This script processes all records in alib and normalises releaseetype tag values based on the mapping table set out in
+    RELEASE_TYPE_MAPPING.
+
+    The mapping table is derived from releastype metadata populated into tags via Picard (left side) and maps to user preference (right side)
+
+    Logs changes to changelog table.
+
+    Ensures all music in your library has releasetype assigned in a consistent manner enabling a much cleaner discography browse
+    in releastype aware music servers like Lyrion.
+
+    It is part of tagminder.
+
+Usage:
+    python 12-release_type_normalizer.py
+    uv run 12-release_type_normalizer.py
+
+Author: audiomuze
+Created: 2025-06-11
+Updated: 2025-06-22
+"""
+
 import polars as pl
 import sqlite3
 from typing import Dict, List, Union
@@ -46,10 +71,11 @@ RELEASE_TYPE_MAPPING = {
     "broadcast\\\\live": "Live Album\\\\Broadcast",
     "compilation\\\\album": "Greatest Hits & Anthologies",
     "compilation\\\\demo\\\\ep": "Demos, Soundboards & Bootlegs\\\\Extended Play",
-    "compilation\\\\ep": "Demos, Soundboards & Bootlegs\\\\Extended Play",
+    "compilation\\\\ep": "Greatest Hits & Anthologies\\\\Extended Play",
     "compilation\\\\live": "Greatest Hits & Anthologies\\\\Live Album",
     "compilation\\\\live album": "Greatest Hits & Anthologies\\\\Live Album",
     "compilation": "Greatest Hits & Anthologies",
+    "compilation\\\\single": "Single\\\\Compilation",
     "composite reissue": "Studio Album",
     "demo": "Demos, Soundboards & Bootlegs",
     "demo\\\\ep": "Demos, Soundboards & Bootlegs\\\\Extended Play",
