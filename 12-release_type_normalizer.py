@@ -389,7 +389,7 @@ def write_updates_to_db(
     # Ensure changelog table exists
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
-            rowid INTEGER,
+            alib_rowid INTEGER,
             column TEXT,
             old_value TEXT,
             new_value TEXT,

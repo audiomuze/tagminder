@@ -95,7 +95,7 @@ def get_changelog_columns(conn: sqlite3.Connection, changelog_table: str = 'chan
         # Check if table has data and get distinct column names
         cursor = conn.execute(f"SELECT DISTINCT column FROM {changelog_table}")
         columns = [row[0] for row in cursor.fetchall() if row[0]]  # Filter out None/empty values
-        
+
         return columns
     except sqlite3.Error:
         # If any error occurs (e.g., column doesn't exist), return empty list
@@ -237,14 +237,26 @@ def optimise_table_columns(
 
             create_sql = f"CREATE TABLE {table_name}_optimised ({', '.join(columns_sql)})"
             conn.execute(create_sql)
+            # Ensure index exists for changelog lookup
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_changelog_alib_rowid ON changelog(alib_rowid)")
 
-            # Copy data to new table
+
+            # Copy only changed rows to new table - creating a new table is not a problem because export relies on __path not rowid
             columns_list = ', '.join(f'"{col}"' for col in columns_to_keep)
-            copy_sql = f"INSERT INTO {table_name}_optimised SELECT {columns_list} FROM {table_name}"
+            # copy_sql = f"INSERT INTO {table_name}_optimised SELECT {columns_list} FROM {table_name}"
+            copy_sql = f"""
+                INSERT INTO {table_name}_optimised
+                SELECT {columns_list}
+                FROM {table_name}
+                WHERE rowid IN (
+                    SELECT DISTINCT alib_rowid FROM changelog
+                    WHERE alib_rowid IS NOT NULL
+                )
+            """
             conn.execute(copy_sql)
 
             # Replace old table with new one
-            conn.execute(f"DROP TABLE {table_name}")
+            conn.execute(f"ALTER TABLE {table_name} RENAME TO {table_name}_all_records")
             conn.execute(f"ALTER TABLE {table_name}_optimised RENAME TO {table_name}")
 
             # Create index on __path for better performance

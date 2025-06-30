@@ -785,6 +785,100 @@ def process_files_columnar(df: pl.DataFrame, batch_size: int = 1000) -> Dict[str
     return stats
 
 
+# def export_db(dbpath: str, dirpath: str) -> None:
+#     """Export database to audio files using optimized DataFrame operations with file existence pre-filtering."""
+#     try:
+#         # Connect to database
+#         logging.info(f"Reading database from {dbpath}...")
+#         conn = sqlite3.connect(dbpath, detect_types=sqlite3.PARSE_DECLTYPES)
+
+#         # OPTIMIZATION 1: Get candidate records with path filtering
+#         path_condition = build_path_filter_condition(dirpath)
+
+#         # Query schema to build explicit schema for Polars
+#         schema_query = f"PRAGMA table_info({TABLE_NAME})"
+#         schema_df = pl.read_database(query=schema_query, connection=conn)
+#         table_schema = {col_name: pl.Utf8 for col_name in schema_df["name"]}
+
+#         # First, get just the paths to validate file existence
+#         path_query = f"""
+#         SELECT __path FROM {TABLE_NAME}
+#         WHERE {path_condition}
+#         ORDER BY __path
+#         """
+
+#         logging.info("Querying candidate file paths...")
+#         path_df = pl.read_database(
+#             query=path_query,
+#             connection=conn,
+#             schema_overrides={"__path": pl.Utf8}
+#         )
+
+#         if path_df.is_empty():
+#             logging.warning(f"No database records found for directory: {dirpath}")
+#             conn.close()
+#             return
+
+#         total_candidates = len(path_df)
+#         logging.info(f"Found {total_candidates} database records matching path filter")
+
+#         # OPTIMIZATION 2: Pre-filter for existing files only
+#         logging.info("Validating file existence for candidate records...")
+#         candidate_paths = path_df.get_column("__path").to_list()
+#         existing_paths = []
+
+#         for filepath in candidate_paths:
+#             if os.path.exists(filepath):
+#                 existing_paths.append(filepath)
+
+#         existing_count = len(existing_paths)
+#         skipped_count = total_candidates - existing_count
+
+#         if skipped_count > 0:
+#             logging.info(f"Skipped {skipped_count} database entries - records do not match the specified export destination: {dirpath}")
+
+#         if existing_count == 0:
+#             logging.warning(f"No files found on disk for any database records under: {dirpath}")
+#             conn.close()
+#             return
+
+#         logging.info(f"Will process {existing_count} files that exist on disk")
+
+#         # OPTIMIZATION 3: Query only records for existing files
+#         # Build IN clause for existing paths (using parameterized query for safety)
+#         placeholders = ','.join(['?' for _ in existing_paths])
+#         final_query = f"""
+#         SELECT * FROM {TABLE_NAME}
+#         WHERE __path IN ({placeholders})
+#         ORDER BY __path
+#         """
+
+#         logging.info("Executing optimized database query for existing files only...")
+#         df = pl.read_database(
+#             query=final_query,
+#             connection=conn,
+#             execute_options={"parameters": existing_paths},
+#             schema_overrides=table_schema
+#         )
+#         conn.close()
+
+#         logging.info(f"Loaded {len(df)} records for processing")
+
+#         # OPTIMIZATION 4: Vectorized data cleaning
+#         logging.info("Applying vectorized data cleaning...")
+#         df_cleaned = clean_values_vectorized(df)
+
+#         # OPTIMIZATION 5: Memory layout optimization with columnar processing
+#         logging.info("Processing files with memory-optimized columnar operations...")
+#         stats = process_files_columnar(df_cleaned, batch_size=1000)
+
+#         logging.info(f'Export complete. Processed: {stats["processed"]}, '
+#                     f'Errors: {stats["errors"]}, Skipped: {stats["skipped"]}')
+
+#     except Exception as e:
+#         logging.error(f"Error during export: {str(e)}")
+#         raise
+
 def export_db(dbpath: str, dirpath: str) -> None:
     """Export database to audio files using optimized DataFrame operations with file existence pre-filtering."""
     try:
@@ -844,22 +938,35 @@ def export_db(dbpath: str, dirpath: str) -> None:
 
         logging.info(f"Will process {existing_count} files that exist on disk")
 
-        # OPTIMIZATION 3: Query only records for existing files
-        # Build IN clause for existing paths (using parameterized query for safety)
-        placeholders = ','.join(['?' for _ in existing_paths])
-        final_query = f"""
-        SELECT * FROM {TABLE_NAME}
-        WHERE __path IN ({placeholders})
-        ORDER BY __path
-        """
+        # OPTIMIZATION 3: Query records in batches to avoid SQL variable limit
+        batch_size = 500  # Well below SQLite's default 999 variable limit
+        total_batches = (existing_count + batch_size - 1) // batch_size
+        all_dfs = []
 
-        logging.info("Executing optimized database query for existing files only...")
-        df = pl.read_database(
-            query=final_query,
-            connection=conn,
-            execute_options={"parameters": existing_paths},
-            schema_overrides=table_schema
-        )
+        logging.info(f"Querying database in batches of {batch_size}...")
+        for i in range(0, existing_count, batch_size):
+            batch_paths = existing_paths[i:i + batch_size]
+            placeholders = ','.join(['?'] * len(batch_paths))
+            final_query = f"""
+            SELECT * FROM {TABLE_NAME}
+            WHERE __path IN ({placeholders})
+            ORDER BY __path
+            """
+
+            batch_df = pl.read_database(
+                query=final_query,
+                connection=conn,
+                execute_options={"parameters": batch_paths},
+                schema_overrides=table_schema
+            )
+            all_dfs.append(batch_df)
+
+            # Log progress every 10 batches or on last batch
+            if (i // batch_size) % 10 == 0 or (i + batch_size >= existing_count):
+                logging.info(f"Processed batch {i//batch_size + 1}/{total_batches}")
+
+        # Combine all batches into single DataFrame
+        df = pl.concat(all_dfs)
         conn.close()
 
         logging.info(f"Loaded {len(df)} records for processing")
@@ -876,7 +983,9 @@ def export_db(dbpath: str, dirpath: str) -> None:
                     f'Errors: {stats["errors"]}, Skipped: {stats["skipped"]}')
 
     except Exception as e:
-        logging.error(f"Error during export: {str(e)}")
+        logging.error(f"Error during export: {str(e)}", exc_info=True)
+        if 'conn' in locals():
+            conn.close()
         raise
 
 

@@ -3,7 +3,7 @@ Script Name: compilation-polars.py
 
 Purpose:
     Detect and set compilation flags based on directory path patterns:
-        - Check if "__dirpath" contains "/VA - " or "/OST - " after the 2nd last "/"
+        - Check if "__dirpath" contains "/VA/, "/VA - " or "/OST - " after the 2nd last "/"
         - Set compilation = '1' where pattern matches, '0' otherwise
         - Track and write only modified rows
         - Log all changes to a 'changelog' table
@@ -65,7 +65,7 @@ def fetch_data(conn: sqlite3.Connection) -> pl.DataFrame:
 def apply_compilation_detection(df: pl.DataFrame) -> pl.DataFrame:
     """
     Detect compilation albums based on directory path patterns.
-    
+
     Logic: Extract the segment after the last "/" and check if it starts with "VA - " or "OST - "
     """
     # Split the dirpath by "/" and get the last segment (final directory/folder name)
@@ -78,12 +78,14 @@ def apply_compilation_detection(df: pl.DataFrame) -> pl.DataFrame:
         .list.get(-1, null_on_oob=True)
         .alias("last_segment")
     ])
-    
+
     # Check if the last segment starts with "VA - " or "OST - "
     compilation_pattern = pl.col("last_segment").str.starts_with("VA - ") | \
+                         pl.col("last_segment").str.starts_with("/VA/") | \
                          pl.col("last_segment").str.starts_with("Various Artists - ") | \
+                         pl.col("last_segment").str.starts_with("/OST/") | \
                          pl.col("last_segment").str.starts_with("OST - ")
-    
+
     # Set new compilation value based on pattern match
     df = df.with_columns([
         pl.when(compilation_pattern)
@@ -91,19 +93,19 @@ def apply_compilation_detection(df: pl.DataFrame) -> pl.DataFrame:
         .otherwise(pl.lit("0"))
         .alias("new_compilation")
     ])
-    
+
     # Detect changes
     compilation_changed = pl.col("compilation") != pl.col("new_compilation")
-    
+
     # Calculate sqlmodded delta
     sqlmodded_delta = compilation_changed.cast(pl.Int32())
-    
+
     # Update the dataframe with new values
     df = df.with_columns([
         pl.col("new_compilation").alias("compilation"),
         (pl.col("sqlmodded") + sqlmodded_delta).alias("sqlmodded")
     ])
-    
+
     # Drop temporary columns
     return df.drop(["last_segment", "new_compilation"])
 
@@ -121,11 +123,11 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
 
     cursor = conn.cursor()
     conn.execute("BEGIN TRANSACTION")
-    
+
     # Ensure changelog table exists
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
-            rowid INTEGER,
+            alib_rowid INTEGER,
             column TEXT,
             old_value TEXT,
             new_value TEXT,
@@ -147,7 +149,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
             if col in record and record[col] != original_row[col]:
                 changed_cols.append(col)
                 cursor.execute(
-                    "INSERT INTO changelog (rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
                     (rowid, col, original_row[col], record[col], timestamp, script_name)
                 )
 
@@ -169,9 +171,9 @@ def analyze_distinct_dirpaths(df: pl.DataFrame) -> None:
         "__dirpath",
         "compilation"
     ]).unique().sort("__dirpath")
-    
+
     logging.info(f"Found {distinct_paths.height} distinct directory paths")
-    
+
     # Show sample compilation matches
     compilations = distinct_paths.filter(pl.col("compilation") == "1")
     if not compilations.is_empty():
@@ -179,7 +181,7 @@ def analyze_distinct_dirpaths(df: pl.DataFrame) -> None:
         sample_compilations = compilations["__dirpath"].to_list()[:10]
         for path in sample_compilations:
             logging.info(f"  Compilation: {path}")
-    
+
     # Show sample non-compilation paths for comparison
     non_compilations = distinct_paths.filter(pl.col("compilation") == "0")
     if not non_compilations.is_empty():
@@ -211,7 +213,7 @@ def main():
             write_updates(conn, original_df, updated_df)
         else:
             logging.info("No compilation flags needed updating.")
-            
+
     except Exception as e:
         logging.error(f"Error during processing: {e}")
         raise

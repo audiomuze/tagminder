@@ -70,82 +70,82 @@ def fetch_data(conn: sqlite3.Connection) -> pl.DataFrame:
 def apply_discnumber_cleanup(df: pl.DataFrame) -> pl.DataFrame:
     """
     Clean up disc numbers based on directory path analysis.
-    
+
     Steps:
     1. Filter out paths where all discnumber entries are None/empty
     2. Filter out paths matching disc/cd pattern with numbers
     3. Set discnumber to None where all entries for a path are identical
     """
     logging.info("Starting disc number cleanup process...")
-    
+
     # Step 1: Filter out paths where ALL discnumber entries are None/empty for that path
     logging.info("Step 1: Filtering paths with no disc number data...")
-    
+
     # Count non-null discnumbers per path
     path_discnumber_counts = df.group_by("__dirpath").agg([
         pl.col("discnumber").is_not_null().sum().alias("non_null_count"),
         pl.len().alias("total_count")
     ])
-    
+
     # Keep only paths that have at least one non-null discnumber
     paths_with_data = path_discnumber_counts.filter(pl.col("non_null_count") > 0)
     valid_paths = paths_with_data["__dirpath"].to_list()
-    
+
     df_filtered = df.filter(pl.col("__dirpath").is_in(valid_paths))
-    
+
     removed_empty_paths = len(df) - len(df_filtered)
     logging.info(f"Removed {removed_empty_paths} rows from paths with no disc number data")
-    
+
     # Step 2: Filter out paths matching disc/cd patterns
     logging.info("Step 2: Filtering paths matching disc/cd patterns...")
-    
+
     def matches_disc_pattern(path: str) -> bool:
         """Check if path matches cd/disc number patterns."""
         if not path:
             return False
-        
+
         # Extract the last segment of the path (final directory name)
         last_segment = path.split("/")[-1].lower()
-        
+
         # Patterns to match: cdxx, discxx, cd xx, disc xx (case insensitive)
         patterns = [
             r'\bcd\s*\d+\b',      # cd1, cd 1, cd2, etc.
             r'\bdisc\s*\d+\b',    # disc1, disc 1, disc2, etc.
         ]
-        
+
         for pattern in patterns:
             if re.search(pattern, last_segment):
                 return True
         return False
-    
+
     # Apply pattern filtering
     valid_paths_after_pattern = []
     for path in valid_paths:
         if not matches_disc_pattern(path):
             valid_paths_after_pattern.append(path)
-    
+
     df_pattern_filtered = df_filtered.filter(pl.col("__dirpath").is_in(valid_paths_after_pattern))
-    
+
     removed_pattern_paths = len(df_filtered) - len(df_pattern_filtered)
     logging.info(f"Removed {removed_pattern_paths} rows from paths matching disc/cd patterns")
-    
+
     # Step 3: Set discnumber to None where all entries for a path are identical
     logging.info("Step 3: Processing paths with identical disc numbers...")
-    
+
     # For each path, check if all non-null discnumbers are the same
     path_analysis = df_pattern_filtered.group_by("__dirpath").agg([
         pl.col("discnumber").drop_nulls().n_unique().alias("unique_discnumbers"),
         pl.col("discnumber").drop_nulls().first().alias("sample_discnumber"),
         pl.col("discnumber").is_not_null().sum().alias("non_null_count")
     ])
-    
+
     # Identify paths where all discnumbers are identical (unique count = 1)
     identical_disc_paths = path_analysis.filter(
         (pl.col("unique_discnumbers") == 1) & (pl.col("non_null_count") > 0)
     )["__dirpath"].to_list()
-    
+
     logging.info(f"Found {len(identical_disc_paths)} paths with identical disc numbers that will be cleared")
-    
+
     # Create new discnumber column
     df_updated = df_pattern_filtered.with_columns([
         pl.when(pl.col("__dirpath").is_in(identical_disc_paths))
@@ -153,25 +153,25 @@ def apply_discnumber_cleanup(df: pl.DataFrame) -> pl.DataFrame:
         .otherwise(pl.col("discnumber"))
         .alias("new_discnumber")
     ])
-    
+
     # Detect changes
     discnumber_changed = (
         (pl.col("discnumber").is_null() != pl.col("new_discnumber").is_null()) |
         (pl.col("discnumber") != pl.col("new_discnumber"))
     )
-    
+
     # Calculate sqlmodded delta
     sqlmodded_delta = discnumber_changed.cast(pl.Int64())
-    
+
     # Update the dataframe with new values - ensure sqlmodded is never None
     df_updated = df_updated.with_columns([
         pl.col("new_discnumber").alias("discnumber"),
         (pl.col("sqlmodded").fill_null(0) + sqlmodded_delta).alias("sqlmodded")
     ])
-    
+
     # Drop temporary column
     df_final = df_updated.drop(["new_discnumber"])
-    
+
     return df_final
 
 # ---------- Write updates ----------
@@ -180,7 +180,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
     # Find changed rows by comparing the original data with updated data
     # We need to match on rowid since some rows may have been filtered out
     original_dict = {row["rowid"]: row for row in original.to_dicts()}
-    
+
     changed_records = []
     for record in updated.to_dicts():
         rowid = record["rowid"]
@@ -191,7 +191,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
             updated_sqlmodded = record.get("sqlmodded", 0) or 0
             if updated_sqlmodded > original_sqlmodded:
                 changed_records.append(record)
-    
+
     if not changed_records:
         logging.info("No changes to write.")
         return 0
@@ -202,11 +202,11 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
 
     cursor = conn.cursor()
     conn.execute("BEGIN TRANSACTION")
-    
+
     # Ensure changelog table exists
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
-            rowid INTEGER,
+            alib_rowid INTEGER,
             column TEXT,
             old_value TEXT,
             new_value TEXT,
@@ -232,8 +232,8 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
                 if (old_val is None) != (new_val is None) or (old_val != new_val and old_val is not None and new_val is not None):
                     changed_cols.append(col)
                     cursor.execute(
-                        "INSERT INTO changelog (rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
-                        (rowid, col, str(old_val) if old_val is not None else None, 
+                        "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+                        (rowid, col, str(old_val) if old_val is not None else None,
                          str(new_val) if new_val is not None else None, timestamp, script_name)
                     )
 
@@ -252,33 +252,33 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
 # ---------- Analyze distinct dirpaths ----------
 def analyze_distinct_dirpaths(original_df: pl.DataFrame, updated_df: pl.DataFrame) -> None:
     """Log analysis of distinct dirpath patterns and changes for debugging."""
-    
+
     # Analysis of original data
     original_paths = original_df.select("__dirpath").n_unique()
     logging.info(f"Original dataset: {original_df.height} rows across {original_paths} distinct paths")
-    
-    # Analysis of updated data  
+
+    # Analysis of updated data
     updated_paths = updated_df.select("__dirpath").n_unique()
     logging.info(f"After filtering: {updated_df.height} rows across {updated_paths} distinct paths")
-    
+
     # Show sample paths that had disc numbers cleared
     cleared_paths = []
     original_dict = {row["rowid"]: row for row in original_df.to_dicts()}
-    
+
     for record in updated_df.to_dicts():
         rowid = record["rowid"]
         if rowid in original_dict:
             original_record = original_dict[rowid]
-            if (original_record.get("discnumber") is not None and 
+            if (original_record.get("discnumber") is not None and
                 record.get("discnumber") is None):
                 cleared_paths.append((record["__dirpath"], original_record.get("discnumber")))
-    
+
     if cleared_paths:
         unique_cleared = list(set(cleared_paths))[:10]  # Show up to 10 examples
         logging.info(f"Sample paths with disc numbers cleared:")
         for path, old_disc in unique_cleared:
             logging.info(f"  Path: {path} (was disc {old_disc})")
-    
+
     # Count changes by type - use safe comparison
     changes = updated_df.filter(
         pl.col("sqlmodded").fill_null(0) > 0
@@ -312,14 +312,14 @@ def main():
                 updated_sqlmodded = record.get("sqlmodded", 0) or 0
                 if updated_sqlmodded > original_sqlmodded:
                     changed_rows += 1
-        
+
         logging.info(f"Detected {changed_rows} rows with changes")
 
         if changed_rows > 0:
             write_updates(conn, original_df, updated_df)
         else:
             logging.info("No disc numbers needed updating.")
-            
+
     except Exception as e:
         logging.error(f"Error during processing: {e}")
         raise
