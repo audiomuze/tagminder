@@ -685,208 +685,47 @@ def build_path_filter_condition(dirpath: str) -> str:
     # GLOB is case-sensitive and works well for path prefixes
     return f"__path GLOB '{normalized_path}*'"
 
-
-def process_files_columnar(df: pl.DataFrame, batch_size: int = 1000) -> Dict[str, int]:
-    """Process files using columnar operations where possible, with batched row operations.
-    Only exports tags that don't begin with '__'.
-
-    Args:
-        df: DataFrame with cleaned tag data
-        batch_size: Number of files to process per batch
-
-    Returns:
-        Dictionary with processing statistics
-    """
+def process_files(df: pl.DataFrame, preserve_mtime: bool) -> dict:
     stats = {"processed": 0, "errors": 0, "skipped": 0}
+    tag_cols = [col for col in df.columns if not col.startswith('__')]
 
-    # Pre-filter to only get non-__ tag columns for export
-    exportable_columns = [col for col in ALBUM_INFO_SCHEMA.keys()
-                         if not col.startswith('__')]
+    for row in df.iter_rows(named=True):
+        try:
+            if not os.path.exists(row["__path"]):
+                stats["skipped"] += 1
+                continue
 
-    logging.info(f"Will export {len(exportable_columns)} tag fields (excluding __ fields)")
+            tag = audioinfo.Tag(row["__path"])
+            for col in tag_cols:
+                if (val := row[col]) is not None:
+                    tag[col] = val.split('\\\\') if '\\\\' in str(val) else val
 
-    # Process in batches to balance memory usage and performance
-    total_rows = len(df)
-    for batch_start in range(0, total_rows, batch_size):
-        batch_end = min(batch_start + batch_size, total_rows)
+            tag.save()
 
-        # Extract batch data using columnar operations
-        batch_df = df.slice(batch_start, batch_end - batch_start)
-
-        # Pre-extract filepaths
-        filepaths = batch_df.get_column("__path").to_list()
-
-        # Pre-extract ONLY exportable tag columns (no __ fields)
-        tag_columns = {}
-        for col in exportable_columns:
-            if col in batch_df.columns:
-                tag_columns[col] = batch_df.get_column(col).to_list()
-            else:
-                tag_columns[col] = [None] * len(batch_df)
-
-        # Process each file in the batch
-        for i, filepath in enumerate(filepaths):
-            try:
-                # Verify the file exists at the database path
-                if not os.path.exists(filepath):
-                    stats["skipped"] += 1
-                    logging.warning(f'File not found, skipping: {filepath}')
-                    continue
-
-                # Build tag dictionary from ONLY exportable columns (no __ fields)
-                tag_values = {col: tag_columns[col][i] for col in exportable_columns}
-
-                # WORKAROUND: Change working directory to file's directory to avoid filepath issues
-                original_cwd = os.getcwd()
-                file_dir = os.path.dirname(filepath)
-                filename = os.path.basename(filepath)
-
+            if preserve_mtime:
                 try:
-                    os.chdir(file_dir)
+                    mtime = float(row["__file_mod_datetime_raw"])
+                    os.utime(row["__path"], times=(mtime, mtime))
+                except Exception as e:
+                        logging.warning(f"Could not preserve mtime for {row['__path']}: {str(e)}")
 
-                    # Load the file using just the filename to avoid path issues
-                    tag = audioinfo.Tag(filename)
+            stats["processed"] += 1
 
-                    # Clear existing NON-__ tags (preserve internal audioinfo fields)
-                    tag_keys_to_remove = [key for key in tag.keys() if not key.startswith('__')]
-                    for key in tag_keys_to_remove:
-                        del tag[key]
-
-                    # Set new values from database (all are already non-__ fields)
-                    for key, value in tag_values.items():
-                        if value is None or value == "":
-                            # Skip empty/null values (already cleared above)
-                            continue
-                        else:
-                            # Handle multi-value fields (those with backslash separators)
-                            if isinstance(value, str) and '\\' in value and not key.endswith('path'):
-                                # Split on single backslash and create list
-                                tag[key] = value.split('\\')
-                            else:
-                                tag[key] = value
-
-                    # Save the file
-                    tag.save()
-
-                finally:
-                    # Always restore original working directory
-                    os.chdir(original_cwd)
-
-                stats["processed"] += 1
-
-            except Exception as e:
-                stats["errors"] += 1
-                logging.error(f'Could not update {filepath}: {str(e)}')
-
-        # Progress logging per batch
-        if batch_end % 5000 == 0 or batch_end == total_rows:
-            logging.info(f'Processed {batch_end}/{total_rows} files...')
+        except Exception as e:
+            stats["errors"] += 1
+            logging.error(f"Failed {row['__path']}: {str(e)}")
 
     return stats
 
 
-# def export_db(dbpath: str, dirpath: str) -> None:
-#     """Export database to audio files using optimized DataFrame operations with file existence pre-filtering."""
-#     try:
-#         # Connect to database
-#         logging.info(f"Reading database from {dbpath}...")
-#         conn = sqlite3.connect(dbpath, detect_types=sqlite3.PARSE_DECLTYPES)
-
-#         # OPTIMIZATION 1: Get candidate records with path filtering
-#         path_condition = build_path_filter_condition(dirpath)
-
-#         # Query schema to build explicit schema for Polars
-#         schema_query = f"PRAGMA table_info({TABLE_NAME})"
-#         schema_df = pl.read_database(query=schema_query, connection=conn)
-#         table_schema = {col_name: pl.Utf8 for col_name in schema_df["name"]}
-
-#         # First, get just the paths to validate file existence
-#         path_query = f"""
-#         SELECT __path FROM {TABLE_NAME}
-#         WHERE {path_condition}
-#         ORDER BY __path
-#         """
-
-#         logging.info("Querying candidate file paths...")
-#         path_df = pl.read_database(
-#             query=path_query,
-#             connection=conn,
-#             schema_overrides={"__path": pl.Utf8}
-#         )
-
-#         if path_df.is_empty():
-#             logging.warning(f"No database records found for directory: {dirpath}")
-#             conn.close()
-#             return
-
-#         total_candidates = len(path_df)
-#         logging.info(f"Found {total_candidates} database records matching path filter")
-
-#         # OPTIMIZATION 2: Pre-filter for existing files only
-#         logging.info("Validating file existence for candidate records...")
-#         candidate_paths = path_df.get_column("__path").to_list()
-#         existing_paths = []
-
-#         for filepath in candidate_paths:
-#             if os.path.exists(filepath):
-#                 existing_paths.append(filepath)
-
-#         existing_count = len(existing_paths)
-#         skipped_count = total_candidates - existing_count
-
-#         if skipped_count > 0:
-#             logging.info(f"Skipped {skipped_count} database entries - records do not match the specified export destination: {dirpath}")
-
-#         if existing_count == 0:
-#             logging.warning(f"No files found on disk for any database records under: {dirpath}")
-#             conn.close()
-#             return
-
-#         logging.info(f"Will process {existing_count} files that exist on disk")
-
-#         # OPTIMIZATION 3: Query only records for existing files
-#         # Build IN clause for existing paths (using parameterized query for safety)
-#         placeholders = ','.join(['?' for _ in existing_paths])
-#         final_query = f"""
-#         SELECT * FROM {TABLE_NAME}
-#         WHERE __path IN ({placeholders})
-#         ORDER BY __path
-#         """
-
-#         logging.info("Executing optimized database query for existing files only...")
-#         df = pl.read_database(
-#             query=final_query,
-#             connection=conn,
-#             execute_options={"parameters": existing_paths},
-#             schema_overrides=table_schema
-#         )
-#         conn.close()
-
-#         logging.info(f"Loaded {len(df)} records for processing")
-
-#         # OPTIMIZATION 4: Vectorized data cleaning
-#         logging.info("Applying vectorized data cleaning...")
-#         df_cleaned = clean_values_vectorized(df)
-
-#         # OPTIMIZATION 5: Memory layout optimization with columnar processing
-#         logging.info("Processing files with memory-optimized columnar operations...")
-#         stats = process_files_columnar(df_cleaned, batch_size=1000)
-
-#         logging.info(f'Export complete. Processed: {stats["processed"]}, '
-#                     f'Errors: {stats["errors"]}, Skipped: {stats["skipped"]}')
-
-#     except Exception as e:
-#         logging.error(f"Error during export: {str(e)}")
-#         raise
-
-def export_db(dbpath: str, dirpath: str) -> None:
-    """Export database to audio files using optimized DataFrame operations with file existence pre-filtering."""
+def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
+    """Export database to audio files using optimized DataFrame operations with improved path handling."""
     try:
         # Connect to database
         logging.info(f"Reading database from {dbpath}...")
         conn = sqlite3.connect(dbpath, detect_types=sqlite3.PARSE_DECLTYPES)
 
-        # OPTIMIZATION 1: Get candidate records with path filtering
+        # Build path filter condition
         path_condition = build_path_filter_condition(dirpath)
 
         # Query schema to build explicit schema for Polars
@@ -916,7 +755,7 @@ def export_db(dbpath: str, dirpath: str) -> None:
         total_candidates = len(path_df)
         logging.info(f"Found {total_candidates} database records matching path filter")
 
-        # OPTIMIZATION 2: Pre-filter for existing files only
+        # Pre-filter for existing files only
         logging.info("Validating file existence for candidate records...")
         candidate_paths = path_df.get_column("__path").to_list()
         existing_paths = []
@@ -929,7 +768,7 @@ def export_db(dbpath: str, dirpath: str) -> None:
         skipped_count = total_candidates - existing_count
 
         if skipped_count > 0:
-            logging.info(f"Skipped {skipped_count} database entries - records do not match the specified export destination: {dirpath}")
+            logging.info(f"Skipped {skipped_count} database entries - files not found on disk")
 
         if existing_count == 0:
             logging.warning(f"No files found on disk for any database records under: {dirpath}")
@@ -938,7 +777,7 @@ def export_db(dbpath: str, dirpath: str) -> None:
 
         logging.info(f"Will process {existing_count} files that exist on disk")
 
-        # OPTIMIZATION 3: Query records in batches to avoid SQL variable limit
+        # Query records in batches to avoid SQL variable limit
         batch_size = 500  # Well below SQLite's default 999 variable limit
         total_batches = (existing_count + batch_size - 1) // batch_size
         all_dfs = []
@@ -965,19 +804,19 @@ def export_db(dbpath: str, dirpath: str) -> None:
             if (i // batch_size) % 10 == 0 or (i + batch_size >= existing_count):
                 logging.info(f"Processed batch {i//batch_size + 1}/{total_batches}")
 
-        # Combine all batches into single DataFrame
+        # Combine all batches into single DataFrame - already sorted by __path
         df = pl.concat(all_dfs)
         conn.close()
 
-        logging.info(f"Loaded {len(df)} records for processing")
+        logging.info(f"Loaded {len(df)} records for processing (sorted by __path for locality)")
 
-        # OPTIMIZATION 4: Vectorized data cleaning
+        # Vectorized data cleaning
         logging.info("Applying vectorized data cleaning...")
         df_cleaned = clean_values_vectorized(df)
 
-        # OPTIMIZATION 5: Memory layout optimization with columnar processing
-        logging.info("Processing files with memory-optimized columnar operations...")
-        stats = process_files_columnar(df_cleaned, batch_size=1000)
+        # Memory layout optimization with columnar processing
+        logging.info("Processing files with optimized path handling...")
+        stats = process_files_with_directory_grouping(df_cleaned, batch_size=1000)
 
         logging.info(f'Export complete. Processed: {stats["processed"]}, '
                     f'Errors: {stats["errors"]}, Skipped: {stats["skipped"]}')
@@ -987,6 +826,95 @@ def export_db(dbpath: str, dirpath: str) -> None:
         if 'conn' in locals():
             conn.close()
         raise
+
+
+def process_files_with_directory_grouping(df: pl.DataFrame, batch_size: int = 1000) -> Dict[str, int]:
+    """Alternative approach: Group by directory for even better locality.
+
+    This version processes files directory by directory, which can be even more
+    efficient for disk I/O patterns.
+    """
+    stats = {"processed": 0, "errors": 0, "skipped": 0}
+
+    # Get exportable columns
+    exportable_columns = [col for col in df.columns if not col.startswith('__')]
+    logging.info(f"Will export {len(exportable_columns)} tag fields (excluding __ fields)")
+
+    # Group by __dirpath if available, otherwise extract from __path
+    if "__dirpath" in df.columns:
+        # Use the existing __dirpath column for grouping
+        grouped = df.group_by("__dirpath", maintain_order=True)
+    else:
+        # Fallback: extract directory from __path
+        df = df.with_columns(
+            pl.col("__path").map_elements(lambda x: os.path.dirname(x), return_dtype=pl.Utf8).alias("__dirpath")
+        )
+        grouped = df.group_by("__dirpath", maintain_order=True)
+
+    # Get the groups as a dictionary
+    dir_groups = dict(grouped)
+
+    total_directories = len(dir_groups)
+    processed_directories = 0
+
+    logging.info(f"Processing {len(df)} files across {total_directories} directories")
+
+    # Process each directory group
+    for dirpath, dir_df in dir_groups.items():
+        try:
+            # Process files in this directory
+            filepaths = dir_df.get_column("__path").to_list()
+
+            # Pre-extract tag data for this directory
+            tag_columns = {}
+            for col in exportable_columns:
+                tag_columns[col] = dir_df.get_column(col).to_list()
+
+            # Process each file in the directory
+            for i, filepath in enumerate(filepaths):
+                try:
+                    if not os.path.exists(filepath):
+                        stats["skipped"] += 1
+                        logging.warning(f'File not found, skipping: {filepath}')
+                        continue
+
+                    # Build tag dictionary
+                    tag_values = {col: tag_columns[col][i] for col in exportable_columns}
+
+                    # Process the file using full path
+                    tag = audioinfo.Tag(filepath)
+
+                    # Update tags
+                    for key, value in tag_values.items():
+                        if value is None or (isinstance(value, str) and value.strip() == ""):
+                            if key in tag:
+                                del tag[key]
+                        elif isinstance(value, str) and '\\\\' in value:
+                            tag[key] = value.split('\\\\')
+                        elif isinstance(value, str) and '\\' in value and not key.endswith('path'):
+                            tag[key] = value.split('\\')
+                        else:
+                            tag[key] = value
+
+                    tag.save()
+                    stats["processed"] += 1
+
+                except Exception as e:
+                    stats["errors"] += 1
+                    logging.error(f'Could not update {filepath}: {str(e)}')
+
+            processed_directories += 1
+
+            # Progress logging
+            if processed_directories % 100 == 0 or processed_directories == total_directories:
+                logging.info(f'Processed {processed_directories}/{total_directories} directories '
+                           f'({stats["processed"]} files so far)...')
+
+        except Exception as e:
+            logging.error(f'Error processing directory {dirpath}: {str(e)}')
+            continue
+
+    return stats
 
 
 def setup_logging(level: str) -> None:
@@ -1042,6 +970,7 @@ def main() -> None:
 
     # Export subcommand
     export_parser = subparsers.add_parser('export', help='Export database to audio files')
+    export_parser.add_argument('--ignore-lastmodded',action='store_true',help="Don't preserve last modification timestamps when writing tags to file")
     export_parser.add_argument('dbpath', help='Path to SQLite database')
     export_parser.add_argument('musicdir', help='Path to music directory to export to')
 
@@ -1094,7 +1023,7 @@ def main() -> None:
             musicdir_resolved = os.path.realpath(musicdir_for_export)
 
             logging.info(f"Starting export operation filtered by music directory: {musicdir_resolved}")
-            export_db(dbpath, musicdir_resolved)
+            export_db(dbpath, musicdir_resolved, preserve_mtime=not args.ignore_lastmodded)
 
     except Exception as e:
         logging.error(f"An unhandled error occurred during script execution: {str(e)}", exc_info=True)
