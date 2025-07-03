@@ -25,6 +25,15 @@ CACHE_DIR = '/tmp/amg_cache'
 SIMILARITY_THRESHOLD = 0.95
 NUM_CORES = 12
 
+# Be explicit about schema to avoid Polars inferencing
+ALIB_SCHEMA = {
+    'rowid': pl.Int64,
+    '__path': pl.Utf8,
+    'genre': pl.Utf8,
+    'style': pl.Utf8,
+    'sqlmodded': pl.Int16  # Unlikely to ever even get to 999
+}
+
 # --- hard-coded replacement mapping ---
 HARD_CODED_REPLACEMENTS = {
     'acoustic': 'Singer/Songwriter',
@@ -155,51 +164,6 @@ def intelligent_pre_filter(raw_tags: List[str], valid_tags: Set[str]) -> tuple[L
 
     return fuzzy_candidates, exact_matches
 
-# --- OPTIMIZED: batch string_grouper processing ---
-# def optimized_string_grouper_matching(
-#     fuzzy_candidates: List[str],
-#     valid_tags: Set[str],
-#     similarity_threshold: float = SIMILARITY_THRESHOLD,
-#     batch_size: int = 5000  # Process in smaller batches to manage memory
-# ) -> Dict[str, str]:
-#     """
-#     Process string_grouper in optimized batches to manage memory and improve performance.
-#     """
-#     if not fuzzy_candidates:
-#         return {}
-
-#     all_matches = {}
-#     valid_tags_series = pd.Series(list(valid_tags), dtype="string")
-
-#     # Process in batches to manage memory and potentially parallelize
-#     for i in range(0, len(fuzzy_candidates), batch_size):
-#         batch = fuzzy_candidates[i:i + batch_size]
-#         logging.info(f"Processing string_grouper batch {i//batch_size + 1}/{(len(fuzzy_candidates)-1)//batch_size + 1}")
-
-#         try:
-#             batch_series = pd.Series(batch, dtype="string")
-
-#             # FIX: Use n_jobs instead of n_blocks
-#             matches = match_strings(
-#                 batch_series,
-#                 valid_tags_series,
-#                 min_similarity=similarity_threshold,
-#                 max_n_matches=1,  # Only need best match
-#                 ignore_index=True,  # Faster processing
-#                 n_jobs=NUM_CORES  # FIXED: was n_blocks
-#             )
-
-#             # Process results
-#             if not matches.empty:
-#                 for _, row in matches.iterrows():
-#                     all_matches[row["left_side"]] = row["right_side"]
-
-#         except Exception as e:
-#             logging.error(f"Error in string_grouper batch processing: {e}")
-#             # Continue with other batches
-#             continue
-
-#     return all_matches
 
 def optimized_string_grouper_matching(
     fuzzy_candidates: List[str],
@@ -231,7 +195,8 @@ def optimized_string_grouper_matching(
                 min_similarity=similarity_threshold,
                 max_n_matches=1,  # Only need best match
                 ignore_index=True,  # Faster processing
-                n_blocks=NUM_CORES  # Changed from n_jobs to n_blocks
+                # n_blocks=NUM_CORES  # Changed from n_jobs to n_blocks
+                n_jobs=min(NUM_CORES, len(batch))
             )
 
             # Process results
@@ -378,7 +343,8 @@ def collect_tags_python_fallback(conn: sqlite3.Connection) -> List[str]:
     """Fallback Python-based tag collection if SQL method fails."""
     query = f"SELECT genre, style FROM {ALIB_TABLE} WHERE genre IS NOT NULL OR style IS NOT NULL"
 
-    df = pl.read_database(query, conn)
+    # df = pl.read_database(query, conn)
+    df = pl.read_database(query, conn, schema_overrides={'genre': pl.Utf8, 'style': pl.Utf8})
 
     all_tags = set()
 
@@ -488,6 +454,7 @@ def process_tags_vectorized(
         """Split, clean, and normalize tags in vectorized fashion."""
         return (
             series
+            .cast(pl.Utf8)
             .fill_null("")
             .str.replace_all(DELIMITER_PATTERN.pattern, DELIMITER, literal=False)
             .str.split(DELIMITER)
@@ -535,13 +502,23 @@ def process_tags_vectorized(
         ])
         .with_columns([
             # Create separate cleaned genre and style fields
+            # pl.when(pl.col("mapped_genre").list.len() == 0)
+            # .then(None)
+            # .otherwise(pl.col("mapped_genre").list.join(DELIMITER))
+            # .alias("new_genre"),
+
+            # pl.when(pl.col("mapped_style").list.len() == 0)
+            # .then(None)
+            # .otherwise(pl.col("mapped_style").list.join(DELIMITER))
+            # .alias("new_style")
+
             pl.when(pl.col("mapped_genre").list.len() == 0)
-            .then(None)
+            .then(pl.lit(None, dtype=pl.Utf8))
             .otherwise(pl.col("mapped_genre").list.join(DELIMITER))
             .alias("new_genre"),
 
             pl.when(pl.col("mapped_style").list.len() == 0)
-            .then(None)
+            .then(pl.lit(None, dtype=pl.Utf8))
             .otherwise(pl.col("mapped_style").list.join(DELIMITER))
             .alias("new_style")
         ])
@@ -729,12 +706,20 @@ def main():
                 break
 
             # Convert to Polars DataFrame
+            # df = pl.DataFrame({
+            #     'rowid': [r[0] for r in rows],
+            #     '__path': [r[1] for r in rows],
+            #     'genre': [r[2] for r in rows],
+            #     'style': [r[3] for r in rows],
+            #     'sqlmodded': [r[4] for r in rows]
+            # })
+
             df = pl.DataFrame({
-                'rowid': [r[0] for r in rows],
-                '__path': [r[1] for r in rows],
-                'genre': [r[2] for r in rows],
-                'style': [r[3] for r in rows],
-                'sqlmodded': [r[4] for r in rows]
+                'rowid': pl.Series([r[0] for r in rows], dtype=pl.Int64),
+                '__path': pl.Series([r[1] for r in rows], dtype=pl.Utf8),
+                'genre': pl.Series([r[2] for r in rows], dtype=pl.Utf8),
+                'style': pl.Series([r[3] for r in rows], dtype=pl.Utf8),
+                'sqlmodded': pl.Series([r[4] for r in rows], dtype=pl.Int16)
             })
 
             # Process tags using string_grouper results
