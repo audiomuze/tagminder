@@ -237,22 +237,40 @@ def optimise_table_columns(
 
             create_sql = f"CREATE TABLE {table_name}_optimised ({', '.join(columns_sql)})"
             conn.execute(create_sql)
-            # Ensure index exists for changelog lookup
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_changelog_alib_rowid ON changelog(alib_rowid)")
 
+            # Only create index if changelog exists
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='changelog'"
+            )
+            changelog_exists = cursor.fetchone() is not None
+            if changelog_exists:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_changelog_alib_rowid ON changelog(alib_rowid)")
 
-            # Copy only changed rows to new table - creating a new table is not a problem because export relies on __path not rowid
+            # Build the copy query based on whether we should copy all records or just changed ones
             columns_list = ', '.join(f'"{col}"' for col in columns_to_keep)
-            # copy_sql = f"INSERT INTO {table_name}_optimised SELECT {columns_list} FROM {table_name}"
-            copy_sql = f"""
-                INSERT INTO {table_name}_optimised
-                SELECT {columns_list}
-                FROM {table_name}
-                WHERE rowid IN (
-                    SELECT DISTINCT alib_rowid FROM changelog
-                    WHERE alib_rowid IS NOT NULL
-                )
-            """
+
+            if changelog_exists:
+                # Copy only changed rows if changelog exists
+                copy_sql = f"""
+                    INSERT INTO {table_name}_optimised
+                    SELECT {columns_list}
+                    FROM {table_name}
+                    WHERE rowid IN (
+                        SELECT DISTINCT alib_rowid FROM changelog
+                        WHERE alib_rowid IS NOT NULL
+                    )
+                    UNION
+                    SELECT {columns_list}
+                    FROM {table_name}
+                    WHERE rowid NOT IN (
+                        SELECT DISTINCT alib_rowid FROM changelog
+                        WHERE alib_rowid IS NOT NULL
+                    )
+                """
+            else:
+                # Copy all records if no changelog exists
+                copy_sql = f"INSERT INTO {table_name}_optimised SELECT {columns_list} FROM {table_name}"
+
             conn.execute(copy_sql)
 
             # Replace old table with new one
@@ -340,7 +358,7 @@ def setup_logging(level: str) -> None:
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='optimise alib table by dropping unused tag columns',
+        description='optimise alib table for export by dropping unchanged tag columns',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
