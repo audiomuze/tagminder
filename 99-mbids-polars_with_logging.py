@@ -34,38 +34,94 @@ import logging
 from typing import List, Dict, Set, Optional, Tuple, Any
 from datetime import datetime, timezone
 import numpy as np
+import unicodedata
 
 # ---------- Logging ----------
+# logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# def normalize_entity_series(series: pl.Series) -> pl.Series:
+#     """Consistent vectorized normalization for all text processing"""
+#     return (
+#         series.str.to_lowercase()
+#         .str.replace_all(r"^\s+|\s+$", "")
+#         .str.replace('"', '')
+#         .map_elements(
+#             lambda x: unicodedata.normalize('NFKD', x) if x else None,
+#             return_dtype=pl.Utf8
+#         )
+#     )
+
+
+# def normalize_text_series(series: pl.Series) -> pl.Series:
+#     """Vectorized normalization with type guards"""
+#     if series.dtype != pl.Utf8:
+#         raise TypeError(f"Expected pl.Utf8, got {series.dtype}")
+
+#     return (
+#         series.str.to_lowercase()
+#         .str.strip()
+#         .str.replace_all(r"\s+", " ")  # Normalize internal whitespace
+#         .map_elements(
+#             lambda x: unicodedata.normalize('NFKD', x) if x else None,
+#             return_dtype=pl.Utf8  # Preserve type
+#         )
+#     )
+
+
+def normalize_string(text: str) -> str:
+    """
+    A single, consistent normalization function for all entity names.
+    Handles case, whitespace, quotes, and diacritics.
+    """
+    if not isinstance(text, str):
+        return ""
+    # 1. Normalize unicode characters (diacritics)
+    text = unicodedata.normalize('NFKD', text)
+    # 2. Convert to lowercase
+    text = text.lower()
+    # 3. Remove double quotes
+    text = text.replace('"', '')
+    # 4. Normalize all whitespace (leading, trailing, and internal)
+    text = " ".join(text.split())
+    return text
 
 def load_dataframes(conn: sqlite3.Connection) -> Tuple[Dict[str, str], int]:
     """
-    Load contributors dictionary and count rows in alib
-
-    Args:
-        conn: SQLite database connection
-
-    Returns:
-        Tuple of (contributors dictionary, total alib rows)
+    Load and normalize MusicBrainz reference data with strict typing
+    Modified to use the centralized normalize_entity_series function
     """
-    logging.info("Loading contributors dictionary from _REF_mb_disambiguated...")
+    logging.info("Loading contributors dictionary with vectorized normalization...")
 
-    # Use polars to load contributors
-    query = "SELECT lentity, mbid FROM _REF_mb_disambiguated"
-    df_contributors = pl.read_database(query, conn, schema_overrides={
-        "lentity": pl.Utf8,
-        "mbid": pl.Utf8
-    })
+    # 1. Load reference data with strict UTF-8 typing
+    df_contributors = pl.read_database(
+        "SELECT entity, mbid FROM _REF_mb_disambiguated",
+        conn,
+        schema_overrides={
+            "entity": pl.Utf8,
+            "mbid": pl.Utf8
+        }
+    )
 
-    # Convert to dictionary for faster lookups
-    contributors_dict = dict(zip(df_contributors['lentity'].to_list(), df_contributors['mbid'].to_list()))
-    logging.info(f"Loaded {len(contributors_dict)} contributors from reference table")
+    # 2. Apply consistent vectorized normalization
+    df_contributors = df_contributors.with_columns(
+        pl.col("entity").map_elements(
+            normalize_string,
+            return_dtype=pl.Utf8
+        ).alias("norm_entity")
+    )
+    # 3. Create optimized lookup dictionary
+    contributors_dict = dict(
+        zip(
+            df_contributors["norm_entity"].to_list(),
+            df_contributors["mbid"].to_list()
+        )
+    )
+    logging.info(f"Loaded {len(contributors_dict)} normalized contributors")
 
-    # Get total count of alib rows
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM alib")
-    total_rows = cursor.fetchone()[0]
-    logging.info(f"Total rows in alib: {total_rows}")
+    # 4. Get total rows count
+    total_rows = conn.execute("SELECT COUNT(*) FROM alib").fetchone()[0]
+    logging.info(f"Total alib rows: {total_rows}")
 
     return contributors_dict, total_rows
 
@@ -109,23 +165,26 @@ def log_change_to_changelog(cursor: sqlite3.Cursor, rowid: int, column: str,
         (rowid, column, old_value, new_value, timestamp, script_name)
     )
 
-def process_chunk(conn: sqlite3.Connection, contributors_dict: Dict[str, str],
-                 offset: int, chunk_size: int) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, int]]]:
+
+def process_chunk(conn: sqlite3.Connection,
+                contributors_dict: Dict[str, str],
+                offset: int,
+                chunk_size: int) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, int]]]:
     """
-    Process a chunk of the database using Polars
+    Process a chunk of records with vectorized MBID matching
 
     Args:
-        conn: SQLite database connection
-        contributors_dict: Dictionary mapping lowercase entity names to MusicBrainz IDs
-        offset: Starting offset for this chunk
-        chunk_size: Size of the chunk
+        conn: Database connection
+        contributors_dict: Normalized {entity: mbid} mapping
+        offset: Chunk starting position
+        chunk_size: Number of rows to process
 
     Returns:
-        Tuple of (updates list, statistics dictionary)
+        Tuple of (updates, statistics)
     """
-    logging.info(f"Processing chunk: rows {offset} to {offset + chunk_size}")
+    logging.info(f"Processing chunk {offset}-{offset+chunk_size} with vectorized operations")
 
-    # Define field mappings
+        # 1. Define field mappings and schema
     fields = {
         'artist': 'musicbrainz_artistid',
         'albumartist': 'musicbrainz_albumartistid',
@@ -134,27 +193,6 @@ def process_chunk(conn: sqlite3.Connection, contributors_dict: Dict[str, str],
         'producer': 'musicbrainz_producerid'
     }
 
-    # Initialize statistics counters
-    stats = {
-        'additions': {},  # Empty to non-empty
-        'corrections': {}  # Non-empty to different non-empty
-    }
-
-    # Get chunk with pre-filtering and include sqlmodded field
-    query = f"""
-        SELECT rowid, artist, albumartist, composer, engineer, producer,
-               musicbrainz_artistid, musicbrainz_albumartistid,
-               musicbrainz_composerid, musicbrainz_engineerid, musicbrainz_producerid,
-               COALESCE(sqlmodded, 0) AS sqlmodded
-        FROM alib
-        WHERE (artist IS NOT NULL OR albumartist IS NOT NULL OR
-              composer IS NOT NULL OR engineer IS NOT NULL OR
-              producer IS NOT NULL)
-        ORDER BY rowid
-        LIMIT {chunk_size} OFFSET {offset}
-    """
-
-    # Define schema with explicit types
     schema = {
         "rowid": pl.Int64,
         "artist": pl.Utf8,
@@ -170,86 +208,99 @@ def process_chunk(conn: sqlite3.Connection, contributors_dict: Dict[str, str],
         "sqlmodded": pl.Int64
     }
 
-    df_chunk = pl.read_database(query, conn, schema_overrides=schema)
-    logging.info(f"Loaded {df_chunk.height} rows for processing in this chunk")
+    # 2. Load chunk with consistent vectorized normalization
+    query = f"""
+        SELECT rowid, artist, albumartist, composer, engineer, producer,
+               musicbrainz_artistid, musicbrainz_albumartistid,
+               musicbrainz_composerid, musicbrainz_engineerid, musicbrainz_producerid,
+               COALESCE(sqlmodded, 0) AS sqlmodded
+        FROM alib
+        WHERE (artist IS NOT NULL OR albumartist IS NOT NULL OR
+              composer IS NOT NULL OR engineer IS NOT NULL OR
+              producer IS NOT NULL)
+        ORDER BY rowid
+        LIMIT {chunk_size} OFFSET {offset}
+    """
 
-    # Process each row and collect updates
-    updates_by_rowid = {}
+    df = pl.read_database(query, conn, schema_overrides=schema).with_columns(
+        *[
+            normalize_entity_series(pl.col(field)).alias(f"norm_{field}")
+            for field in fields.keys()
+        ]
+    )
 
-    # Convert to dicts for row processing
-    for row in df_chunk.iter_rows(named=True):
-        changes_in_row = 0  # Track changes for this row to increment sqlmodded
 
-        for field, mbid_field in fields.items():
-            value = row[field]
-            if value is None:
-                continue
+    # 3. Vectorized MBID matching
+    updates = []
+    stats = {'additions': defaultdict(int), 'corrections': defaultdict(int)}
 
-            # Split the value and match entities
-            entities = [e.strip().lower() for e in str(value).split('\\\\')]
-            matched_mbids = []
+    for field, mbid_field in fields.items():
+        norm_col = f"norm_{field}"
+        current_col = mbid_field
 
-            for entity in entities:
-                if entity in contributors_dict:
-                    matched_mbids.append(contributors_dict[entity])
-                else:
-                    matched_mbids.append('') # (add '' so Mutagen writes an empty tag and Lyrion inteprets it as a blank delimited value)
+        # Split, lookup, and join MBIDs
+        df = df.with_columns(
+                    pl.col(norm_col)
+                    .str.split("\\\\")
+                    .list.eval(
+                        pl.element()
+                        .map_elements(
+                            lambda x: contributors_dict.get(
+                                unicodedata.normalize('NFKD', x.lower().strip().replace('"', '')),
+                                ""  # Default if not found
+                            ),
+                            return_dtype=pl.Utf8
+                        )
+                    )
+                    .list.join("\\\\")
+                    .alias(f"new_{mbid_field}")
+                )
 
-            if not matched_mbids:
-                continue
+        # Enhanced change detection to handle empty/quote cases
+        df = df.with_columns(
+            (pl.col(f"new_{mbid_field}") != pl.col(current_col))
+            & (pl.col(f"new_{mbid_field}").is_not_null())
+            & ~(  # Not the case where current is just quotes
+                pl.col(current_col).str.replace('"', '').is_null() &
+                pl.col(f"new_{mbid_field}").eq("")
+            )
+            .alias(f"change_{mbid_field}")
+        )
 
-            new_value = '\\\\'.join(matched_mbids)
-            # If new_value consists only of backslashes, set to None
-            if new_value and new_value.replace('\\', '') == '':
-                new_value = None
+        # Update stats - handle both NULL and "" cases as additions
+        change_counts = df.filter(pl.col(f"change_{mbid_field}")).group_by(
+            (pl.col(current_col).is_null() |
+             (pl.col(current_col).str.replace('"', '').is_null()))
+            .alias("was_empty")
+        ).agg(
+            pl.count().alias("count")
+        ).to_dicts()
 
-            # Check current value
-            current_mbid = row[mbid_field]
-            # is_current_empty = current_mbid is None or (isinstance(current_mbid, str) and current_mbid.strip() == '')
-            is_current_empty = current_mbid is None or (isinstance(current_mbid, str) and current_mbid.strip() == '') or current_mbid == '""'
-
-            # Determine if this is an addition or correction
-            update_needed = False
-
-            if is_current_empty and new_value:
-                # Empty to non-empty = addition
-                field_type = field
-                stats['additions'][field_type] = stats['additions'].get(field_type, 0) + 1
-                update_needed = True
-                changes_in_row += 1
-            elif not is_current_empty and new_value != str(current_mbid).strip():
-                # Non-empty to different = correction
-                field_type = field
-                stats['corrections'][field_type] = stats['corrections'].get(field_type, 0) + 1
-                update_needed = True
-                changes_in_row += 1
-
-            if update_needed:
-                rowid = row['rowid']
-                if rowid not in updates_by_rowid:
-                    updates_by_rowid[rowid] = {'rowid': rowid, 'old_values': {}}
-                updates_by_rowid[rowid][mbid_field] = new_value
-                # Store old value for changelog
-                updates_by_rowid[rowid]['old_values'][mbid_field] = current_mbid
-
-        # If there were changes in this row, increment sqlmodded
-        if changes_in_row > 0:
-            rowid = row['rowid']
-            current_sqlmodded = row['sqlmodded']
-            new_sqlmodded = current_sqlmodded + changes_in_row
-
-            if rowid not in updates_by_rowid:
-                updates_by_rowid[rowid] = {'rowid': rowid, 'old_values': {}}
-
-            # Only include sqlmodded if it's > 0
-            if new_sqlmodded > 0:
-                updates_by_rowid[rowid]['sqlmodded'] = new_sqlmodded
+        for count in change_counts:
+            if count['was_empty']:
+                stats['additions'][field] += count['count']
             else:
-                # Set to NULL explicitly if 0
-                updates_by_rowid[rowid]['sqlmodded'] = None
+                stats['corrections'][field] += count['count']
 
-    logging.info(f"Chunk processing complete: {len(updates_by_rowid)} rows need updates")
-    return list(updates_by_rowid.values()), stats
+    # 4. Prepare updates for changed rows
+    changed_rows = df.filter(
+        sum(pl.col(f"change_{mbid_field}").cast(pl.Int8)
+        for mbid_field in fields.values()
+    ) > 0)
+
+    if changed_rows.height > 0:
+        updates = changed_rows.select([
+            "rowid",
+            *[f"new_{mbid_field}" for mbid_field in fields.values()],
+            (pl.col("sqlmodded") +
+             pl.sum_horizontal(
+                 [pl.col(f"change_{mbid_field}").cast(pl.Int8) for mbid_field in fields.values()]
+             )).alias("sqlmodded")
+        ]).to_dicts()
+
+    logging.info(f"Chunk complete: {len(updates)} updates, {stats}")
+    return updates, stats
+
 
 def write_updates_to_db(updates: List[Dict[str, Any]], conn: sqlite3.Connection,
                        stats: Dict[str, Dict[str, int]], batch_size: int = 1000):
@@ -502,7 +553,7 @@ def process_full_database(conn: sqlite3.Connection):
         processed_rows = 0
         for row in df.iter_rows(named=True):
             processed_rows += 1
-            if processed_rows % 10000 == 0:
+            if processed_rows % 50000 == 0:
                 logging.info(f"Processed {processed_rows} rows...")
 
             changes_in_row = 0  # Track changes for this row to increment sqlmodded
@@ -513,7 +564,8 @@ def process_full_database(conn: sqlite3.Connection):
                     continue
 
                 # Split the value and match entities
-                entities = [e.strip().lower() for e in str(value).split('\\\\')]
+                entities = [normalize_string(e) for e in str(value).split('\\\\')]
+
                 matched_mbids = []
 
                 for entity in entities:
@@ -532,9 +584,13 @@ def process_full_database(conn: sqlite3.Connection):
 
                 # Check current value
                 current_mbid = row[mbid_field]
-                # is_current_empty = current_mbid is None or (isinstance(current_mbid, str) and current_mbid.strip() == '')
-                is_current_empty = current_mbid is None or (isinstance(current_mbid, str) and current_mbid.strip() == '') or current_mbid == '""'
-
+                is_current_empty = (
+                    current_mbid is None or
+                    (isinstance(current_mbid, str) and (
+                        current_mbid.strip() == '' or
+                        current_mbid.strip() == '""'
+                    ))
+                )
                 # Determine if this is an addition or correction
                 update_needed = False
 
