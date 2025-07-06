@@ -406,33 +406,96 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
     #    as its work (list conversion, ensuring columns) is now done *before* DataFrame creation.
     return df
 
-def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection):
-    """
-    Creates the main database table if it doesn't exist.
-    """
+# def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection, df_columns: List[str] = None):
+#     cursor = conn.cursor()
+
+#     # Start with the predefined schema columns in their original order
+#     ordered_columns = list(ALBUM_INFO_SCHEMA.keys())
+
+#     # Add any new columns from the DataFrame that aren't in the schema
+#     if df_columns:
+#         new_columns = [col for col in df_columns if col not in ordered_columns]
+#         for column in new_columns:
+#             print(f"Adding column '{column}'")
+#         print(f"Adding {len(new_columns)} additional columns to alib")
+#         ordered_columns.extend(new_columns)
+
+#     # Build the schema mapping
+#     schema_to_use = {}
+#     for col in ordered_columns:
+#         if col in ALBUM_INFO_SCHEMA:
+#             schema_to_use[col] = ALBUM_INFO_SCHEMA[col]
+#         else:
+#             schema_to_use[col] = pl.Utf8
+
+#     # Define table creation SQL with consistent quoting
+#     columns_sql = []
+#     for col in ordered_columns:
+#         dtype = schema_to_use[col]
+#         sql_type = "TEXT"
+#         if dtype == pl.Int64:
+#             sql_type = "INTEGER"
+#         elif dtype == pl.Float64:
+#             sql_type = "REAL"
+
+#         # Quote all column names consistently
+#         quoted_col = f'"{col}"'
+#         if col == "__path":
+#             columns_sql.append(f"{quoted_col} {sql_type} PRIMARY KEY")
+#         else:
+#             columns_sql.append(f"{quoted_col} {sql_type}")
+
+#     cursor.execute(f'''
+#         CREATE TABLE IF NOT EXISTS "{TABLE_NAME}" (
+#             {", ".join(columns_sql)}
+#         )
+#     ''')
+#     conn.commit()
+#     logging.info(f"Database table '{TABLE_NAME}' ensured to exist with {len(ordered_columns)} columns.")
+
+
+def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection, df_columns: List[str] = None) -> None:
     cursor = conn.cursor()
-    # Define table creation SQL based on the Polars schema
-    columns_sql = []
-    for col, dtype in ALBUM_INFO_SCHEMA.items():
-        sql_type = "TEXT" # Default to TEXT for simplicity and flexibility
-        if dtype == pl.Int64:
-            sql_type = "INTEGER"
-        elif dtype == pl.Float64:
-            sql_type = "REAL"
 
-        # filename is the primary key
-        if col == "__path":
-            columns_sql.append(f"{col} {sql_type} PRIMARY KEY")
-        else:
-            columns_sql.append(f"{col} {sql_type}")
+    # 1. Get current columns (primary key first, then others in existing order)
+    cursor.execute(f'SELECT name FROM pragma_table_info("{TABLE_NAME}") ORDER BY cid')
+    existing_columns = [row[0] for row in cursor.fetchall()]
 
-    cursor.execute(f'''
-        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-            {", ".join(columns_sql)}
-        )
-    ''')
+    # 2. Define required columns (schema columns first, then new ones)
+    required_columns = list(ALBUM_INFO_SCHEMA.keys())  # Preserves order
+    if df_columns:
+        required_columns += [col for col in df_columns
+                           if col not in ALBUM_INFO_SCHEMA]  # New tags appended
+
+    # 3. Create table if missing (with perfect schema order)
+    if not existing_columns:
+        columns_sql = [
+            f'"{col}" TEXT{" PRIMARY KEY" if col == "__path" else ""}'
+            if ALBUM_INFO_SCHEMA.get(col, pl.Utf8) == pl.Utf8
+            else f'"{col}" INTEGER'
+            for col in required_columns
+        ]
+
+        cursor.execute(f'''
+            CREATE TABLE "{TABLE_NAME}" (
+                {", ".join(columns_sql)}
+            )
+        ''')
+        conn.commit()
+        return
+
+    # 4. Just add missing columns (all as TEXT since new tags are pl.Utf8)
+    missing_columns = [col for col in required_columns
+                      if col not in existing_columns]
+
+    for col in missing_columns:
+        try:
+            cursor.execute(f'ALTER TABLE "{TABLE_NAME}" ADD COLUMN "{col}" TEXT')
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):  # Ignore harmless duplicates
+                raise
+
     conn.commit()
-    logging.info(f"Database table '{TABLE_NAME}' ensured to exist.")
 
 
 def process_single_drive(
@@ -606,18 +669,25 @@ def import_dir_optimized(
     logging.info("Phase 4: Writing to SQLite database...")
     try:
         with sqlite3.connect(dbpath) as conn:
-            create_and_migrate_db(dbpath, conn)
+            create_and_migrate_db(dbpath, conn, df.columns)
 
             # Convert Polars DataFrame to a list of lists for sqlite3 executemany.
             # Ensure the order of columns matches the database schema for correct insertion.
-            column_order = list(ALBUM_INFO_SCHEMA.keys())
+            # column_order = list(ALBUM_INFO_SCHEMA.keys())
+            column_order = list(df.columns)
             data_to_insert = df.select(column_order).to_numpy().tolist()
 
             # Using INSERT OR REPLACE for UPSERT functionality:
             # New records are inserted, existing records (identified by 'filename' PRIMARY KEY) are updated.
+            # placeholders = ', '.join(['?'] * len(column_order))
+            # columns_str = ', '.join(column_order)
+            # insert_sql = f"INSERT OR REPLACE INTO {TABLE_NAME} ({columns_str}) VALUES ({placeholders})"
+
+            quoted_columns = [f'"{col}"' for col in column_order]
             placeholders = ', '.join(['?'] * len(column_order))
-            columns_str = ', '.join(column_order)
-            insert_sql = f"INSERT OR REPLACE INTO {TABLE_NAME} ({columns_str}) VALUES ({placeholders})"
+            columns_str = ', '.join(quoted_columns)
+            insert_sql = f'INSERT OR REPLACE INTO "{TABLE_NAME}" ({columns_str}) VALUES ({placeholders})'
+
 
             cursor = conn.cursor()
             cursor.executemany(insert_sql, data_to_insert)
@@ -634,7 +704,6 @@ def import_dir_optimized(
 
     end_time = time.time()
     logging.info(f"Import process finished in {end_time - start_time:.2f} seconds.")
-
 
 def clean_values_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     """Clean all values in DataFrame using vectorized operations."""
@@ -895,6 +964,7 @@ def process_files_with_directory_grouping(df: pl.DataFrame, batch_size: int = 10
                             tag[key] = value.split('\\')
                         else:
                             tag[key] = value
+
 
                     tag.save()
                     stats["processed"] += 1
