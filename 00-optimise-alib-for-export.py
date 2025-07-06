@@ -259,13 +259,6 @@ def optimise_table_columns(
                         SELECT DISTINCT alib_rowid FROM changelog
                         WHERE alib_rowid IS NOT NULL
                     )
-                    UNION
-                    SELECT {columns_list}
-                    FROM {table_name}
-                    WHERE rowid NOT IN (
-                        SELECT DISTINCT alib_rowid FROM changelog
-                        WHERE alib_rowid IS NOT NULL
-                    )
                 """
             else:
                 # Copy all records if no changelog exists
