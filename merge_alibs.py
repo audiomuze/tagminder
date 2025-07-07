@@ -273,6 +273,98 @@ def log_merge_changes(conn: sqlite3.Connection, df1: pl.DataFrame, df2: pl.DataF
 #     return df3
 
 
+# def merge_dataframes_with_precedence(df1: pl.DataFrame, df2: pl.DataFrame,
+#                                    primary_key: str = "__path") -> pl.DataFrame:
+#     """Merge two DataFrames with df1 taking precedence over df2 and track sqlmodded increments."""
+#     df1_cols = set(df1.columns)
+#     df2_cols = set(df2.columns)
+
+#     if primary_key not in df1_cols:
+#         raise ValueError(f"Primary key '{primary_key}' not found in DataFrame 1")
+#     if primary_key not in df2_cols:
+#         raise ValueError(f"Primary key '{primary_key}' not found in DataFrame 2")
+
+#     # Prepare 'sqlmodded' column in df1 for numeric operations
+#     if 'sqlmodded' not in df1.columns:
+#         df1 = df1.with_columns(pl.lit(0).alias('sqlmodded').cast(pl.Int64))
+#     else:
+#         df1 = df1.with_columns(
+#             pl.col('sqlmodded')
+#             .cast(pl.Int64, strict=False)  # Direct cast to Int64
+#             .fill_null(0)
+#             .alias('sqlmodded')
+#         )
+
+#     # Perform full outer join
+#     result = df1.join(df2, on=primary_key, how="full", suffix="_df2")
+
+#     # Build expressions for final selection
+#     select_exprs = []
+
+#     # 1. Handle primary key first (always included)
+#     df2_primary_key = f"{primary_key}_df2"
+#     select_exprs.append(
+#         pl.coalesce([pl.col(primary_key), pl.col(df2_primary_key)]).alias(primary_key)
+#     )
+
+#     # 2. Process columns from df1 in their original order
+#     for col in df1.columns: # Iterate through df1's columns to preserve order
+#         if col == primary_key:
+#             continue # Already handled
+
+#         df2_col = f"{col}_df2"
+#         if col in df2_cols: # Common column
+#             if col == 'sqlmodded':
+#                 select_exprs.append(
+#                     pl.when(
+#                         (pl.col('sqlmodded').is_null()) | (pl.col('sqlmodded') == 0)
+#                     ).then(
+#                         pl.coalesce([pl.col(f'{col}_df2').cast(pl.Int64), pl.lit(0)]) + 1
+#                     ).otherwise(
+#                         pl.col('sqlmodded')
+#                     ).alias(col)
+#                 )
+#             else:
+#                 select_exprs.append(
+#                     pl.when(
+#                         (pl.col(col).is_null()) | (pl.col(col).str.strip_chars().str.len_chars() == 0)
+#                     ).then(
+#                         pl.col(df2_col)
+#                     ).otherwise(
+#                         pl.col(col)
+#                     ).alias(col)
+#                 )
+#         else: # Column only in df1
+#             select_exprs.append(pl.col(col))
+
+#     # 3. Append new columns that are only in df2 (and not already processed)
+#     for col in df2.columns:
+#         if col == primary_key:
+#             continue # Already handled
+
+#         if col not in df1_cols: # This is a new column from df2
+#             df2_col_name_in_result = f"{col}_df2" # Name in the joined 'result' dataframe
+#             # Ensure it exists in the result before selecting
+#             if df2_col_name_in_result in result.columns:
+#                 select_exprs.append(pl.col(df2_col_name_in_result).alias(col))
+#             else:
+#                 # This case might occur if a column exists in df2 but not df1,
+#                 # and then there are no matching rows to bring it in via the join.
+#                 # It's safer to ensure it's still added, even if all null.
+#                 select_exprs.append(pl.lit(None).alias(col))
+
+
+#     # Apply all column selections
+#     df3 = result.select(select_exprs)
+
+#     # Ensure sqlmodded exists and is cast to Utf8 for consistency
+#     if 'sqlmodded' not in df3.columns:
+#         df3 = df3.with_columns(pl.lit(0).alias('sqlmodded').cast(pl.Utf8))
+#     else:
+#         df3 = df3.with_columns(pl.col('sqlmodded').cast(pl.Utf8).alias('sqlmodded'))
+
+#     return df3
+
 def merge_dataframes_with_precedence(df1: pl.DataFrame, df2: pl.DataFrame,
                                    primary_key: str = "__path") -> pl.DataFrame:
     """Merge two DataFrames with df1 taking precedence over df2 and track sqlmodded increments."""
@@ -284,14 +376,15 @@ def merge_dataframes_with_precedence(df1: pl.DataFrame, df2: pl.DataFrame,
     if primary_key not in df2_cols:
         raise ValueError(f"Primary key '{primary_key}' not found in DataFrame 2")
 
+    # SURGICAL CHANGE 1: Don't fill nulls in sqlmodded during initialization
     # Prepare 'sqlmodded' column in df1 for numeric operations
     if 'sqlmodded' not in df1.columns:
-        df1 = df1.with_columns(pl.lit(0).alias('sqlmodded').cast(pl.Int64))
+        df1 = df1.with_columns(pl.lit(None).alias('sqlmodded').cast(pl.Int64))
     else:
         df1 = df1.with_columns(
             pl.col('sqlmodded')
             .cast(pl.Int64, strict=False)  # Direct cast to Int64
-            .fill_null(0)
+            # REMOVED: .fill_null(0)  # This was the problem!
             .alias('sqlmodded')
         )
 
@@ -307,20 +400,61 @@ def merge_dataframes_with_precedence(df1: pl.DataFrame, df2: pl.DataFrame,
         pl.coalesce([pl.col(primary_key), pl.col(df2_primary_key)]).alias(primary_key)
     )
 
-    # 2. Process columns from df1 in their original order
-    for col in df1.columns: # Iterate through df1's columns to preserve order
+    # SURGICAL CHANGE 2: We'll build enrichment detection inline during column processing
+    # to avoid referencing columns that don't exist yet
+
+    # 2. Build enrichment conditions as we process columns
+    enrichment_conditions = []
+
+    # First pass: collect enrichment conditions from common columns
+    for col in df1.columns:
+        if col in {primary_key, 'sqlmodded'}:
+            continue
+        if col in df2_cols:
+            df2_col = f"{col}_df2"
+            if df2_col in result.columns:
+                enrichment_conditions.append(
+                    ((pl.col(col).is_null()) | (pl.col(col).str.strip_chars().str.len_chars() == 0)) &
+                    (pl.col(df2_col).is_not_null()) &
+                    (pl.col(df2_col).str.strip_chars().str.len_chars() > 0)
+                )
+
+    # Add conditions for new columns from df2
+    for col in df2.columns:
+        if col in {primary_key, 'sqlmodded'} or col in df1_cols:
+            continue
+        df2_col = f"{col}_df2"
+        if df2_col in result.columns:
+            enrichment_conditions.append(
+                (pl.col(df2_col).is_not_null()) &
+                (pl.col(df2_col).str.strip_chars().str.len_chars() > 0)
+            )
+
+    # Combine all enrichment conditions
+    if enrichment_conditions:
+        row_is_enriched = pl.fold(
+            acc=pl.lit(False),
+            function=lambda acc, x: acc | x,
+            exprs=enrichment_conditions
+        )
+    else:
+        row_is_enriched = pl.lit(False)
+
+    # Process columns from df1 in their original order
+    for col in df1.columns:
         if col == primary_key:
-            continue # Already handled
+            continue
 
         df2_col = f"{col}_df2"
-        if col in df2_cols: # Common column
+        if col in df2_cols:
             if col == 'sqlmodded':
+                # SURGICAL CHANGE 3: Only increment sqlmodded when row is actually enriched
                 select_exprs.append(
-                    pl.when(
-                        (pl.col('sqlmodded').is_null()) | (pl.col('sqlmodded') == 0)
-                    ).then(
-                        pl.coalesce([pl.col(f'{col}_df2').cast(pl.Int64), pl.lit(0)]) + 1
+                    pl.when(row_is_enriched).then(
+                        # Increment existing sqlmodded or start at 1 if null
+                        pl.coalesce([pl.col('sqlmodded'), pl.lit(0)]) + 1
                     ).otherwise(
+                        # Keep original sqlmodded value (including null)
                         pl.col('sqlmodded')
                     ).alias(col)
                 )
@@ -334,34 +468,34 @@ def merge_dataframes_with_precedence(df1: pl.DataFrame, df2: pl.DataFrame,
                         pl.col(col)
                     ).alias(col)
                 )
-        else: # Column only in df1
+        else:
             select_exprs.append(pl.col(col))
 
-    # 3. Append new columns that are only in df2 (and not already processed)
+    # 3. Append new columns that are only in df2
     for col in df2.columns:
         if col == primary_key:
-            continue # Already handled
+            continue
 
-        if col not in df1_cols: # This is a new column from df2
-            df2_col_name_in_result = f"{col}_df2" # Name in the joined 'result' dataframe
-            # Ensure it exists in the result before selecting
+        if col not in df1_cols:
+            df2_col_name_in_result = f"{col}_df2"
             if df2_col_name_in_result in result.columns:
                 select_exprs.append(pl.col(df2_col_name_in_result).alias(col))
             else:
-                # This case might occur if a column exists in df2 but not df1,
-                # and then there are no matching rows to bring it in via the join.
-                # It's safer to ensure it's still added, even if all null.
                 select_exprs.append(pl.lit(None).alias(col))
-
 
     # Apply all column selections
     df3 = result.select(select_exprs)
 
-    # Ensure sqlmodded exists and is cast to Utf8 for consistency
+    # SURGICAL CHANGE 4: Handle sqlmodded for new rows from df2 (simplified)
+    # For rows that came only from df2, set sqlmodded to 1 if they actually have data
     if 'sqlmodded' not in df3.columns:
-        df3 = df3.with_columns(pl.lit(0).alias('sqlmodded').cast(pl.Utf8))
-    else:
-        df3 = df3.with_columns(pl.col('sqlmodded').cast(pl.Utf8).alias('sqlmodded'))
+        # If sqlmodded column doesn't exist, add it with proper logic
+        df3 = df3.with_columns(pl.lit(None).cast(pl.Utf8).alias('sqlmodded'))
+
+    # SURGICAL CHANGE 5: Cast to Utf8 but preserve nulls
+    df3 = df3.with_columns(
+        pl.col('sqlmodded').cast(pl.Utf8, strict=False).alias('sqlmodded')
+    )
 
     return df3
 
