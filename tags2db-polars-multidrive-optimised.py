@@ -60,7 +60,7 @@ except ImportError:
     sys.exit(1)
 
 # --- Constants ---
-AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wv', '.ogg', '.m4a', '.aiff', '.ape'}
+AUDIO_EXTENSIONS = {'.flac', '.wv', '.m4a', '.aiff', '.ape''.mp3', '.ogg'}
 DATABASE_PATH = 'alib.db' # Default database name
 TABLE_NAME = 'alib'
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
@@ -217,15 +217,39 @@ def sanitize_value(value: Any) -> str:
         return "; ".join(map(str, value))
     return str(value)
 
+# def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
+#     """
+#     Convert a puddlestuff Tag object to a dictionary,
+#     keeping raw values and extracting direct audio properties.
+#     """
+#     tag_dict = dict(tag) # Gets textual tags from the Tag object
+
+#     # Add direct audio properties from the Tag object using getattr for safety
+#     tag_dict['__path'] = tag.filepath # Use 'filename' to match schema
+#     tag_dict['length'] = getattr(tag, 'length', None)
+#     tag_dict['bitrate'] = getattr(tag, 'bitrate', None)
+#     tag_dict['samplerate'] = getattr(tag, 'samplerate', None)
+#     tag_dict['channels'] = getattr(tag, 'channels', None)
+#     tag_dict['bitdepth'] = getattr(tag, 'bitdepth', None)
+#     tag_dict['replaygain_track_gain'] = getattr(tag, 'replaygain_track_gain', None)
+#     tag_dict['replaygain_album_gain'] = getattr(tag, 'replaygain_album_gain', None)
+
+#     cleaned_dict = {}
+#     for k, v in tag_dict.items():
+#         # Remove quotes from tag names (they're illegal in SQLite column names)
+#         safe_k = k.replace('"', '') if isinstance(k, str) and '"' in k else k
+#         cleaned_dict[safe_k] = v
+#     return cleaned_dict
+
 def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
     """
     Convert a puddlestuff Tag object to a dictionary,
     keeping raw values and extracting direct audio properties.
     """
-    tag_dict = dict(tag) # Gets textual tags from the Tag object
+    tag_dict = dict(tag)  # Gets textual tags from the Tag object
 
     # Add direct audio properties from the Tag object using getattr for safety
-    tag_dict['__path'] = tag.filepath # Use 'filename' to match schema
+    tag_dict['__path'] = tag.filepath  # Use 'filename' to match schema
     tag_dict['length'] = getattr(tag, 'length', None)
     tag_dict['bitrate'] = getattr(tag, 'bitrate', None)
     tag_dict['samplerate'] = getattr(tag, 'samplerate', None)
@@ -236,8 +260,8 @@ def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
 
     cleaned_dict = {}
     for k, v in tag_dict.items():
-        # Remove quotes from tag names (they're illegal in SQLite column names)
-        safe_k = k.replace('"', '') if isinstance(k, str) and '"' in k else k
+        # Remove quotes from tag names and convert to lowercase
+        safe_k = k.replace('"', '').lower() if isinstance(k, str) else str(k).lower()
         cleaned_dict[safe_k] = v
     return cleaned_dict
 
