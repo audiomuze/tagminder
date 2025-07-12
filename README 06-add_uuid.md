@@ -1,4 +1,4 @@
-# 06-add_uuid
+# 06-add_uuid.py
 
 ## Description
 
