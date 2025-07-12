@@ -349,15 +349,25 @@ def setup_logging(level: str) -> None:
 
 
 def main() -> None:
+
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='optimise alib table for export by dropping unchanged tag columns',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        prog='optimise_alib_columns.py',
+        description='Optimize alib SQLite table by dropping unused tag columns. '
+                   'Retains all system columns (__prefixed) and specified tag columns '
+                   'to reduce memory usage and improve export performance.',
+        epilog='Examples:\n'
+               '  %(prog)s --db music.sqlite --keep title artist album\n'
+               '  %(prog)s --db music.sqlite --keep-file tags.txt --vacuum\n'
+               '  %(prog)s --db music.sqlite --dry-run  # auto-detect from changelog\n'
+               '  %(prog)s --db music.sqlite --keep title artist --dry-run',
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     parser.add_argument(
         '--db',
         required=True,
+        metavar='PATH',
         help='Path to SQLite database containing alib table'
     )
 
@@ -366,17 +376,21 @@ def main() -> None:
     tag_group.add_argument(
         '--keep',
         nargs='+',
-        help='Tag column names to keep (space-separated)'
+        metavar='TAG',
+        help='Tag column names to keep (space-separated). '
+             'System columns (__prefixed) are always kept.'
     )
     tag_group.add_argument(
         '--keep-file',
-        help='Path to text file containing tag names to keep (one per line)'
+        metavar='PATH',
+        help='Text file with tag names to keep (one per line, # for comments)'
     )
 
     parser.add_argument(
         '--table',
         default='alib',
-        help='Table name to optimise'
+        metavar='NAME',
+        help='Table name to optimize (default: %(default)s)'
     )
 
     parser.add_argument(
@@ -386,18 +400,32 @@ def main() -> None:
     )
 
     parser.add_argument(
-        '--log',
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-        default='INFO',
-        help='Log level'
+        '--vacuum',
+        action='store_true',
+        help='Vacuum database after optimization to reclaim disk space '
+             '(slower but saves space)'
     )
 
     parser.add_argument(
-        '--vacuum',
-        action='store_true',
-        help='Vacuum database after optimization (reclaims disk space but takes time). Performance gains from exporting a much smaller table are beneficial if exporting many records'
+        '--log',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help='Logging level (default: %(default)s)'
     )
 
+    # Auto-detection note
+    parser.add_argument(
+        '--version',
+        action='version',
+        version='%(prog)s 1.0 - Created by audiomuze'
+    )
+
+    # Add a note about auto-detection
+    if len(sys.argv) == 1:
+        parser.print_help()
+        print("\nNote: If no --keep or --keep-file is specified, columns will be "
+              "auto-detected from the changelog table.")
+        sys.exit(0)
 
     try:
         args = parser.parse_args()
