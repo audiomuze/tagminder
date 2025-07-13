@@ -241,28 +241,60 @@ def sanitize_value(value: Any) -> str:
 #         cleaned_dict[safe_k] = v
 #     return cleaned_dict
 
+# def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
+#     """
+#     Convert a puddlestuff Tag object to a dictionary,
+#     keeping raw values and extracting direct audio properties.
+#     """
+#     tag_dict = dict(tag)  # Gets textual tags from the Tag object
+
+#     # Add direct audio properties from the Tag object using getattr for safety
+#     tag_dict['__path'] = tag.filepath  # Use 'filename' to match schema
+#     tag_dict['length'] = getattr(tag, 'length', None)
+#     tag_dict['bitrate'] = getattr(tag, 'bitrate', None)
+#     tag_dict['samplerate'] = getattr(tag, 'samplerate', None)
+#     tag_dict['channels'] = getattr(tag, 'channels', None)
+#     tag_dict['bitdepth'] = getattr(tag, 'bitdepth', None)
+#     tag_dict['replaygain_track_gain'] = getattr(tag, 'replaygain_track_gain', None)
+#     tag_dict['replaygain_album_gain'] = getattr(tag, 'replaygain_album_gain', None)
+
+#     cleaned_dict = {}
+#     for k, v in tag_dict.items():
+#         # Remove quotes from tag names and convert to lowercase
+#         safe_k = k.replace('"', '').lower() if isinstance(k, str) else str(k).lower()
+#         cleaned_dict[safe_k] = v
+#     return cleaned_dict
+
 def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
     """
     Convert a puddlestuff Tag object to a dictionary,
-    keeping raw values and extracting direct audio properties.
+    matching the behavior of the old script by only using dict(tag)
+    and avoiding duplicate technical properties.
+
+    Args:
+        tag: The Tag object to convert
+
+    Returns:
+        Dictionary of tag names (lowercase) to values
     """
-    tag_dict = dict(tag)  # Gets textual tags from the Tag object
+    # Get all tags from the Tag object
+    tag_dict = dict(tag)
 
-    # Add direct audio properties from the Tag object using getattr for safety
-    tag_dict['__path'] = tag.filepath  # Use 'filename' to match schema
-    tag_dict['length'] = getattr(tag, 'length', None)
-    tag_dict['bitrate'] = getattr(tag, 'bitrate', None)
-    tag_dict['samplerate'] = getattr(tag, 'samplerate', None)
-    tag_dict['channels'] = getattr(tag, 'channels', None)
-    tag_dict['bitdepth'] = getattr(tag, 'bitdepth', None)
-    tag_dict['replaygain_track_gain'] = getattr(tag, 'replaygain_track_gain', None)
-    tag_dict['replaygain_album_gain'] = getattr(tag, 'replaygain_album_gain', None)
+    # Always include the file path
+    tag_dict['__path'] = tag.filepath
 
+    # Clean and normalize the keys
     cleaned_dict = {}
     for k, v in tag_dict.items():
-        # Remove quotes from tag names and convert to lowercase
+        # Remove quotes and convert to lowercase
         safe_k = k.replace('"', '').lower() if isinstance(k, str) else str(k).lower()
-        cleaned_dict[safe_k] = v
+
+        # Convert list values to delimited strings
+        if isinstance(v, list):
+            cleaned_dict[safe_k] = "\\\\".join(map(str, v))
+        else:
+            cleaned_dict[safe_k] = v
+
     return cleaned_dict
 
 
