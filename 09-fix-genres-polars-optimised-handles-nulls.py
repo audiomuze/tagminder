@@ -1,4 +1,5 @@
 # --- imports ---
+import argparse
 import polars as pl
 import sqlite3
 import logging
@@ -55,6 +56,8 @@ HARD_CODED_REPLACEMENTS = {
     'rock / blues': 'Blues-Rock',
     'rock blues': 'Blues-Rock',
     'rock': 'Pop/Rock',
+    'singer & songwriter': 'Singer/Songwriter',
+    'singer and songwriter': 'Singer/Songwriter',
     'singer / songwriter': 'Singer/Songwriter',
     'songwriter': 'Singer/Songwriter',
     'songwriting': 'Singer/Songwriter',
@@ -196,6 +199,7 @@ def optimized_string_grouper_matching(
                 max_n_matches=1,  # Only need best match
                 ignore_index=True,  # Faster processing
                 # n_blocks=NUM_CORES  # Changed from n_jobs to n_blocks
+                #n_jobs=min(NUM_CORES, len(batch))
                 n_jobs=min(NUM_CORES, len(batch))
             )
 
@@ -527,6 +531,70 @@ def process_tags_vectorized(
 
     return result
 
+def merge_genre_style_vectorized(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Efficiently merge and deduplicate genre and style tags into genre field.
+    Style field remains unchanged from its cleaned state.
+    """
+    # First ensure our input columns are properly typed
+    df = df.with_columns([
+        pl.col("new_genre").cast(pl.Utf8),
+        pl.col("new_style").cast(pl.Utf8)
+    ])
+
+    # Create intermediate columns with proper list types
+    df = df.with_columns([
+        # Convert genre to list (handle nulls)
+        pl.when(pl.col("new_genre").is_null() | (pl.col("new_genre").str.len_chars() == 0))
+        .then(pl.lit([], dtype=pl.List(pl.Utf8)))
+        .otherwise(pl.col("new_genre").str.split(DELIMITER))
+        .alias("genre_list"),
+
+        # Convert style to list (handle nulls)
+        pl.when(pl.col("new_style").is_null() | (pl.col("new_style").str.len_chars() == 0))
+        .then(pl.lit([], dtype=pl.List(pl.Utf8)))
+        .otherwise(pl.col("new_style").str.split(DELIMITER))
+        .alias("style_list")
+    ])
+
+    # Clean and merge the lists
+    df = df.with_columns([
+        # Clean genre list
+        pl.col("genre_list").list.eval(
+            pl.when(pl.element().str.len_chars() > 0)
+            .then(pl.element())
+            .otherwise(None)
+        ).list.drop_nulls().alias("genre_clean"),
+
+        # Clean style list
+        pl.col("style_list").list.eval(
+            pl.when(pl.element().str.len_chars() > 0)
+            .then(pl.element())
+            .otherwise(None)
+        ).list.drop_nulls().alias("style_clean")
+    ])
+
+    # Merge and deduplicate
+    df = df.with_columns([
+        # Combine lists, deduplicate while preserving order
+        pl.concat_list(["genre_clean", "style_clean"])
+        .list.eval(pl.element().drop_nulls())
+        .list.unique(maintain_order=True)
+        .alias("merged_tags")
+    ])
+
+    # Convert back to delimited string
+    df = df.with_columns([
+        # Handle empty lists
+        pl.when(pl.col("merged_tags").list.len() == 0)
+        .then(pl.lit(None, dtype=pl.Utf8))
+        .otherwise(pl.col("merged_tags").list.join(DELIMITER))
+        .alias("new_genre")
+    ])
+
+    # Drop intermediate columns
+    return df.drop(["genre_list", "style_list", "genre_clean", "style_clean", "merged_tags"])
+
 # --- database utilities ---
 def optimize_sqlite_connection(conn: sqlite3.Connection):
     """Apply SQLite optimizations for your 64GB system."""
@@ -588,8 +656,15 @@ def batch_database_updates(conn: sqlite3.Connection, updates: List[Dict], change
 def main():
     """
     Optimized main function that keeps string_grouper but minimizes its workload
-    through intelligent pre-filtering and caching.
+    through intelligent pre-filtering and caching.  Includes optional genre-style merging.
     """
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Clean and standardize genre/style tags')
+    parser.add_argument('--merge-genres-styles', action='store_true',
+                        help='Merge cleaned genre and style tags into genre field (style field preserved)')
+    args = parser.parse_args()
+
     start_time = datetime.now()
 
     try:
@@ -719,11 +794,15 @@ def main():
                 '__path': pl.Series([r[1] for r in rows], dtype=pl.Utf8),
                 'genre': pl.Series([r[2] for r in rows], dtype=pl.Utf8),
                 'style': pl.Series([r[3] for r in rows], dtype=pl.Utf8),
-                'sqlmodded': pl.Series([r[4] for r in rows], dtype=pl.Int16)
+                'sqlmodded': pl.Series([int(r[4]) for r in rows], dtype=pl.Int64)
             })
 
             # Process tags using string_grouper results
             processed_df = process_tags_vectorized(df, tag_mapping)
+
+            # Optionally merge styles into (deduped) genres:
+            if args.merge_genres_styles:
+                processed_df = merge_genre_style_vectorized(processed_df)
 
             # Find changes using improved null handling
             changed_df, new_changelog_entries = create_changelog_entries_vectorized(processed_df)
@@ -764,6 +843,8 @@ def main():
         rows_per_second = total_processed / duration.total_seconds() if duration.total_seconds() > 0 else 0
 
         print(f"\nOptimized Genre Cleanup (with string_grouper) Completed!")
+        merge_status = " (with genre-style merge)" if args.merge_genres_styles else ""
+        print(f"\nOptimized Genre Cleanup{merge_status} Completed!")
         print(f"Processed: {total_processed:,} rows")
         print(f"Updated: {total_updated:,} rows")
         print(f"Time: {duration_minutes:.2f} minutes")
