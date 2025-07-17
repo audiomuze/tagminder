@@ -116,14 +116,63 @@ def normalize_before_match(s: str) -> str:
         .strip()
     )
 
+
 # --- pre-compiled regex patterns ---
 DELIMITER_PATTERN = re.compile(r"\s*[,;|]\s*")
 
-# --- OPTIMIZED: much smarter pre-filtering to minimize string_grouper workload ---
+def build_corrected_mapping_optimized(
+    raw_tags: List[str],
+    valid_tags: Set[str],
+    similarity_threshold: float = SIMILARITY_THRESHOLD
+) -> Dict[str, Optional[str]]:
+    """
+    Build mapping with optimized string_grouper usage and comprehensive caching.
+    Only includes mappings for tags that resolve to valid tags.
+    """
+    ensure_cache_dir()
+
+    # Check cache first
+    cache_key = get_cache_key(raw_tags, valid_tags)
+    cached_result = load_cached_mapping(cache_key)
+    if cached_result is not None:
+        logging.info("Using cached fuzzy matching results")
+        return cached_result
+
+    # Intelligent pre-filtering (this is the key optimization)
+    fuzzy_candidates, exact_matches = intelligent_pre_filter(raw_tags, valid_tags)
+
+    # Only run string_grouper on the minimal set of candidates
+    fuzzy_matches = {}
+    if fuzzy_candidates:
+        logging.info(f"Running optimized string_grouper on {len(fuzzy_candidates)} candidates...")
+        fuzzy_matches = optimized_string_grouper_matching(fuzzy_candidates, valid_tags, similarity_threshold)
+        logging.info(f"String_grouper found {len(fuzzy_matches)} matches")
+
+    # Build comprehensive mapping - ONLY include valid mappings
+    result = exact_matches.copy()
+    result.update(fuzzy_matches)
+
+    # REMOVED: Don't add identity mappings for unmatched tags
+    # This ensures invalid tags will return None from dict.get()
+    # for tag in raw_tags:
+    #     if tag not in result:
+    #         result[tag] = tag  # Keep original if no match found
+
+    # Optional: Log invalid tags for debugging
+    invalid_tags = set(raw_tags) - set(result.keys())
+    if invalid_tags:
+        logging.info(f"Found {len(invalid_tags)} invalid tags that will be filtered out")
+        logging.debug(f"Invalid tags: {sorted(invalid_tags)}")
+
+    # Cache the result
+    save_cached_mapping(cache_key, result)
+    return result
+
+
 def intelligent_pre_filter(raw_tags: List[str], valid_tags: Set[str]) -> tuple[List[str], Dict[str, str]]:
     """
     Intelligent pre-filtering to dramatically reduce string_grouper workload.
-    This is the key optimization - we want to send as few tags as possible to string_grouper.
+    Only creates mappings for tags that resolve to valid tags.
     """
     exact_matches = {}
     fuzzy_candidates = []
@@ -132,8 +181,12 @@ def intelligent_pre_filter(raw_tags: List[str], valid_tags: Set[str]) -> tuple[L
     valid_tags_lower = {tag.lower(): tag for tag in valid_tags}
     valid_tags_normalized = {normalize_before_match(tag): tag for tag in valid_tags}
 
-    # Apply hard-coded replacements first
-    hard_coded_lower = {k.lower(): v for k, v in HARD_CODED_REPLACEMENTS.items()}
+    # Apply hard-coded replacements first - but validate they're in valid_tags
+    hard_coded_lower = {}
+    for k, v in HARD_CODED_REPLACEMENTS.items():
+        # Only include hard-coded replacements if they map to valid tags
+        if v in valid_tags or any(part.strip() in valid_tags for part in v.split(DELIMITER)):
+            hard_coded_lower[k.lower()] = v
 
     processed_tags = set()
 
@@ -163,10 +216,86 @@ def intelligent_pre_filter(raw_tags: List[str], valid_tags: Set[str]) -> tuple[L
         else:
             fuzzy_candidates.append(tag)
 
-    logging.info(f"Intelligent filtering: {len(exact_matches)} exact matches, {len(fuzzy_candidates)} fuzzy candidates (reduced from {len(set(raw_tags))} total)")
+    logging.info(f"Intelligent filtering: {len(exact_matches)} exact matches, {len(fuzzy_candidates)} fuzzy candidates")
 
     return fuzzy_candidates, exact_matches
 
+
+def process_tags_vectorized(
+    df: pl.DataFrame,
+    tag_mapping: Dict[str, str]
+) -> pl.DataFrame:
+    """
+    Process genre/style tags using vectorized operations with pre-built mapping.
+    Modified to preserve styles separately instead of merging everything into genre.
+    """
+
+    def split_and_clean_tags(series: pl.Series) -> pl.Series:
+        """Split, clean, and normalize tags in vectorized fashion."""
+        return (
+            series
+            .cast(pl.Utf8)
+            .fill_null("")
+            .str.replace_all(DELIMITER_PATTERN.pattern, DELIMITER, literal=False)
+            .str.split(DELIMITER)
+            .list.eval(
+                pl.when(pl.element().str.strip_chars().str.len_chars() > 0)
+                .then(pl.element().str.strip_chars())
+                .otherwise(None)
+            )
+            .list.drop_nulls()
+        )
+
+    def map_tag_list(tag_list):
+        """Map a list of tags using the mapping dictionary."""
+        if tag_list is None:
+            return []
+
+        mapped = []
+        for tag in tag_list:
+            mapped_tag = tag_mapping.get(tag, None)  # None for unmapped (invalid) tags
+            if mapped_tag and mapped_tag.strip():  # Only add non-empty mappings
+                mapped.append(mapped_tag)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        result = []
+        for item in mapped:
+            if item not in seen:
+                seen.add(item)
+                result.append(item)
+
+        return result
+
+    # Process both genre and style columns
+    result = (
+        df.lazy()
+        .with_columns([
+            split_and_clean_tags(pl.col("genre")).alias("genre_tags"),
+            split_and_clean_tags(pl.col("style")).alias("style_tags")
+        ])
+        .with_columns([
+            # Map genre tags
+            pl.col("genre_tags").map_elements(map_tag_list, return_dtype=pl.List(pl.String)).alias("mapped_genre"),
+            # Map style tags
+            pl.col("style_tags").map_elements(map_tag_list, return_dtype=pl.List(pl.String)).alias("mapped_style")
+        ])
+        .with_columns([
+            # Create separate cleaned genre and style fields
+            pl.when(pl.col("mapped_genre").list.len() == 0)
+            .then(pl.lit(None, dtype=pl.Utf8))
+            .otherwise(pl.col("mapped_genre").list.join(DELIMITER))
+            .alias("new_genre"),
+
+            pl.when(pl.col("mapped_style").list.len() == 0)
+            .then(pl.lit(None, dtype=pl.Utf8))
+            .otherwise(pl.col("mapped_style").list.join(DELIMITER))
+            .alias("new_style")
+        ])
+        .collect()
+    )
+
+    return result
 
 def optimized_string_grouper_matching(
     fuzzy_candidates: List[str],
@@ -215,46 +344,6 @@ def optimized_string_grouper_matching(
 
     return all_matches
 
-# --- OPTIMIZED: build corrected mapping with better caching and batching ---
-def build_corrected_mapping_optimized(
-    raw_tags: List[str],
-    valid_tags: Set[str],
-    similarity_threshold: float = SIMILARITY_THRESHOLD
-) -> Dict[str, Optional[str]]:
-    """
-    Build mapping with optimized string_grouper usage and comprehensive caching.
-    """
-    ensure_cache_dir()
-
-    # Check cache first
-    cache_key = get_cache_key(raw_tags, valid_tags)
-    cached_result = load_cached_mapping(cache_key)
-    if cached_result is not None:
-        logging.info("Using cached fuzzy matching results")
-        return cached_result
-
-    # Intelligent pre-filtering (this is the key optimization)
-    fuzzy_candidates, exact_matches = intelligent_pre_filter(raw_tags, valid_tags)
-
-    # Only run string_grouper on the minimal set of candidates
-    fuzzy_matches = {}
-    if fuzzy_candidates:
-        logging.info(f"Running optimized string_grouper on {len(fuzzy_candidates)} candidates...")
-        fuzzy_matches = optimized_string_grouper_matching(fuzzy_candidates, valid_tags, similarity_threshold)
-        logging.info(f"String_grouper found {len(fuzzy_matches)} matches")
-
-    # Build comprehensive mapping
-    result = exact_matches.copy()
-    result.update(fuzzy_matches)
-
-    # Add identity mappings for unmatched tags
-    for tag in raw_tags:
-        if tag not in result:
-            result[tag] = tag  # Keep original if no match found
-
-    # Cache the result
-    save_cached_mapping(cache_key, result)
-    return result
 
 # --- OPTIMIZED: single-pass tag collection using SQL aggregation ---
 def collect_all_tags_optimized(conn: sqlite3.Connection) -> List[str]:
@@ -443,93 +532,6 @@ def create_changelog_entries_vectorized(df: pl.DataFrame) -> tuple[pl.DataFrame,
 
     return changes_df, changelog_entries
 
-# --- OPTIMIZED: vectorized tag processing with pre-built mapping ---
-# Modified section of process_tags_vectorized function
-def process_tags_vectorized(
-    df: pl.DataFrame,
-    tag_mapping: Dict[str, str]
-) -> pl.DataFrame:
-    """
-    Process genre/style tags using vectorized operations with pre-built mapping.
-    Modified to preserve styles separately instead of merging everything into genre.
-    """
-
-    def split_and_clean_tags(series: pl.Series) -> pl.Series:
-        """Split, clean, and normalize tags in vectorized fashion."""
-        return (
-            series
-            .cast(pl.Utf8)
-            .fill_null("")
-            .str.replace_all(DELIMITER_PATTERN.pattern, DELIMITER, literal=False)
-            .str.split(DELIMITER)
-            .list.eval(
-                pl.when(pl.element().str.strip_chars().str.len_chars() > 0)
-                .then(pl.element().str.strip_chars())
-                .otherwise(None)
-            )
-            .list.drop_nulls()
-        )
-
-    def map_tag_list(tag_list):
-        """Map a list of tags using the mapping dictionary."""
-        if tag_list is None:
-            return []
-
-        mapped = []
-        for tag in tag_list:
-            mapped_tag = tag_mapping.get(tag, tag)  # Use original if not in mapping
-            if mapped_tag and mapped_tag.strip():  # Only add non-empty mappings
-                mapped.append(mapped_tag)
-
-        # Remove duplicates while preserving order
-        seen = set()
-        result = []
-        for item in mapped:
-            if item not in seen:
-                seen.add(item)
-                result.append(item)
-
-        return result
-
-    # Process both genre and style columns
-    result = (
-        df.lazy()
-        .with_columns([
-            split_and_clean_tags(pl.col("genre")).alias("genre_tags"),
-            split_and_clean_tags(pl.col("style")).alias("style_tags")
-        ])
-        .with_columns([
-            # Map genre tags
-            pl.col("genre_tags").map_elements(map_tag_list, return_dtype=pl.List(pl.String)).alias("mapped_genre"),
-            # Map style tags
-            pl.col("style_tags").map_elements(map_tag_list, return_dtype=pl.List(pl.String)).alias("mapped_style")
-        ])
-        .with_columns([
-            # Create separate cleaned genre and style fields
-            # pl.when(pl.col("mapped_genre").list.len() == 0)
-            # .then(None)
-            # .otherwise(pl.col("mapped_genre").list.join(DELIMITER))
-            # .alias("new_genre"),
-
-            # pl.when(pl.col("mapped_style").list.len() == 0)
-            # .then(None)
-            # .otherwise(pl.col("mapped_style").list.join(DELIMITER))
-            # .alias("new_style")
-
-            pl.when(pl.col("mapped_genre").list.len() == 0)
-            .then(pl.lit(None, dtype=pl.Utf8))
-            .otherwise(pl.col("mapped_genre").list.join(DELIMITER))
-            .alias("new_genre"),
-
-            pl.when(pl.col("mapped_style").list.len() == 0)
-            .then(pl.lit(None, dtype=pl.Utf8))
-            .otherwise(pl.col("mapped_style").list.join(DELIMITER))
-            .alias("new_style")
-        ])
-        .collect()
-    )
-
-    return result
 
 def merge_genre_style_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     """
