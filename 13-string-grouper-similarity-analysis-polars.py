@@ -263,8 +263,7 @@ def perform_similarity_analysis_optimized(contributors_df: pl.DataFrame, process
 def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.DataFrame:
     """
     Vectorized creation of workspace entries with exact SQL-like ordering for CSV output.
-    Ensures group_sort_keys.csv matches 'ORDER BY group_avg_similarity DESC, group_sort_key ASC'.
-    Workspace entries get additional index-based sorting while maintaining group relationships.
+    Fixed to ensure group_sort_keys.csv matches 'ORDER BY group_avg_similarity DESC, group_sort_key ASC'.
     """
     if similarities_df.height == 0:
         return pl.DataFrame({
@@ -291,36 +290,51 @@ def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.Dat
         ).alias("group_id")
     )
 
-    # Calculate group statistics
+    # Calculate group statistics with improved precision handling
     group_stats = grouped_df.group_by("group_id").agg(
-        pl.col("similarity").mean().alias("group_avg_similarity"),
+        # Round similarity to match SQL precision behavior
+        pl.col("similarity").mean().round(6).alias("group_avg_similarity"),
         pl.concat_list(["left_contributor", "right_contributor"]).flatten().unique().alias("group_contributors"),
         pl.col("min_index").min().alias("group_min_index")
     ).with_columns(
         pl.col("group_contributors").list.sort().list.first().alias("group_namesake"),
         pl.col("group_contributors").list.sort().list.join(" | ").alias("group_name")
     ).with_columns(
-        # Handle "The " prefix for sorting
+        # Handle "The " prefix for sorting - ensure consistent string handling
         pl.when(pl.col("group_namesake").str.to_lowercase().str.starts_with("the "))
-        .then(pl.col("group_namesake").str.slice(4).str.to_lowercase() + ", the")
-        .otherwise(pl.col("group_namesake").str.to_lowercase())
+        .then(pl.col("group_namesake").str.slice(4).str.to_lowercase().str.strip_chars() + ", the")
+        .otherwise(pl.col("group_namesake").str.to_lowercase().str.strip_chars())
         .alias("group_sort_key")
     )
 
-    # 1. EXACT SQL-ORDERED CSV OUTPUT
+    # EXACT SQL-ORDERED CSV OUTPUT with stable sorting
     sorted_group_stats = group_stats.sort(
-        ["group_avg_similarity", "group_sort_key"],
-        descending=[True, False]  # DESC similarity, ASC sort_key
+        [
+            "group_avg_similarity",
+            "group_sort_key",
+            "group_id"  # Add stable tie-breaker
+        ],
+        descending=[True, False, False],
+        maintain_order=True  # Ensure stable sort
     )
 
-    # Write CSV immediately to preserve exact SQL-like order
+    # Write CSV with the rounded values to match display precision
     output_file = "/tmp/amg/group_sort_keys.csv"
     try:
-        sorted_group_stats.select([
+        # Use the same precision for both sorting and output
+        csv_output = sorted_group_stats.select([
             "group_sort_key",
-            pl.col("group_avg_similarity").round(4)
-        ]).write_csv(output_file, separator='|', include_header=True)
+            pl.col("group_avg_similarity").round(4).alias("group_avg_similarity")
+        ])
+
+        csv_output.write_csv(output_file, separator='|', include_header=True)
         logging.info(f"Saved SQL-ordered group keys to {output_file}")
+
+        # Log first few rows for debugging
+        logging.info("First 5 rows in CSV order:")
+        for i, row in enumerate(csv_output.head(5).iter_rows(named=True)):
+            logging.info(f"  {i+1}: {row['group_sort_key']} | {row['group_avg_similarity']}")
+
     except Exception as e:
         logging.error(f"Failed to write {output_file}: {e}")
 
@@ -330,14 +344,14 @@ def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.Dat
         pl.col("right_contributor").alias("replacement_val"),
         pl.col("similarity"),
         pl.lit(None, dtype=pl.Int64).alias("status"),
-        # Sortable versions accounting for "The " prefix
+        # Sortable versions accounting for "The " prefix - match group_sort_key logic
         pl.when(pl.col("left_contributor").str.to_lowercase().str.starts_with("the "))
-        .then(pl.col("left_contributor").str.slice(4).str.to_lowercase() + ", the")
-        .otherwise(pl.col("left_contributor").str.to_lowercase())
+        .then(pl.col("left_contributor").str.slice(4).str.to_lowercase().str.strip_chars() + ", the")
+        .otherwise(pl.col("left_contributor").str.to_lowercase().str.strip_chars())
         .alias("cv_sort"),
         pl.when(pl.col("right_contributor").str.to_lowercase().str.starts_with("the "))
-        .then(pl.col("right_contributor").str.slice(4).str.to_lowercase() + ", the")
-        .otherwise(pl.col("right_contributor").str.to_lowercase())
+        .then(pl.col("right_contributor").str.slice(4).str.to_lowercase().str.strip_chars() + ", the")
+        .otherwise(pl.col("right_contributor").str.to_lowercase().str.strip_chars())
         .alias("rv_sort")
     )
 
@@ -346,11 +360,13 @@ def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.Dat
         [
             "group_avg_similarity",  # Primary (DESC)
             "group_sort_key",        # Secondary (ASC)
+            "group_id",              # Stable tie-breaker
             "min_index",            # Tertiary (ASC)
             "max_index",            # Quaternary (ASC)
             "left_index"            # Quinary (ASC)
         ],
-        descending=[True, False, False, False, False]
+        descending=[True, False, False, False, False, False],
+        maintain_order=True
     ).select(
         "current_val", "replacement_val", "similarity", "status", "cv_sort", "rv_sort"
     )
