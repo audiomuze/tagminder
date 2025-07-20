@@ -428,10 +428,54 @@ def save_results_optimized(similarities_df: pl.DataFrame, csv_path: str, save_cs
         logging.info(f"Skipping CSV output (found {similarities_df.height} matches)")
 
 
+# def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.DataFrame:
+#     """
+#     Vectorized creation of workspace entries with optimized sorting.
+#     Updated to handle the new index columns in the similarities DataFrame.
+#     """
+#     if similarities_df.height == 0:
+#         return pl.DataFrame({
+#             "current_val": [],
+#             "replacement_val": [],
+#             "similarity": [],
+#             "status": [],
+#             "cv_sort": [],
+#             "rv_sort": []
+#         })
+
+#     # Vectorized "the" processing using when/then expressions
+#     workspace_df = similarities_df.with_columns([
+#         pl.col("left_contributor").alias("current_val"),
+#         pl.col("right_contributor").alias("replacement_val"),
+#         pl.col("similarity"),  # Include similarity score
+#         pl.lit(None, dtype=pl.Int64).alias("status"),
+#         # Vectorized "the" processing for sorting
+#         pl.when(pl.col("left_contributor").str.to_lowercase().str.starts_with("the "))
+#         .then(pl.col("left_contributor").str.slice(4).str.to_lowercase() + ", the")
+#         .otherwise(pl.col("left_contributor").str.to_lowercase())
+#         .alias("cv_sort"),
+#         pl.when(pl.col("right_contributor").str.to_lowercase().str.starts_with("the "))
+#         .then(pl.col("right_contributor").str.slice(4).str.to_lowercase() + ", the")
+#         .otherwise(pl.col("right_contributor").str.to_lowercase())
+#         .alias("rv_sort")
+#     ]).select([
+#         "current_val", "replacement_val", "similarity", "status", "cv_sort", "rv_sort"
+#     ]).sort([
+#         pl.col("similarity"),  # High similarity first
+#         "cv_sort"  # Then alphabetically by current_val
+#     ], descending=[True, False])
+
+#     return workspace_df
+
+
 def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.DataFrame:
     """
-    Vectorized creation of workspace entries with optimized sorting.
-    Updated to handle the new index columns in the similarities DataFrame.
+    Vectorized creation of workspace entries with group-based ordering.
+
+    Orders by:
+    1. Group related pairs using index-based ordering (min_index, max_index, left_index)
+    2. Order groups by average similarity score descending, then by concatenated group names ascending
+    3. Within each group, maintain index-based ordering from CSV logic
     """
     if similarities_df.height == 0:
         return pl.DataFrame({
@@ -443,13 +487,48 @@ def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.Dat
             "rv_sort": []
         })
 
-    # Vectorized "the" processing using when/then expressions
-    workspace_df = similarities_df.with_columns([
+    # Step 1: Add the sophisticated index-based grouping columns and create group identifier
+    grouped_df = similarities_df.with_columns([
+        # Calculate min_index and max_index for grouping (same as CSV ordering)
+        pl.min_horizontal(["left_index", "right_index"]).alias("min_index"),
+        pl.max_horizontal(["left_index", "right_index"]).alias("max_index")
+    ]).with_columns([
+        # Create group identifier by concatenating all unique contributor names in each pair
+        pl.concat_list([
+            pl.col("left_contributor"),
+            pl.col("right_contributor")
+        ]).flatten().unique().sort().str.join(" - ").alias("group_id")
+    ])
+
+    # Step 2: Calculate group-level statistics for ordering groups
+    group_stats = grouped_df.group_by("group_id").agg([
+        # Average similarity for the group (more representative than max)
+        pl.col("similarity").mean().alias("group_avg_similarity"),
+        # Group name is the same as group_id (natural sort order)
+        pl.col("group_id").first().alias("group_concat_names"),
+        pl.col("min_index").first().alias("group_min_index"),
+        pl.col("max_index").first().alias("group_max_index")
+    ])
+
+    # Save group statistics to CSV for inspection
+    try:
+        group_stats_for_csv = group_stats.sort([
+            pl.col("group_avg_similarity"),
+            pl.col("group_concat_names")
+        ], descending=[True, False])
+
+        group_stats_for_csv.write_csv('/tmp/amg/_DEBUG_group_statistics.csv', separator='|')
+        logging.info(f"Saved group statistics to /tmp/amg/_DEBUG_group_statistics.csv ({group_stats.height} groups)")
+    except Exception as e:
+        logging.warning(f"Failed to save group statistics CSV: {e}")
+
+    # Step 3: Join group stats back to main dataframe and create workspace columns
+    workspace_df = grouped_df.join(group_stats, on="group_id", how="left").with_columns([
         pl.col("left_contributor").alias("current_val"),
         pl.col("right_contributor").alias("replacement_val"),
-        pl.col("similarity"),  # Include similarity score
+        pl.col("similarity"),
         pl.lit(None, dtype=pl.Int64).alias("status"),
-        # Vectorized "the" processing for sorting
+        # Vectorized "the" processing for individual sorting
         pl.when(pl.col("left_contributor").str.to_lowercase().str.starts_with("the "))
         .then(pl.col("left_contributor").str.slice(4).str.to_lowercase() + ", the")
         .otherwise(pl.col("left_contributor").str.to_lowercase())
@@ -458,14 +537,25 @@ def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.Dat
         .then(pl.col("right_contributor").str.slice(4).str.to_lowercase() + ", the")
         .otherwise(pl.col("right_contributor").str.to_lowercase())
         .alias("rv_sort")
-    ]).select([
-        "current_val", "replacement_val", "similarity", "status", "cv_sort", "rv_sort"
-    ]).sort([
-        pl.col("similarity"),  # High similarity first
-        "cv_sort"  # Then alphabetically by current_val
-    ], descending=[True, False])
+    ])
 
-    return workspace_df
+    # Step 4: Apply the multi-level sorting
+    final_df = workspace_df.sort([
+        # Primary: Group by average similarity descending
+        pl.col("group_avg_similarity"),
+        # Secondary: Natural sort order by concatenated group names
+        pl.col("group_concat_names"),
+        # Tertiary: Within group, use sophisticated index-based ordering (from CSV logic)
+        pl.col("min_index"),
+        pl.col("max_index"),
+        pl.col("left_index")
+    ], descending=[True, False, False, False, False])
+
+    # Step 5: Return only the required columns
+    return final_df.select([
+        "current_val", "replacement_val", "similarity", "status", "cv_sort", "rv_sort"
+    ])
+
 
 def update_workspace_optimized(conn: sqlite3.Connection, workspace_df: pl.DataFrame) -> None:
     """
