@@ -1,50 +1,33 @@
 """
-Script Name: string-grouper-similarity-analysis-polars.py
+Script Name: string-grouper-similarity-analysis-polars-optimized.py
 
 Purpose:
-    Builds a consolidated list of contributors from multiple database columns (artist, albumartist, 
+    Builds a consolidated list of contributors from multiple database columns (artist, albumartist,
     composer, writer, lyricist, engineer, producer) and uses string-grouper to identify potential
     duplicates that may represent the same entity.
 
-    The script:
-    - Extracts distinct contributors from all contributor fields in the alib table
-    - Creates a temporary table (_TMP_distinct_contributors) for analysis
-    - Uses string-grouper to find similar names based on configurable similarity threshold
-    - Filters out previously processed entries from reference tables
-    - Outputs results to CSV and database table for manual review
-    - Prepares data for the _REF_contributors_workspace table for user evaluation
-
-    This is a Polars-vectorized version of the original pandas-based approach, providing
-    improved performance and memory efficiency while maintaining the same functionality.
-
-    It is part of tagminder.
-
-Usage:
-    python string-grouper-similarity-analysis-polars.py
+    Optimized version that eliminates unnecessary temporary table creation and improves
+    vectorization performance.
 
 Author: audiomuze
 Created: 2025-07-19
-
-Dependencies:
-    pip install polars string-grouper
-
+Optimized: 2025-07-20
 """
 
 import os
 import polars as pl
 import sqlite3
-from typing import Dict, List, Tuple, Union, Set
+from typing import Set, Tuple
 import logging
-from datetime import datetime, timezone
+import argparse
 from string_grouper import match_strings
 import pandas as pd  # Still needed for string_grouper compatibility
 
 # ---------- Configuration ----------
-SCRIPT_NAME = "string-grouper-similarity-analysis-polars.py"
+SCRIPT_NAME = "string-grouper-similarity-analysis-polars-optimized.py"
 DB_PATH = '/tmp/amg/dbtemplate.db'
-SIMILARITY_THRESHOLD = 0.85  # Configurable similarity threshold for string matching
-OUTPUT_CSV = '_INF_string_grouper_possible_namesakes.csv'
-OUTPUT_TABLE = '_INF_string_grouper_possible_namesakes'
+SIMILARITY_THRESHOLD = 0.85
+OUTPUT_CSV = '/tmp/amg/_INF_string_grouper_possible_namesakes.csv'
 
 # ---------- Logging Setup ----------
 logging.basicConfig(
@@ -53,25 +36,15 @@ logging.basicConfig(
 )
 
 # ---------- Global Constants ----------
-# Contributor columns to analyze
 CONTRIBUTOR_COLUMNS = [
-    'artist', 'albumartist', 'composer', 'writer', 
+    'artist', 'albumartist', 'composer', 'writer',
     'lyricist', 'engineer', 'producer'
 ]
 
 # ---------- Database Helper Functions ----------
 
 def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    """
-    Check if a table exists in the SQLite database.
-
-    Args:
-        conn: SQLite database connection
-        table_name: Name of the table to check
-
-    Returns:
-        Boolean indicating if the table exists
-    """
+    """Check if a table exists in the SQLite database."""
     cursor = conn.cursor()
     cursor.execute("""
         SELECT name FROM sqlite_master
@@ -79,17 +52,10 @@ def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     """, (table_name,))
     return cursor.fetchone() is not None
 
-def sqlite_to_polars(conn: sqlite3.Connection, query: str, id_column: Union[str, Tuple[str, ...]] = None) -> pl.DataFrame:
+def sqlite_to_polars(conn: sqlite3.Connection, query: str) -> pl.DataFrame:
     """
     Convert SQLite query results to a Polars DataFrame with proper type handling.
-
-    Args:
-        conn: SQLite database connection
-        query: SQL query to execute
-        id_column: Column(s) to treat as integer IDs (unused but kept for compatibility)
-
-    Returns:
-        Polars DataFrame with appropriate data types
+    Simplified version without unused id_column parameter.
     """
     cursor = conn.cursor()
     cursor.execute(query)
@@ -97,356 +63,427 @@ def sqlite_to_polars(conn: sqlite3.Connection, query: str, id_column: Union[str,
     rows = cursor.fetchall()
 
     if not rows:
-        # Return empty DataFrame with proper schema
-        data = {col: [] for col in column_names}
-        return pl.DataFrame(data)
+        return pl.DataFrame({col: [] for col in column_names})
 
     data = {}
     for i, col_name in enumerate(column_names):
         col_data = [row[i] for row in rows]
         if col_name in ("rowid", "sqlmodded", "alib_rowid"):
-            # Ensure integer columns are properly typed
-            data[col_name] = pl.Series(
-                name=col_name,
-                values=[int(x or 0) for x in col_data],
-                dtype=pl.Int64
-            )
+            data[col_name] = [int(x or 0) for x in col_data]
         else:
-            # String columns with null handling
-            data[col_name] = pl.Series(
-                name=col_name,
-                values=[str(x) if x is not None else None for x in col_data],
-                dtype=pl.Utf8
-            )
+            data[col_name] = [str(x) if x is not None else None for x in col_data]
 
     return pl.DataFrame(data)
 
-# ---------- Contributor Extraction Functions ----------
+# ---------- Optimized Contributor Extraction ----------
 
-def extract_all_contributors(conn: sqlite3.Connection) -> pl.DataFrame:
+def extract_and_process_contributors(conn: sqlite3.Connection) -> pl.DataFrame:
     """
-    Extract all contributors from the alib table across multiple contributor columns,
-    creating a consolidated list of unique contributors.
-
-    This function:
-    - Pulls data from all contributor fields (artist, albumartist, composer, etc.)
-    - Handles delimited entries (split on double backslash \\\\)
-    - Creates lowercase versions for matching
-    - Removes duplicates and null/empty values
-    - Creates the _TMP_distinct_contributors table
-
-    Args:
-        conn: SQLite database connection
-
-    Returns:
-        Polars DataFrame with distinct contributors and their lowercase versions
+    Extract and process all contributors in a single optimized function.
+    Uses vectorized operations throughout for better performance.
     """
-    logging.info("Extracting contributors from all contributor columns...")
-    
-    # Load all contributor data from alib
+    logging.info("Extracting and processing contributors...")
+
+    # Build dynamic query to get all contributor columns
+    contributor_select = ', '.join(CONTRIBUTOR_COLUMNS)
+    null_check = ' OR '.join([f'{col} IS NOT NULL' for col in CONTRIBUTOR_COLUMNS])
+
     contributors_df = sqlite_to_polars(
         conn,
         f"""
-        SELECT rowid,
-               {', '.join(CONTRIBUTOR_COLUMNS)}
+        SELECT {contributor_select}
         FROM alib
-        WHERE {' OR '.join([f'{col} IS NOT NULL' for col in CONTRIBUTOR_COLUMNS])}
-        ORDER BY rowid
-        """,
-        id_column="rowid"
+        WHERE {null_check}
+        """
     )
-    
+
     if contributors_df.height == 0:
-        logging.warning("No contributor data found in alib table")
+        logging.warning("No contributor data found")
         return pl.DataFrame({"contributor": [], "lcontributor": []})
-    
-    # Extract and consolidate all contributors
-    all_contributors = []
-    
-    for col in CONTRIBUTOR_COLUMNS:
-        # Get non-null values from this column
-        col_contributors = (
-            contributors_df
-            .select(col)
-            .filter(pl.col(col).is_not_null())
-            .filter(pl.col(col).str.strip_chars() != "")
-        )
-        
-        if col_contributors.height == 0:
-            continue
-            
-        # Handle delimited entries (split on double backslash)
-        for row in col_contributors.iter_rows():
-            contributor_field = row[0]
-            if contributor_field and '\\\\' in contributor_field:
-                # Split on double backslash and process each part
-                parts = [part.strip() for part in contributor_field.split('\\\\')]
-                all_contributors.extend([part for part in parts if part])
-            elif contributor_field:
-                all_contributors.append(contributor_field.strip())
-    
-    if not all_contributors:
-        logging.warning("No contributors found after processing")
-        return pl.DataFrame({"contributor": [], "lcontributor": []})
-    
-    # Create DataFrame with unique contributors and lowercase versions
-    contributors_df = pl.DataFrame({"contributor": all_contributors}).unique()
-    
-    # Add lowercase column for matching
-    contributors_df = contributors_df.with_columns([
-        pl.col("contributor").str.to_lowercase().alias("lcontributor")
-    ])
-    
-    # Filter out empty or null values
-    contributors_df = contributors_df.filter(
-        (pl.col("contributor").is_not_null()) &
+
+    # Vectorized extraction: unpivot all contributor columns into single column
+    melted_df = contributors_df.unpivot(
+        on=CONTRIBUTOR_COLUMNS,
+        variable_name="contributor_type",
+        value_name="contributor"
+    ).filter(
+        pl.col("contributor").is_not_null() &
         (pl.col("contributor").str.strip_chars() != "")
     )
-    
-    logging.info(f"Extracted {contributors_df.height} distinct contributors")
-    return contributors_df
 
-def create_distinct_contributors_table(conn: sqlite3.Connection, contributors_df: pl.DataFrame) -> None:
+    # Handle delimited entries using vectorized string operations
+    # Split on double backslash and explode to separate rows
+    processed_df = melted_df.with_columns([
+        pl.col("contributor").str.split("\\\\").alias("contributor_parts")
+    ]).explode("contributor_parts").with_columns([
+        pl.col("contributor_parts").str.strip_chars().alias("contributor")
+    ]).filter(
+        pl.col("contributor").is_not_null() &
+        (pl.col("contributor") != "")
+    ).select("contributor").unique()
+
+    # Add lowercase column for matching in single operation
+    result_df = processed_df.with_columns([
+        pl.col("contributor").str.to_lowercase().alias("lcontributor")
+    ])
+
+    logging.info(f"Extracted {result_df.height} distinct contributors")
+    return result_df
+
+# ---------- Optimized Processing Functions ----------
+
+def get_processed_contributors_vectorized(conn: sqlite3.Connection) -> Set[str]:
     """
-    Create or update the _TMP_distinct_contributors table with extracted contributor data.
-
-    Args:
-        conn: SQLite database connection
-        contributors_df: DataFrame containing distinct contributors
+    Get all previously processed contributors using vectorized operations.
+    Returns a flat set of contributor names rather than pairs for simpler filtering.
     """
-    cursor = conn.cursor()
-    
-    # Create table structure
-    cursor.execute("DROP TABLE IF EXISTS _TMP_distinct_contributors")
-    cursor.execute("""
-        CREATE TABLE _TMP_distinct_contributors (
-            rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-            contributor TEXT UNIQUE,
-            lcontributor TEXT
-        )
-    """)
-    
-    # Convert to pandas for database insertion (more efficient for bulk inserts)
-    contributors_pandas = contributors_df.to_pandas()
-    contributors_pandas.to_sql('_TMP_distinct_contributors', conn, if_exists='append', index=False)
-    
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tmp_contributors_lower ON _TMP_distinct_contributors(lcontributor)")
-    conn.commit()
-    
-    logging.info(f"Created _TMP_distinct_contributors table with {contributors_df.height} records")
+    processed_contributors = set()
 
-# ---------- String Grouper Analysis Functions ----------
-
-def get_previously_processed_contributors(conn: sqlite3.Connection) -> Set[Tuple[str, str]]:
-    """
-    Get all previously processed contributor pairs from reference tables to avoid
-    re-processing entries that have already been evaluated.
-
-    Args:
-        conn: SQLite database connection
-
-    Returns:
-        Set of tuples (current_val, replacement_val) that have been previously processed
-    """
-    processed_pairs = set()
-    
-    # Get processed entries from _REF_vetted_contributors
+    # Get from vetted contributors
     if table_exists(conn, '_REF_vetted_contributors'):
         vetted_df = sqlite_to_polars(
             conn,
-            "SELECT current_val FROM _REF_vetted_contributors"
+            "SELECT current_val FROM _REF_vetted_contributors WHERE current_val IS NOT NULL"
         )
-        # Add as single-item tuples (current_val as both left and right for filtering)
-        for row in vetted_df.iter_rows():
-            current_val = row[0]
-            if current_val:
-                processed_pairs.add((current_val, current_val))
-    
-    # Get processed entries from _REF_contributors_workspace
+        if vetted_df.height > 0:
+            processed_contributors.update(vetted_df['current_val'].to_list())
+
+    # Get from workspace (both current and replacement values)
     if table_exists(conn, '_REF_contributors_workspace'):
         workspace_df = sqlite_to_polars(
             conn,
             """
-            SELECT current_val, replacement_val 
-            FROM _REF_contributors_workspace 
+            SELECT current_val, replacement_val
+            FROM _REF_contributors_workspace
             WHERE status IN (0, 1)
+            AND current_val IS NOT NULL
+            AND replacement_val IS NOT NULL
             """
         )
-        for row in workspace_df.iter_rows():
-            current_val, replacement_val = row
-            if current_val and replacement_val:
-                processed_pairs.add((current_val, replacement_val))
-    
-    logging.info(f"Found {len(processed_pairs)} previously processed contributor pairs")
-    return processed_pairs
+        if workspace_df.height > 0:
+            processed_contributors.update(workspace_df['current_val'].to_list())
+            processed_contributors.update(workspace_df['replacement_val'].to_list())
 
-def perform_string_grouper_analysis(contributors_df: pl.DataFrame, processed_pairs: Set[Tuple[str, str]]) -> pl.DataFrame:
+    logging.info(f"Found {len(processed_contributors)} previously processed contributors")
+    return processed_contributors
+
+# def perform_similarity_analysis_optimized(contributors_df: pl.DataFrame, processed_contributors: Set[str], similarity_threshold: float) -> pl.DataFrame:
+#     """
+#     Optimized similarity analysis with better filtering.
+
+#     Args:
+#         contributors_df: DataFrame with contributor data
+#         processed_contributors: Set of already processed contributors
+#         similarity_threshold: Minimum similarity threshold for matches
+#     """
+#     logging.info(f"Running similarity analysis (threshold: {similarity_threshold})")
+
+#     # Filter out already processed contributors before analysis
+#     unprocessed_df = contributors_df.filter(
+#         ~pl.col("contributor").is_in(list(processed_contributors))
+#     )
+
+#     if unprocessed_df.height < 2:
+#         logging.info("Not enough unprocessed contributors for similarity analysis")
+#         return pl.DataFrame({
+#             "left_contributor": [],
+#             "right_contributor": [],
+#             "similarity": []
+#         })
+
+#     # Convert to pandas for string_grouper (unavoidable dependency)
+#     contributors_pandas = unprocessed_df.to_pandas()
+
+#     try:
+#         matches = match_strings(
+#             contributors_pandas['contributor'],
+#             min_similarity=similarity_threshold
+#         )
+#     except Exception as e:
+#         logging.error(f"String grouper analysis failed: {e}")
+#         return pl.DataFrame({
+#             "left_contributor": [],
+#             "right_contributor": [],
+#             "similarity": []
+#         })
+
+#     # Filter exact matches and convert back to Polars
+#     if matches.empty:
+#         similarities_df = pl.DataFrame({
+#             "left_contributor": [],
+#             "right_contributor": [],
+#             "similarity": []
+#         })
+#     else:
+#         # Filter non-exact matches
+#         filtered_matches = matches[
+#             matches['left_contributor'] != matches['right_contributor']
+#         ]
+
+#         if filtered_matches.empty:
+#             similarities_df = pl.DataFrame({
+#                 "left_contributor": [],
+#                 "right_contributor": [],
+#                 "similarity": []
+#             })
+#         else:
+#             similarities_df = pl.from_pandas(filtered_matches)
+
+#     logging.info(f"Found {similarities_df.height} potential matches")
+#     return similarities_df
+
+
+
+# def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.DataFrame:
+#     """
+#     Vectorized creation of workspace entries with optimized sorting.
+#     Sorted by similarity descending, then cv_sort ascending for efficient review.
+#     """
+#     if similarities_df.height == 0:
+#         return pl.DataFrame({
+#             "current_val": [],
+#             "replacement_val": [],
+#             "similarity": [],
+#             "status": [],
+#             "cv_sort": [],
+#             "rv_sort": []
+#         })
+
+#     # Vectorized "the" processing using when/then expressions
+#     workspace_df = similarities_df.with_columns([
+#         pl.col("left_contributor").alias("current_val"),
+#         pl.col("right_contributor").alias("replacement_val"),
+#         pl.col("similarity"),  # Include similarity score
+#         pl.lit(None, dtype=pl.Int64).alias("status"),
+#         # Vectorized "the" processing for sorting
+#         pl.when(pl.col("left_contributor").str.to_lowercase().str.starts_with("the "))
+#         .then(pl.col("left_contributor").str.slice(4).str.to_lowercase() + ", the")
+#         .otherwise(pl.col("left_contributor").str.to_lowercase())
+#         .alias("cv_sort"),
+#         pl.when(pl.col("right_contributor").str.to_lowercase().str.starts_with("the "))
+#         .then(pl.col("right_contributor").str.slice(4).str.to_lowercase() + ", the")
+#         .otherwise(pl.col("right_contributor").str.to_lowercase())
+#         .alias("rv_sort")
+#     ]).select([
+#         "current_val", "replacement_val", "similarity", "status", "cv_sort", "rv_sort"
+#     ]).sort([
+#         pl.col("similarity"),  # High similarity first
+#         "cv_sort"  # Then alphabetically by current_val
+#     ], descending=[True, False])
+
+#     return workspace_df
+
+# ---------- Optimized Output Functions ----------
+
+# def save_results_optimized(similarities_df: pl.DataFrame, csv_path: str, save_csv: bool = True) -> None:
+#     """
+#     Save similarity results to CSV if requested.
+
+#     Args:
+#         similarities_df: DataFrame with similarity results
+#         csv_path: Path for CSV output
+#         save_csv: Whether to save CSV output (default True)
+#     """
+#     if similarities_df.height == 0:
+#         logging.info("No results to save")
+#         return
+
+#     # Save to CSV only if requested
+#     if save_csv:
+#         similarities_df.write_csv(csv_path, separator='|')
+#         logging.info(f"Saved {similarities_df.height} matches to {csv_path}")
+#     else:
+#         logging.info(f"Skipping CSV output (found {similarities_df.height} matches)")
+
+def perform_similarity_analysis_optimized(contributors_df: pl.DataFrame, processed_contributors: Set[str], similarity_threshold: float) -> pl.DataFrame:
     """
-    Perform string-grouper similarity analysis on contributors to identify potential duplicates.
+    Optimized similarity analysis with better filtering and index preservation.
 
     Args:
-        contributors_df: DataFrame with distinct contributors
-        processed_pairs: Set of previously processed contributor pairs to exclude
-
-    Returns:
-        DataFrame with similarity matches that haven't been previously processed
+        contributors_df: DataFrame with contributor data
+        processed_contributors: Set of already processed contributors
+        similarity_threshold: Minimum similarity threshold for matches
     """
-    logging.info(f"Running string-grouper analysis with similarity threshold {SIMILARITY_THRESHOLD}")
-    
-    # Convert to pandas for string_grouper compatibility
-    contributors_pandas = contributors_df.to_pandas()
-    
-    # Perform string matching
-    matches = match_strings(contributors_pandas['contributor'], min_similarity=SIMILARITY_THRESHOLD)
-    
-    # Filter out exact matches (we only want potential duplicates)
-    similarities = matches[matches['left_contributor'] != matches['right_contributor']].copy()
-    
-    if similarities.empty:
-        logging.info("No similar contributors found")
+    logging.info(f"Running similarity analysis (threshold: {similarity_threshold})")
+
+    # Filter out already processed contributors before analysis
+    unprocessed_df = contributors_df.filter(
+        ~pl.col("contributor").is_in(list(processed_contributors))
+    ).with_row_index("original_index")  # Add row index for ordering
+
+    if unprocessed_df.height < 2:
+        logging.info("Not enough unprocessed contributors for similarity analysis")
         return pl.DataFrame({
             "left_contributor": [],
             "right_contributor": [],
+            "left_index": [],
+            "right_index": [],
             "similarity": []
         })
-    
-    logging.info(f"Found {len(similarities)} potential similarity matches before filtering")
-    
-    # Filter out previously processed pairs
-    def is_processed_pair(left, right):
-        return (left, right) in processed_pairs or (right, left) in processed_pairs or (left, left) in processed_pairs or (right, right) in processed_pairs
-    
-    similarities = similarities[
-        ~similarities.apply(lambda row: is_processed_pair(row['left_contributor'], row['right_contributor']), axis=1)
-    ].copy()
-    
-    logging.info(f"After filtering previously processed entries: {len(similarities)} matches remain")
-    
-    # Convert back to Polars
-    if not similarities.empty:
-        return pl.from_pandas(similarities)
+
+    # Convert to pandas for string_grouper (unavoidable dependency)
+    contributors_pandas = unprocessed_df.to_pandas()
+
+    try:
+        matches = match_strings(
+            contributors_pandas['contributor'],
+            min_similarity=similarity_threshold
+        )
+    except Exception as e:
+        logging.error(f"String grouper analysis failed: {e}")
+        return pl.DataFrame({
+            "left_contributor": [],
+            "right_contributor": [],
+            "left_index": [],
+            "right_index": [],
+            "similarity": []
+        })
+
+    # Filter exact matches and convert back to Polars with index information
+    if matches.empty:
+        similarities_df = pl.DataFrame({
+            "left_contributor": [],
+            "right_contributor": [],
+            "left_index": [],
+            "right_index": [],
+            "similarity": []
+        })
     else:
-        return pl.DataFrame({
-            "left_contributor": [],
-            "right_contributor": [],
-            "similarity": []
-        })
+        # Filter non-exact matches
+        filtered_matches = matches[
+            matches['left_contributor'] != matches['right_contributor']
+        ]
 
-def create_contributor_workspace_entries(similarities_df: pl.DataFrame) -> pl.DataFrame:
+        if filtered_matches.empty:
+            similarities_df = pl.DataFrame({
+                "left_contributor": [],
+                "right_contributor": [],
+                "left_index": [],
+                "right_index": [],
+                "similarity": []
+            })
+        else:
+            # Convert back to Polars and ensure we have the index columns
+            similarities_df = pl.from_pandas(filtered_matches)
+
+            # If string_grouper didn't provide indices, we need to add them
+            if "left_index" not in similarities_df.columns:
+                # Create mapping from contributor to index
+                contributor_to_index = dict(zip(
+                    unprocessed_df['contributor'].to_list(),
+                    unprocessed_df['original_index'].to_list()
+                ))
+
+                similarities_df = similarities_df.with_columns([
+                    pl.col("left_contributor").map_elements(
+                        lambda x: contributor_to_index.get(x, -1),
+                        return_dtype=pl.Int64
+                    ).alias("left_index"),
+                    pl.col("right_contributor").map_elements(
+                        lambda x: contributor_to_index.get(x, -1),
+                        return_dtype=pl.Int64
+                    ).alias("right_index")
+                ])
+
+    logging.info(f"Found {similarities_df.height} potential matches")
+    return similarities_df
+
+
+def save_results_optimized(similarities_df: pl.DataFrame, csv_path: str, save_csv: bool = True) -> None:
     """
-    Create entries for the _REF_contributors_workspace table with proper sorting columns.
-    
-    Moves "the" to the end of strings for better sorting (e.g., "The Beatles" becomes "beatles, the").
+    Save similarity results to CSV with sophisticated index-based ordering.
+    Implements the same logic as the provided SQL query.
 
     Args:
-        similarities_df: DataFrame with similarity matches
+        similarities_df: DataFrame with similarity results including indices
+        csv_path: Path for CSV output
+        save_csv: Whether to save CSV output (default True)
+    """
+    if similarities_df.height == 0:
+        logging.info("No results to save")
+        return
 
-    Returns:
-        DataFrame formatted for _REF_contributors_workspace insertion
+    if save_csv:
+        # Apply the sophisticated ordering logic equivalent to the SQL query
+        ordered_df = similarities_df.with_columns([
+            # Calculate min_index (equivalent to CASE WHEN left_index < right_index THEN left_index ELSE right_index END)
+            pl.min_horizontal(["left_index", "right_index"]).alias("min_index"),
+            # Calculate max_index (equivalent to CASE WHEN left_index > right_index THEN left_index ELSE right_index END)
+            pl.max_horizontal(["left_index", "right_index"]).alias("max_index")
+        ]).sort([
+            "min_index",      # First ordering criterion
+            "max_index",      # Second ordering criterion
+            "left_index"      # Third ordering criterion (tie-breaker)
+        ])
+
+        # Remove the temporary ordering columns before saving
+        final_df = ordered_df.select([
+            "left_contributor", "right_contributor",
+            "left_index", "right_index", "similarity"
+        ])
+
+        final_df.write_csv(csv_path, separator='|')
+        logging.info(f"Saved {final_df.height} matches to {csv_path} with index-based ordering")
+    else:
+        logging.info(f"Skipping CSV output (found {similarities_df.height} matches)")
+
+
+def create_workspace_entries_vectorized(similarities_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Vectorized creation of workspace entries with optimized sorting.
+    Updated to handle the new index columns in the similarities DataFrame.
     """
     if similarities_df.height == 0:
         return pl.DataFrame({
             "current_val": [],
             "replacement_val": [],
+            "similarity": [],
             "status": [],
             "cv_sort": [],
             "rv_sort": []
         })
-    
-    def move_the_to_end(name: str) -> str:
-        """Move 'the' from beginning to end for sorting purposes."""
-        if name and name.lower().startswith('the '):
-            return name[4:].lower() + ', the'
-        return name.lower()
-    
-    # Create workspace entries
+
+    # Vectorized "the" processing using when/then expressions
     workspace_df = similarities_df.with_columns([
         pl.col("left_contributor").alias("current_val"),
         pl.col("right_contributor").alias("replacement_val"),
+        pl.col("similarity"),  # Include similarity score
         pl.lit(None, dtype=pl.Int64).alias("status"),
-        pl.col("left_contributor").map_elements(
-            move_the_to_end, return_dtype=pl.Utf8
-        ).alias("cv_sort"),
-        pl.col("right_contributor").map_elements(
-            move_the_to_end, return_dtype=pl.Utf8
-        ).alias("rv_sort")
+        # Vectorized "the" processing for sorting
+        pl.when(pl.col("left_contributor").str.to_lowercase().str.starts_with("the "))
+        .then(pl.col("left_contributor").str.slice(4).str.to_lowercase() + ", the")
+        .otherwise(pl.col("left_contributor").str.to_lowercase())
+        .alias("cv_sort"),
+        pl.when(pl.col("right_contributor").str.to_lowercase().str.starts_with("the "))
+        .then(pl.col("right_contributor").str.slice(4).str.to_lowercase() + ", the")
+        .otherwise(pl.col("right_contributor").str.to_lowercase())
+        .alias("rv_sort")
     ]).select([
-        "current_val", "replacement_val", "status", "cv_sort", "rv_sort"
-    ]).sort(["cv_sort", "rv_sort"])
-    
+        "current_val", "replacement_val", "similarity", "status", "cv_sort", "rv_sort"
+    ]).sort([
+        pl.col("similarity"),  # High similarity first
+        "cv_sort"  # Then alphabetically by current_val
+    ], descending=[True, False])
+
     return workspace_df
 
-# ---------- Output Functions ----------
-
-def save_results_to_csv(similarities_df: pl.DataFrame, filename: str) -> None:
+def update_workspace_optimized(conn: sqlite3.Connection, workspace_df: pl.DataFrame) -> None:
     """
-    Save similarity results to CSV file for manual review.
-
-    Args:
-        similarities_df: DataFrame with similarity matches
-        filename: Output CSV filename
-    """
-    if similarities_df.height == 0:
-        logging.info("No results to save to CSV")
-        return
-    
-    similarities_df.write_csv(filename, separator='|')
-    logging.info(f"Saved {similarities_df.height} similarity matches to {filename}")
-
-def save_results_to_database(conn: sqlite3.Connection, similarities_df: pl.DataFrame, table_name: str) -> None:
-    """
-    Save similarity results to database table for further analysis.
-
-    Args:
-        conn: SQLite database connection
-        similarities_df: DataFrame with similarity matches
-        table_name: Name of the output table
-    """
-    cursor = conn.cursor()
-    
-    # Drop existing table
-    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-    
-    if similarities_df.height == 0:
-        # Create empty table structure
-        cursor.execute(f"""
-            CREATE TABLE {table_name} (
-                rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-                left_contributor TEXT,
-                right_contributor TEXT,
-                similarity REAL
-            )
-        """)
-        conn.commit()
-        logging.info(f"Created empty {table_name} table")
-        return
-    
-    # Convert to pandas and save
-    similarities_pandas = similarities_df.to_pandas()
-    similarities_pandas.to_sql(table_name, conn, if_exists='replace', index=True)
-    
-    conn.commit()
-    logging.info(f"Saved {similarities_df.height} similarity matches to {table_name} table")
-
-def update_contributors_workspace(conn: sqlite3.Connection, workspace_df: pl.DataFrame) -> None:
-    """
-    Update the _REF_contributors_workspace table with new entries for manual evaluation.
-
-    Args:
-        conn: SQLite database connection
-        workspace_df: DataFrame with workspace entries to add
+    Optimized workspace update with similarity-based sorting for efficient review.
+    Table includes similarity score and is sorted by similarity desc, cv_sort asc.
     """
     if workspace_df.height == 0:
-        logging.info("No new entries to add to contributors workspace")
+        logging.info("No workspace entries to add")
         return
-    
+
     cursor = conn.cursor()
-    
-    # Create workspace table if it doesn't exist
+
+    # Ensure table exists with similarity column
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS _REF_contributors_workspace (
             current_val TEXT,
             replacement_val TEXT,
+            similarity REAL,
             status INTEGER,
             cv_sort TEXT,
             rv_sort TEXT,
@@ -454,48 +491,86 @@ def update_contributors_workspace(conn: sqlite3.Connection, workspace_df: pl.Dat
             PRIMARY KEY (current_val, replacement_val)
         )
     """)
-    
-    # Insert only new entries (avoid duplicates)
-    workspace_pandas = workspace_df.to_pandas()
-    
-    # Use INSERT OR IGNORE to avoid constraint violations
-    for _, row in workspace_pandas.iterrows():
-        cursor.execute("""
-            INSERT OR IGNORE INTO _REF_contributors_workspace 
-            (current_val, replacement_val, status, cv_sort, rv_sort, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            row['current_val'], 
-            row['replacement_val'], 
-            row['status'], 
-            row['cv_sort'], 
-            row['rv_sort'],
-            None
-        ))
-    
-    conn.commit()
-    added_count = cursor.rowcount
-    logging.info(f"Added {added_count} new entries to _REF_contributors_workspace")
 
-# ---------- Main Execution Function ----------
+    # Batch insert with proper error handling
+    workspace_data = workspace_df.to_pandas()
+    insert_count = 0
+
+    for _, row in workspace_data.iterrows():
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO _REF_contributors_workspace
+                (current_val, replacement_val, similarity, status, cv_sort, rv_sort, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                row['current_val'],
+                row['replacement_val'],
+                row['similarity'],
+                row['status'],
+                row['cv_sort'],
+                row['rv_sort'],
+                None
+            ))
+            if cursor.rowcount > 0:
+                insert_count += 1
+        except sqlite3.Error as e:
+            logging.warning(f"Failed to insert workspace entry: {e}")
+
+    conn.commit()
+    logging.info(f"Added {insert_count} new workspace entries")
+
+# ---------- Argument Parsing ----------
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='String-grouper similarity analysis for contributor deduplication',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python %(prog)s                           # Run with default similarity (0.85)
+  python %(prog)s --csv                     # Include CSV output
+  python %(prog)s --similarity=0.90         # Use higher similarity threshold
+  python %(prog)s --csv --similarity=0.75   # Lower threshold with CSV output
+        """
+    )
+
+    parser.add_argument(
+        '--csv',
+        action='store_true',
+        help='Generate CSV output file (default: database only)'
+    )
+
+    parser.add_argument(
+        '--similarity',
+        type=float,
+        default=SIMILARITY_THRESHOLD,
+        metavar='THRESHOLD',
+        help=f'Similarity threshold (0.0-1.0, default: {SIMILARITY_THRESHOLD})'
+    )
+
+    args = parser.parse_args()
+
+    # Validate similarity threshold
+    if not 0.0 <= args.similarity <= 1.0:
+        parser.error("Similarity threshold must be between 0.0 and 1.0")
+
+    return args
+
+# ---------- Streamlined Main Function ----------
 
 def main():
     """
-    Main execution function that orchestrates the string-grouper similarity analysis process.
-
-    Process flow:
-    1. Check database connectivity
-    2. Extract all contributors from alib table
-    3. Create/update _TMP_distinct_contributors table
-    4. Get previously processed contributor pairs
-    5. Perform string-grouper similarity analysis
-    6. Filter out previously processed entries
-    7. Save results to CSV and database table
-    8. Update _REF_contributors_workspace for manual evaluation
+    Streamlined main execution with eliminated temporary table creation.
     """
-    
-    logging.info(f"Starting string-grouper similarity analysis")
-    logging.info(f"Connecting to database: {DB_PATH}")
+    args = parse_arguments()
+
+    logging.info("Starting optimized string-grouper similarity analysis")
+    logging.info(f"Similarity threshold: {args.similarity}")
+    if args.csv:
+        logging.info("CSV output enabled")
+    else:
+        logging.info("Database output only (use --csv for CSV output)")
 
     if not os.path.exists(DB_PATH):
         logging.error(f"Database file does not exist: {DB_PATH}")
@@ -503,48 +578,37 @@ def main():
 
     try:
         conn = sqlite3.connect(DB_PATH)
-    except sqlite3.Error as e:
-        logging.error(f"Failed to connect to database: {e}")
-        return
 
-    try:
-        # Step 1: Extract all contributors
-        contributors_df = extract_all_contributors(conn)
-        
+        # Step 1: Extract and process contributors (no temp table needed)
+        contributors_df = extract_and_process_contributors(conn)
         if contributors_df.height == 0:
             logging.warning("No contributors found, exiting")
             return
-        
-        # Step 2: Create distinct contributors table
-        create_distinct_contributors_table(conn, contributors_df)
-        
-        # Step 3: Get previously processed contributor pairs
-        processed_pairs = get_previously_processed_contributors(conn)
-        
-        # Step 4: Perform string-grouper analysis
-        similarities_df = perform_string_grouper_analysis(contributors_df, processed_pairs)
-        
-        # Step 5: Save results
-        save_results_to_csv(similarities_df, OUTPUT_CSV)
-        save_results_to_database(conn, similarities_df, OUTPUT_TABLE)
-        
-        # Step 6: Create workspace entries for manual evaluation
-        workspace_df = create_contributor_workspace_entries(similarities_df)
-        update_contributors_workspace(conn, workspace_df)
-        
+
+        # Step 2: Get processed contributors
+        processed_contributors = get_processed_contributors_vectorized(conn)
+
+        # Step 3: Perform similarity analysis with custom threshold
+        similarities_df = perform_similarity_analysis_optimized(contributors_df, processed_contributors, args.similarity)
+
+        # Step 4: Save results (CSV only if requested)
+        save_results_optimized(similarities_df, OUTPUT_CSV, save_csv=args.csv)
+
+        # Step 5: Update workspace
+        workspace_df = create_workspace_entries_vectorized(similarities_df)
+        update_workspace_optimized(conn, workspace_df)
+
+        # Summary
         if similarities_df.height > 0:
-            logging.info(f"Analysis complete. Found {similarities_df.height} potential contributor matches for review.")
-            logging.info(f"Results saved to {OUTPUT_CSV} and {OUTPUT_TABLE} table.")
-            logging.info(f"New entries added to _REF_contributors_workspace for manual evaluation.")
+            logging.info(f"Analysis complete: {similarities_df.height} potential matches found")
         else:
-            logging.info("Analysis complete. No new potential matches found.")
-            
+            logging.info("Analysis complete: No new matches found")
+
     except Exception as e:
-        logging.error(f"Error during analysis: {e}", exc_info=True)
+        logging.error(f"Analysis failed: {e}", exc_info=True)
         raise
     finally:
         conn.close()
-        logging.info("Database connection closed")
 
 if __name__ == "__main__":
     main()
