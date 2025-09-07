@@ -239,23 +239,42 @@ def process_chunk(conn: sqlite3.Connection,
         current_col = mbid_field
 
         # Split, lookup, and join MBIDs
+        # df = df.with_columns(
+        #             pl.col(norm_col)
+        #             .str.split("\\\\")
+        #             .list.eval(
+        #                 pl.element()
+        #                 .map_elements(
+        #                     lambda x: contributors_dict.get(
+        #                         unicodedata.normalize('NFKD', x.lower().strip().replace('"', '')),
+        #                         ""  # Default if not found
+        #                     ),
+        #                     return_dtype=pl.Utf8
+        #                 )
+        #             )
+        #             .list.join("\\\\")
+        #             .alias(f"new_{mbid_field}")
+        #         )
         df = df.with_columns(
-                    pl.col(norm_col)
-                    .str.split("\\\\")
-                    .list.eval(
-                        pl.element()
-                        .map_elements(
-                            lambda x: contributors_dict.get(
-                                unicodedata.normalize('NFKD', x.lower().strip().replace('"', '')),
-                                ""  # Default if not found
-                            ),
-                            return_dtype=pl.Utf8
-                        )
-                    )
-                    .list.join("\\\\")
-                    .alias(f"new_{mbid_field}")
+            pl.col(norm_col)
+            .str.split("\\\\")
+            .list.eval(
+                pl.element()
+                .map_elements(
+                    lambda x: contributors_dict.get(
+                        unicodedata.normalize('NFKD', x.lower().strip().replace('"', '')),
+                        ""  # Default if not found
+                    ),
+                    return_dtype=pl.Utf8
                 )
-
+            )
+            .list.join("\\\\")
+            .map_elements(
+                lambda x: None if x.replace('\\\\', '') == '' else x,  # Set to None if all empty
+                return_dtype=pl.Utf8
+            )
+            .alias(f"new_{mbid_field}")
+        )
         # Enhanced change detection to handle empty/quote cases
         df = df.with_columns(
             (pl.col(f"new_{mbid_field}") != pl.col(current_col))
@@ -566,20 +585,32 @@ def process_full_database(conn: sqlite3.Connection):
                 # Split the value and match entities
                 entities = [normalize_string(e) for e in str(value).split('\\\\')]
 
-                matched_mbids = []
+                # matched_mbids = []
 
+                # for entity in entities:
+                #     if entity in contributors_dict:
+                #         matched_mbids.append(contributors_dict[entity])
+                #     else:
+                #         matched_mbids.append('') # (add '' so Mutagen writes an empty tag and Lyrion inteprets it as a blank delimited value)
+
+                # if not matched_mbids:
+                #     continue
+
+                # new_value = '\\\\'.join(matched_mbids)
+                # # If new_value consists only of backslashes, set to None
+                # if new_value and new_value.replace('\\', '') == '':
+                #     new_value = None
+
+                matched_mbids = []
                 for entity in entities:
                     if entity in contributors_dict:
                         matched_mbids.append(contributors_dict[entity])
                     else:
-                        matched_mbids.append('') # (add '' so Mutagen writes an empty tag and Lyrion inteprets it as a blank delimited value)
-
-                if not matched_mbids:
-                    continue
+                        matched_mbids.append('')  # Explicit empty string
 
                 new_value = '\\\\'.join(matched_mbids)
-                # If new_value consists only of backslashes, set to None
-                if new_value and new_value.replace('\\', '') == '':
+                # Set to None if all MBIDs are empty strings
+                if new_value.replace('\\\\', '') == '':
                     new_value = None
 
                 # Check current value

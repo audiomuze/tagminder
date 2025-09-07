@@ -53,6 +53,7 @@ EXCLUDED_COLUMNS = {"discogs_artist_url", "lyrics", "review", "sqlmodded", "unsy
 # ---------- Helpers ----------
 
 def get_filtered_columns(conn: sqlite3.Connection, table: str) -> List[str]:
+    """Get column names, excluding specified columns and system columns."""
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA table_info({table})")
     columns = [
@@ -63,8 +64,15 @@ def get_filtered_columns(conn: sqlite3.Connection, table: str) -> List[str]:
     return columns
 
 def sqlite_to_polars(conn: sqlite3.Connection, table: str, columns: List[str]) -> pl.DataFrame:
-    col_query = ", ".join(columns)
-    query = f"SELECT rowid, {col_query}, COALESCE(sqlmodded, 0) as sqlmodded FROM {table}"
+    """
+    Load data from SQLite table into Polars DataFrame.
+    Properly quotes column names to handle spaces and special characters.
+    """
+    # Quote column names with square brackets to handle spaces
+    quoted_columns = [f'[{col}]' for col in columns]
+    col_query = ", ".join(quoted_columns)
+    query = f"SELECT rowid, {col_query}, COALESCE(sqlmodded, 0) as sqlmodded FROM [{table}]"
+
     cursor = conn.cursor()
     cursor.execute(query)
 
@@ -85,31 +93,50 @@ def sqlite_to_polars(conn: sqlite3.Connection, table: str, columns: List[str]) -
     return pl.DataFrame(data)
 
 def clean_text(val: str) -> str:
+    """
+    Clean text by removing CRLF/LF, normalizing apostrophes, and converting empty strings to None.
+    """
     if val is None:
         return None
 
     cleaned = val.replace("\r\n", "").replace("\n", "").strip()
-    if cleaned in {"’", "́"}:
+
+    # Handle specific problematic apostrophe encodings
+    if cleaned in {"â€™", "Ì"}:
         cleaned = "'"
+
     return cleaned if cleaned else None
 
 def apply_cleaning(df: pl.DataFrame, text_columns: List[str]) -> pl.DataFrame:
+    """
+    Apply text cleaning to specified columns and track changes for sqlmodded increment.
+    Uses vectorized operations for optimal performance.
+    """
     updated_df = df.clone()
     sqlmodded_increments = pl.lit(0)
 
     for col in text_columns:
         original = df[col]
         cleaned = df[col].map_elements(clean_text, return_dtype=pl.Utf8)
+
+        # Track which rows changed for this column
         changed = (original != cleaned) & original.is_not_null()
         sqlmodded_increments += changed.cast(pl.Int32())
+
+        # Update the column with cleaned values
         updated_df = updated_df.with_columns(cleaned.alias(col))
 
+    # Update sqlmodded counter
     updated_df = updated_df.with_columns(
         (pl.col("sqlmodded").fill_null(0) + sqlmodded_increments).alias("sqlmodded")
     )
     return updated_df
 
 def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.DataFrame, columns: List[str]) -> int:
+    """
+    Write only changed rows back to the database and log all changes.
+    Uses proper SQL quoting for column names with spaces.
+    """
     changed = updated.filter(pl.col("sqlmodded") > original["sqlmodded"])
     if changed.is_empty():
         logging.info("No changes to write.")
@@ -121,6 +148,8 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
 
     cursor = conn.cursor()
     conn.execute("BEGIN TRANSACTION")
+
+    # Create changelog table if it doesn't exist
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
             alib_rowid INTEGER,
@@ -132,7 +161,6 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
         )
     """)
 
-
     updates = 0
     timestamp = datetime.now(timezone.utc).isoformat()
     script_name = "cleantext-polars.py"
@@ -142,22 +170,25 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
             rowid = record["rowid"]
             original_row = original.filter(pl.col("rowid") == rowid).row(0, named=True)
 
+            # Find columns that actually changed
             update_cols = [
                 col for col in columns
                 if record.get(col) != original_row.get(col)
             ]
 
             if update_cols:
-                # 1. Log changes to 'changes' table
+                # 1. Log changes to changelog table
                 for col in update_cols:
                     cursor.execute(
                         "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
                         (rowid, col, original_row.get(col), record.get(col), timestamp, script_name)
                     )
 
-                # 2. Write updated values into 'alib'
-                set_clause = ", ".join(f"{col} = ?" for col in update_cols) + ", sqlmodded = ?"
+                # 2. Update the alib table with proper column quoting
+                quoted_cols = [f'[{col}]' for col in update_cols]
+                set_clause = ", ".join(f"{quoted_col} = ?" for quoted_col in quoted_cols) + ", sqlmodded = ?"
                 values = [record[col] for col in update_cols] + [record["sqlmodded"], rowid]
+
                 cursor.execute(f"UPDATE alib SET {set_clause} WHERE rowid = ?", values)
 
                 updates += 1
@@ -165,6 +196,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
 
         conn.commit()
         logging.info(f"Successfully updated {updates} rows in the database and logged changes.")
+
     except Exception as e:
         conn.rollback()
         logging.error(f"Write failed: {e}")
@@ -175,6 +207,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
 # ---------- Main entry ----------
 
 def main():
+    """Main execution function."""
     logging.info(f"Connecting to database: {DB_PATH}")
     conn = sqlite3.connect(DB_PATH)
 
@@ -194,6 +227,8 @@ def main():
 
         if num_changed > 0:
             write_updates(conn, original_df, cleaned_df, target_cols)
+        else:
+            logging.info("No changes detected - database update skipped.")
 
     finally:
         conn.close()

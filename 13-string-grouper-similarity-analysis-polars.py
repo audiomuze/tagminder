@@ -77,10 +77,67 @@ def sqlite_to_polars(conn: sqlite3.Connection, query: str) -> pl.DataFrame:
 
 # ---------- Optimized Contributor Extraction ----------
 
-def extract_and_process_contributors(conn: sqlite3.Connection) -> pl.DataFrame:
+# def extract_and_process_contributors(conn: sqlite3.Connection) -> pl.DataFrame:
+#     """
+#     Extract and process all contributors in a single optimized function.
+#     Uses vectorized operations throughout for better performance.
+#     """
+#     logging.info("Extracting and processing contributors...")
+
+#     # Build dynamic query to get all contributor columns
+#     contributor_select = ', '.join(CONTRIBUTOR_COLUMNS)
+#     null_check = ' OR '.join([f'{col} IS NOT NULL' for col in CONTRIBUTOR_COLUMNS])
+
+#     contributors_df = sqlite_to_polars(
+#         conn,
+#         f"""
+#         SELECT {contributor_select}
+#         FROM alib
+#         WHERE {null_check}
+#         """
+#     )
+
+#     if contributors_df.height == 0:
+#         logging.warning("No contributor data found")
+#         return pl.DataFrame({"contributor": [], "lcontributor": []})
+
+#     # Vectorized extraction: unpivot all contributor columns into single column
+#     melted_df = contributors_df.unpivot(
+#         on=CONTRIBUTOR_COLUMNS,
+#         variable_name="contributor_type",
+#         value_name="contributor"
+#     ).filter(
+#         pl.col("contributor").is_not_null() &
+#         (pl.col("contributor").str.strip_chars() != "")
+#     )
+
+#     # Handle delimited entries using vectorized string operations
+#     # Split on double backslash and explode to separate rows
+#     processed_df = melted_df.with_columns([
+#         pl.col("contributor").str.split("\\\\").alias("contributor_parts")
+#     ]).explode("contributor_parts").with_columns([
+#         pl.col("contributor_parts").str.strip_chars().alias("contributor")
+#     ]).filter(
+#         pl.col("contributor").is_not_null() &
+#         (pl.col("contributor") != "")
+#     ).select("contributor").unique()
+
+#     # Add lowercase column for matching in single operation
+#     result_df = processed_df.with_columns([
+#         pl.col("contributor").str.to_lowercase().alias("lcontributor")
+#     ])
+
+#     logging.info(f"Extracted {result_df.height} distinct contributors")
+#     return result_df
+
+def extract_and_process_contributors(conn: sqlite3.Connection, write_distinct_csv: bool = False) -> pl.DataFrame:
     """
     Extract and process all contributors in a single optimized function.
     Uses vectorized operations throughout for better performance.
+
+    Args:
+        conn: SQLite database connection
+        write_distinct_csv: If True, writes unique contributors to distinct_contributors.csv
     """
     logging.info("Extracting and processing contributors...")
 
@@ -121,6 +178,15 @@ def extract_and_process_contributors(conn: sqlite3.Connection) -> pl.DataFrame:
         pl.col("contributor").is_not_null() &
         (pl.col("contributor") != "")
     ).select("contributor").unique()
+
+    # Optionally write distinct contributors to CSV
+    if write_distinct_csv:
+        try:
+            csv_path = "/tmp/amg/distinct_contributors.csv"
+            processed_df.write_csv(csv_path)
+            logging.info(f"Wrote {processed_df.height} distinct contributors to {csv_path}")
+        except Exception as e:
+            logging.error(f"Failed to write distinct contributors CSV: {e}")
 
     # Add lowercase column for matching in single operation
     result_df = processed_df.with_columns([
@@ -547,6 +613,7 @@ Examples:
   python %(prog)s --csv                     # Include CSV output
   python %(prog)s --similarity=0.90         # Use higher similarity threshold
   python %(prog)s --csv --similarity=0.75   # Lower threshold with CSV output
+  python %(prog)s --list-distinct-contributors # Write unique contributors to CSV
         """
     )
 
@@ -562,6 +629,12 @@ Examples:
         default=SIMILARITY_THRESHOLD,
         metavar='THRESHOLD',
         help=f'Similarity threshold (0.0-1.0, default: {SIMILARITY_THRESHOLD})'
+    )
+
+    parser.add_argument(
+        '--list-distinct-contributors',
+        action='store_true',
+        help='Write unique contributor names to distinct_contributors.csv'
     )
 
     args = parser.parse_args()
@@ -591,6 +664,9 @@ def main():
         logging.info("CSV output enabled")
     else:
         logging.info("Database output only (use --csv for CSV output)")
+
+    if args.list_distinct_contributors:
+            logging.info("Will write distinct contributors to CSV")
 
     if not os.path.exists(DB_PATH):
         logging.error(f"Database file does not exist: {DB_PATH}")
