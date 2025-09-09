@@ -60,6 +60,84 @@ DELIMITER = '\\\\'  # Double backslash for splitting and joining
 # Regex pattern for splitting on various delimiters, but not commas followed by suffixes
 SPLIT_PATTERN = re.compile(r'(?:\\\\|;|/|,(?!\s*(?:[Jj][Rr]|[Ss][Rr]|[Ii][Ii][Ii]|[Ii][Vv]|[Vv])\b))')
 
+# Surname dictionary for transforming names not matched to an entry in _REF_mb_disambiguated table
+SURNAME_DICT = {
+    # # Le surnames
+    # "leblanc": "LeBlanc",
+
+    # Mac Surnames
+    "macintyre": "MacIntyre",
+    "macallister": "MacAllister",
+    "mackenzie": "MacKenzie",
+    "macdonald": "MacDonald",
+    "maclachlan": "MacLachlan",
+    "macgregor": "MacGregor",
+    "macpherson": "MacPherson",
+    "maclean": "MacLean",
+    "macleod": "MacLeod",
+    "macneil": "MacNeil",
+
+    # Mc Surnames
+    "mcdonald": "McDonald",
+    "mcintyre": "McIntyre",
+    "mckenzie": "McKenzie",
+    "mcallister": "McAllister",
+    "mcfarland": "McFarland",
+    "mcgregor": "McGregor",
+    "mcnamara": "McNamara",
+    "mcguire": "McGuire",
+    "mcgrath": "McGrath",
+    "mcguirk": "McGuirk",
+    "mcpherson": "McPherson",
+    "mcleod": "McLeod",
+    "mcvey": "McVey",
+
+    # O' Surnames
+    "obrien": "O'Brien",
+    "odonnell": "O'Donnell",
+    "oconnor": "O'Connor",
+    "oneill": "O'Neill",
+    "omally": "O'Malley",
+    "ohara": "O'Hara",
+    "okeeffe": "O'Keeffe",
+    "oreilly": "O'Reilly",
+    "osullivan": "O'Sullivan",
+
+    # Fitz Surnames
+    "fitzgibbon": "FitzGibbon",
+    "fitzhenry": "FitzHenry",
+
+    # De / De La Surnames
+    "desantis": "DeSantis",
+    "delorean": "DeLorean",
+    "delacruz": "De La Cruz",
+    "delarosa": "De La Rosa",
+    "deguzman": "De Guzman",
+    "degaulle": "de Gaulle",
+    "demedici": "de Medici",
+    "devito": "DeVito",
+    "depalma": "DePalma",
+    "donatello": "Donatello",
+
+    # Van Surnames (Dutch)
+    "vanpelt": "Van Pelt",
+    "vandamme": "Van Damme",
+    "vanhalen": "Van Halen",
+    "vanderbilt": "Vanderbilt",
+    "vanderveer": "Vanderveer",
+    "vanburen": "Van Buren",
+    "vanhouten": "Van Houten",
+    "vangogh": "van Gogh",
+
+    # Von Surnames (German)
+    "vonbeethoven": "von Beethoven",
+    "vontrapp": "von Trapp",
+    "vonbraun": "von Braun",
+    "vondoom": "Von Doom"
+}
+
+
+
 # ---------- Database Helper Functions ----------
 
 def sqlite_to_polars(conn: sqlite3.Connection, query: str, id_column: Union[str, Tuple[str, ...]] = None) -> pl.DataFrame:
@@ -101,30 +179,233 @@ def sqlite_to_polars(conn: sqlite3.Connection, query: str, id_column: Union[str,
 
 # ---------- Text Processing Functions ----------
 
+# def smart_title(text):
+#     """
+#     Apply intelligent title casing that preserves certain patterns and handles special cases.
+
+#     This function handles:
+#     - Articles and prepositions (keeping them lowercase unless first word)
+#     - Roman numerals (converting to uppercase)
+#     - Possessives (maintaining correct apostrophe forms)
+#     - Names with prefixes (Mc, O')
+#     - Hyphenated words
+#     - Words with periods (initials)
+#     - Already capitalized words (preserving them)
+
+#     Args:
+#         text: String to apply smart title casing to
+
+#     Returns:
+#         String with smart title casing applied
+#     """
+#     if not text:
+#         return text
+
+#     def fix_caps_word(word, is_first_word=False, follows_bracket=False):
+#         """Apply capitalization rules to a single word."""
+#         lower_words = ["of", "a", "an", "the", "and", "but", "or", "for", "nor", "on", "at", "to", "from", "by"]
+
+#         if is_first_word:
+#             # First word is always capitalized unless already has uppercase
+#             if any(c.isupper() for c in word):
+#                 return word
+#             else:
+#                 return word.capitalize()
+#         elif follows_bracket:
+#             return word.capitalize()
+#         elif any(c.isupper() for c in word):
+#             # Preserve existing capitalization
+#             return word
+#         elif re.match(r"^[IVXLCDM]+$", word.upper()):
+#             # Roman numerals
+#             return word.upper()
+#         elif "." in word:
+#             # Handle initials like "J.R.R."
+#             parts = word.split('.')
+#             return '.'.join(part.capitalize() for part in parts)
+#         elif "'" in word or "'" in word:
+#             # Handle possessives and contractions
+#             apos_pos = max(word.find("'"), word.find("'"))
+#             if 0 < apos_pos < len(word) - 1:
+#                 return word[:apos_pos].capitalize() + word[apos_pos:]
+#             else:
+#                 return word.capitalize()
+#         elif "-" in word:
+#             # Handle hyphenated words
+#             parts = word.split('-')
+#             return '-'.join(part.capitalize() for part in parts)
+#         elif word.lower() in lower_words:
+#             # Keep articles and prepositions lowercase
+#             return word
+#         else:
+#             return word.capitalize()
+
+#     # Regex to capture words (including McNames, O'Names, possessives)
+#     word_pattern = r"\b(?:Mc\w+|O'\w+|\w+(?:['']\w+)?)\b"
+#     # Regex to capture non-word parts (spaces, punctuation)
+#     non_word_pattern = r"[^\w\s]+"
+
+#     # Combine the patterns to capture words and non-word parts
+#     combined_pattern = rf"({word_pattern})|({non_word_pattern})|\s+"
+
+#     parts = re.findall(combined_pattern, text)
+#     result = []
+#     capitalize_next = True
+
+#     for part_tuple in parts:
+#         word = part_tuple[0] or part_tuple[1]
+#         if word:
+#             if re.match(word_pattern, word):  # It's a word
+#                 processed_word = fix_caps_word(word, is_first_word=capitalize_next, follows_bracket=False)
+#                 # Handle possessive 's (moved from fix_caps_word)
+#                 if processed_word.lower().endswith("'s"):
+#                     processed_word = processed_word[:-2] + "'s"
+#                 elif processed_word.lower().endswith("'s"):
+#                     processed_word = processed_word[:-2] + "'s"
+#                 # Special rule for "O'" (applied directly)
+#                 elif word.lower().startswith("o'") and len(word) > 2 and word[2].lower() != 's' and word[2] != ' ':
+#                     processed_word = "O'" + fix_caps_word(word[2:], is_first_word=False, follows_bracket=False)
+#                 elif word.lower().startswith("o'") and len(word) > 2 and word[2].lower() != 's' and word[2] != ' ':
+#                     processed_word = "O'" + fix_caps_word(word[2:], is_first_word=False, follows_bracket=False)
+#                 result.append(processed_word)
+#                 capitalize_next = False
+#             else:  # It's a non-word part
+#                 result.append(word)
+#                 capitalize_next = word in "({[<"
+#         else:
+#             result.append(" ")  # It's whitespace
+
+#     processed_text = "".join(result)
+#     # Final pass to ensure possessive 's is lowercase
+#     processed_text = re.sub(r"(\w)['']S\b", r"\1's", processed_text)
+
+#     return processed_text
+
+# # Update the smart_title function to incorporate surname patterns
+# def smart_title(text):
+#     """
+#     Apply intelligent title casing that preserves certain patterns and handles special cases.
+#     Now includes surname dictionary lookup before standard processing.
+#     """
+#     if not text:
+#         return text
+
+#     # First check if the entire text matches a surname pattern
+#     lowered = text.lower()
+#     if lowered in SURNAME_DICT:
+#         return SURNAME_DICT[lowered]
+
+#     def fix_caps_word(word, is_first_word=False, follows_bracket=False):
+#         """Apply capitalization rules to a single word."""
+#         # Check if this word matches a surname pattern
+#         lowered_word = word.lower()
+#         if lowered_word in SURNAME_DICT:
+#             return SURNAME_DICT[lowered_word]
+
+#         lower_words = ["of", "a", "an", "the", "and", "but", "or", "for", "nor", "on", "at", "to", "from", "by"]
+
+#         if is_first_word:
+#             # First word is always capitalized unless already has uppercase
+#             if any(c.isupper() for c in word):
+#                 return word
+#             else:
+#                 return word.capitalize()
+#         elif follows_bracket:
+#             return word.capitalize()
+#         elif any(c.isupper() for c in word):
+#             # Preserve existing capitalization
+#             return word
+#         elif re.match(r"^[IVXLCDM]+$", word.upper()):
+#             # Roman numerals
+#             return word.upper()
+#         elif "." in word:
+#             # Handle initials like "J.R.R."
+#             parts = word.split('.')
+#             return '.'.join(part.capitalize() for part in parts)
+#         elif "'" in word or "'" in word:
+#             # Handle possessives and contractions
+#             apos_pos = max(word.find("'"), word.find("'"))
+#             if 0 < apos_pos < len(word) - 1:
+#                 return word[:apos_pos].capitalize() + word[apos_pos:]
+#             else:
+#                 return word.capitalize()
+#         elif "-" in word:
+#             # Handle hyphenated words
+#             parts = word.split('-')
+#             return '-'.join(part.capitalize() for part in parts)
+#         elif word.lower() in lower_words:
+#             # Keep articles and prepositions lowercase
+#             return word
+#         else:
+#             return word.capitalize()
+
+#     # Regex to capture words (including McNames, O'Names, possessives)
+#     word_pattern = r"\b(?:Mc\w+|O'\w+|\w+(?:['']\w+)?)\b"
+#     # Regex to capture non-word parts (spaces, punctuation)
+#     non_word_pattern = r"[^\w\s]+"
+
+#     # Combine the patterns to capture words and non-word parts
+#     combined_pattern = rf"({word_pattern})|({non_word_pattern})|\s+"
+
+#     parts = re.findall(combined_pattern, text)
+#     result = []
+#     capitalize_next = True
+
+#     for part_tuple in parts:
+#         word = part_tuple[0] or part_tuple[1]
+#         if word:
+#             if re.match(word_pattern, word):  # It's a word
+#                 processed_word = fix_caps_word(word, is_first_word=capitalize_next, follows_bracket=False)
+#                 # Handle possessive 's (moved from fix_caps_word)
+#                 if processed_word.lower().endswith("'s"):
+#                     processed_word = processed_word[:-2] + "'s"
+#                 elif processed_word.lower().endswith("'s"):
+#                     processed_word = processed_word[:-2] + "'s"
+#                 # Special rule for "O'" (applied directly)
+#                 elif word.lower().startswith("o'") and len(word) > 2 and word[2].lower() != 's' and word[2] != ' ':
+#                     processed_word = "O'" + fix_caps_word(word[2:], is_first_word=False, follows_bracket=False)
+#                 elif word.lower().startswith("o'") and len(word) > 2 and word[2].lower() != 's' and word[2] != ' ':
+#                     processed_word = "O'" + fix_caps_word(word[2:], is_first_word=False, follows_bracket=False)
+#                 result.append(processed_word)
+#                 capitalize_next = False
+#             else:  # It's a non-word part
+#                 result.append(word)
+#                 capitalize_next = word in "({[<"
+#         else:
+#             result.append(" ")  # It's whitespace
+
+#     processed_text = "".join(result)
+#     # Final pass to ensure possessive 's is lowercase
+#     processed_text = re.sub(r"(\w)['']S\b", r"\1's", processed_text)
+
+#     return processed_text
+
+# # ---------- Vectorized Processing Functions ----------
+
 def smart_title(text):
     """
     Apply intelligent title casing that preserves certain patterns and handles special cases.
-
-    This function handles:
-    - Articles and prepositions (keeping them lowercase unless first word)
-    - Roman numerals (converting to uppercase)
-    - Possessives (maintaining correct apostrophe forms)
-    - Names with prefixes (Mc, O')
-    - Hyphenated words
-    - Words with periods (initials)
-    - Already capitalized words (preserving them)
-
-    Args:
-        text: String to apply smart title casing to
-
-    Returns:
-        String with smart title casing applied
+    Now includes surname dictionary lookup before standard processing and preserves uppercase initials.
     """
     if not text:
         return text
 
+    # First check if the entire text matches a surname pattern
+    lowered = text.lower()
+    if lowered in SURNAME_DICT:
+        return SURNAME_DICT[lowered]
+
     def fix_caps_word(word, is_first_word=False, follows_bracket=False):
         """Apply capitalization rules to a single word."""
+        # Check if this word matches a surname pattern
+        lowered_word = word.lower()
+        if lowered_word in SURNAME_DICT:
+            return SURNAME_DICT[lowered_word]
+
+        # Check if this is an initial with a period (like "A." or "J.R.")
+        if re.match(r'^[A-Z]\.$', word) or re.match(r'^[A-Z]\.[A-Z]\.$', word):
+            return word  # Preserve as-is if it's already an uppercase initial
+
         lower_words = ["of", "a", "an", "the", "and", "but", "or", "for", "nor", "on", "at", "to", "from", "by"]
 
         if is_first_word:
@@ -142,9 +423,15 @@ def smart_title(text):
             # Roman numerals
             return word.upper()
         elif "." in word:
-            # Handle initials like "J.R.R."
+            # Handle initials like "J.R.R." - ensure they're uppercase
             parts = word.split('.')
-            return '.'.join(part.capitalize() for part in parts)
+            processed_parts = []
+            for part in parts:
+                if part and len(part) == 1:  # Single character initial
+                    processed_parts.append(part.upper())
+                else:
+                    processed_parts.append(part.capitalize())
+            return '.'.join(processed_parts)
         elif "'" in word or "'" in word:
             # Handle possessives and contractions
             apos_pos = max(word.find("'"), word.find("'"))
@@ -203,191 +490,118 @@ def smart_title(text):
 
     return processed_text
 
-# def normalize_contributor_entry(x: Union[str, None], contributors_dict: Dict[str, str]) -> Union[str, None]:
-#     """
-#     Normalize a single contributor entry by splitting on delimiters, looking up canonical forms,
-#     and applying smart title casing where needed.
-
-#     This function handles:
-#     - Multiple contributors separated by the main delimiter (\\\\)
-#     - Additional splitting on secondary delimiters (;, /, comma)
-#     - Dictionary lookup for canonical forms
-#     - Smart title casing fallback
-#     - Deduplication of normalized names
-
-#     Args:
-#         x: Contributor string to normalize (can be None)
-#         contributors_dict: Dictionary mapping lowercase names to canonical forms
-
-#     Returns:
-#         Normalized contributor string with proper formatting and canonical names
-#     """
-#     if x is None:
-#         return None
-
-#     if DELIMITER in x:
-#         # Handle multiple contributors separated by main delimiter
-#         items = x.split(DELIMITER)
-#         normalized_items = []
-#         for item in items:
-#             stripped_item = item.strip()
-#             lowered_item = stripped_item.lower()
-#             if lowered_item in contributors_dict:
-#                 # Use canonical form from dictionary
-#                 normalized_items.append(contributors_dict[lowered_item])
-#             else:
-#                 # Further split on secondary delimiters and normalize each part
-#                 parts = SPLIT_PATTERN.split(stripped_item)
-#                 for part in parts:
-#                     stripped = part.strip()
-#                     lowered = stripped.lower()
-#                     normalized = contributors_dict.get(lowered, smart_title(stripped))
-#                     normalized_items.append(normalized)
-
-#         # Deduplicate the entire normalized_items list
-#         final_normalized_items = []
-#         seen = set()
-#         for item in normalized_items:
-#             if item not in seen:
-#                 final_normalized_items.append(item)
-#                 seen.add(item)
-
-#         return DELIMITER.join(final_normalized_items)
-#     else:
-#         # Handle single contributor or contributors with secondary delimiters only
-#         lowered_x = x.lower()
-#         if lowered_x in contributors_dict:
-#             return contributors_dict[lowered_x]
-
-#         parts = SPLIT_PATTERN.split(x)
-#         normalized_parts = []
-#         seen = set()
-
-#         for part in parts:
-#             stripped = part.strip()
-#             lowered = stripped.lower()
-#             normalized = contributors_dict.get(lowered, smart_title(stripped))
-
-#             if normalized not in seen:
-#                 normalized_parts.append(normalized)
-#                 seen.add(normalized)
-
-#         return DELIMITER.join(normalized_parts) if normalized_parts else None
-
-def normalize_contributor_entry(x: Union[str, None], contributors_dict: Dict[str, str]) -> Union[str, None]:
+def vectorized_normalize_contributors(
+    df: pl.DataFrame,
+    columns: List[str],
+    contributors_dict: Dict[str, str]
+) -> pl.DataFrame:
     """
-    Normalize a single contributor entry by splitting on delimiters, looking up canonical forms,
-    and applying smart title casing where needed.
+    Vectorized normalization of contributor columns using Polars native operations.
 
     This function handles:
-    - Multiple contributors separated by the main delimiter (\\\\)
-    - Additional splitting on secondary delimiters (;, /, comma)
-    - Dictionary lookup for canonical forms (including checking comma-containing names before splitting)
+    - Dictionary lookup for canonical forms
+    - Splitting on delimiters
+    - Deduplication
     - Smart title casing fallback
-    - Deduplication of normalized names
 
     Args:
-        x: Contributor string to normalize (can be None)
+        df: DataFrame with contributor columns
+        columns: List of contributor column names to normalize
         contributors_dict: Dictionary mapping lowercase names to canonical forms
 
     Returns:
-        Normalized contributor string with proper formatting and canonical names
+        DataFrame with normalized contributor columns
     """
-    if x is None:
+    # Create Polars Series for efficient mapping
+    lookup_keys = pl.Series(list(contributors_dict.keys()))
+    canonical_values = pl.Series(list(contributors_dict.values()))
+
+    expressions = []
+
+    for column in columns:
+        current_col = pl.col(column)
+
+        # Step 1: Handle main delimiter splitting and dictionary lookup
+        split_parts = current_col.str.split(DELIMITER)
+
+        # Process each split part: lookup canonical form or apply smart title
+        processed_parts = split_parts.list.eval(
+            pl.element()
+            .str.to_lowercase()
+            .replace(lookup_keys, canonical_values)
+            .map_elements(lambda x: smart_title(x) if x and x.lower() not in contributors_dict else x, return_dtype=pl.Utf8)
+        )
+
+        # Step 2: Further split on secondary delimiters with comma preservation
+        # Use when/then to handle null values
+        final_expr = pl.when(processed_parts.is_not_null()).then(
+            processed_parts.map_elements(
+                lambda parts: _process_parts_vectorized(parts, contributors_dict),
+                return_dtype=pl.Utf8
+            )
+        ).otherwise(None)
+
+        expressions.append(final_expr.alias(column))
+
+    return df.with_columns(expressions)
+
+def _process_parts_vectorized(parts: Any, contributors_dict: Dict[str, str]) -> str:
+    """
+    Helper function to process individual parts with secondary splitting and deduplication.
+    """
+    # Handle Polars Series (convert to list)
+    if isinstance(parts, pl.Series):
+        if parts.is_null().any():
+            return None
+        parts = parts.to_list()
+
+    if not parts:
         return None
 
-    def split_with_comma_preservation(text: str) -> List[str]:
-        """
-        Split text on secondary delimiters, but preserve comma-containing segments
-        that exist in the contributors dictionary.
-        """
-        # First check if any comma-containing segments exist in dictionary
-        if ',' in text:
-            # Try all possible comma-containing substrings
-            for delimiter in [';', '/']:
-                if delimiter in text:
-                    segments = text.split(delimiter)
-                    preserved_segments = []
+    processed_items = []
+    seen = set()
 
-                    for segment in segments:
-                        segment = segment.strip()
-                        if ',' in segment and segment.lower() in contributors_dict:
-                            # This comma-containing segment exists in dictionary, preserve it
-                            preserved_segments.append(segment)
-                        else:
-                            # Split this segment normally
-                            sub_parts = SPLIT_PATTERN.split(segment)
-                            preserved_segments.extend([part.strip() for part in sub_parts if part.strip()])
+    for part in parts:
+        if not part:
+            continue
 
-                    return preserved_segments
+        # Check if this part contains commas and exists in dictionary
+        if ',' in part and part.lower() in contributors_dict:
+            normalized = contributors_dict[part.lower()]
+            if normalized not in seen:
+                processed_items.append(normalized)
+                seen.add(normalized)
+            continue
 
-            # If no other delimiters, check if the whole comma-containing string is in dictionary
-            if text.lower() in contributors_dict:
-                return [text]
+        # Split on secondary delimiters
+        sub_parts = SPLIT_PATTERN.split(part)
+        for sub_part in sub_parts:
+            stripped = sub_part.strip()
+            if not stripped:
+                continue
 
-        # Default splitting behavior
-        return [part.strip() for part in SPLIT_PATTERN.split(text) if part.strip()]
-
-    if DELIMITER in x:
-        # Handle multiple contributors separated by main delimiter
-        items = x.split(DELIMITER)
-        normalized_items = []
-        for item in items:
-            stripped_item = item.strip()
-            lowered_item = stripped_item.lower()
-            if lowered_item in contributors_dict:
-                # Use canonical form from dictionary
-                normalized_items.append(contributors_dict[lowered_item])
-            else:
-                # Further split on secondary delimiters with comma preservation
-                parts = split_with_comma_preservation(stripped_item)
-                for part in parts:
-                    stripped = part.strip()
-                    lowered = stripped.lower()
-                    normalized = contributors_dict.get(lowered, smart_title(stripped))
-                    normalized_items.append(normalized)
-
-        # Deduplicate the entire normalized_items list
-        final_normalized_items = []
-        seen = set()
-        for item in normalized_items:
-            if item not in seen:
-                final_normalized_items.append(item)
-                seen.add(item)
-
-        return DELIMITER.join(final_normalized_items)
-    else:
-        # Handle single contributor or contributors with secondary delimiters only
-        lowered_x = x.lower()
-        if lowered_x in contributors_dict:
-            return contributors_dict[lowered_x]
-
-        parts = split_with_comma_preservation(x)
-        normalized_parts = []
-        seen = set()
-
-        for part in parts:
-            stripped = part.strip()
+            # Lookup or apply smart title
             lowered = stripped.lower()
-            normalized = contributors_dict.get(lowered, smart_title(stripped))
+            if lowered in contributors_dict:
+                normalized = contributors_dict[lowered]
+            else:
+                normalized = smart_title(stripped)
 
             if normalized not in seen:
-                normalized_parts.append(normalized)
+                processed_items.append(normalized)
                 seen.add(normalized)
 
-        return DELIMITER.join(normalized_parts) if normalized_parts else None
-
+    return DELIMITER.join(processed_items) if processed_items else None
 
 # ---------- Surgical Filtering Functions ----------
 
-def create_contributor_masks(df: pl.DataFrame, columns: List[str], contributors_dict: Dict[str, str]) -> pl.DataFrame:
+def create_and_filter_tracks(
+    df: pl.DataFrame,
+    columns: List[str],
+    contributors_dict: Dict[str, str]
+) -> pl.DataFrame:
     """
-    Create boolean masks for each contributor column indicating which entries
-    exist in the disambiguation dictionary (and should be skipped from processing).
-
-    This function uses Polars vectorization to efficiently check all contributor
-    fields against the disambiguation dictionary, creating mask columns that
-    identify entries that don't need further processing.
+    Create boolean masks and filter to only tracks that need processing in a single operation.
 
     Args:
         df: DataFrame with contributor columns
@@ -395,117 +609,132 @@ def create_contributor_masks(df: pl.DataFrame, columns: List[str], contributors_
         contributors_dict: Dictionary mapping lowercase names to canonical forms
 
     Returns:
-        DataFrame with original data plus boolean mask columns (named {column}_in_dict)
+        Filtered DataFrame containing only tracks that need processing, with mask columns
     """
-    mask_expressions = []
+    # Create lookup series for efficient membership testing
+    dict_keys = pl.Series(list(contributors_dict.keys()))
 
-    for column in columns:
-        # Create mask: True if the lowercased contributor exists in dictionary
-        mask_expr = (
-            pl.col(column)
-            .str.to_lowercase()
-            .is_in(list(contributors_dict.keys()))
-            .alias(f"{column}_in_dict")
-        )
-        mask_expressions.append(mask_expr)
+    # Create mask expressions for each column - fix deprecated is_in usage
+    mask_exprs = [
+        pl.col(col)
+        .str.to_lowercase()
+        .is_in(dict_keys.implode())  # Use implode() to fix deprecation warning
+        .alias(f"{col}_in_dict")
+        for col in columns
+    ]
 
-    return df.with_columns(mask_expressions)
+    # Add mask columns and filter in one operation
+    df_with_masks = df.with_columns(mask_exprs)
 
-def filter_processable_tracks(df: pl.DataFrame, columns: List[str]) -> pl.DataFrame:
-    """
-    Filter to only tracks that have at least one contributor field that needs processing
-    (i.e., not null and not already in the disambiguation dictionary).
-
-    This optimizes performance by eliminating tracks where all contributor fields
-    are either empty or already properly disambiguated.
-
-    Args:
-        df: DataFrame with contributor columns and mask columns
-        columns: List of contributor column names
-
-    Returns:
-        Filtered DataFrame containing only tracks that need processing
-    """
-    # Create expression to check if any contributor field needs processing
-    # (is not null AND not in dictionary)
+    # Filter to only tracks that need processing
     needs_processing_expr = pl.any_horizontal([
         pl.col(col).is_not_null() & ~pl.col(f"{col}_in_dict")
         for col in columns
     ])
 
-    return df.filter(needs_processing_expr)
+    return df_with_masks.filter(needs_processing_expr)
 
-def selective_normalize_contributors(df: pl.DataFrame, columns: List[str], contributors_dict: Dict[str, str]) -> pl.DataFrame:
+# def selective_normalize_contributors(
+#     df: pl.DataFrame,
+#     columns: List[str],
+#     contributors_dict: Dict[str, str]
+# ) -> pl.DataFrame:
+#     """
+#     Selectively normalize contributor columns using vectorized Polars operations.
+
+#     Args:
+#         df: DataFrame with contributor columns and mask columns
+#         columns: List of contributor column names to normalize
+#         contributors_dict: Dictionary mapping lowercase names to canonical forms
+
+#     Returns:
+#         DataFrame with selectively normalized contributor columns
+#     """
+#     # First, handle the easy case: entries already in dictionary
+#     lookup_keys = pl.Series(list(contributors_dict.keys()))
+#     canonical_values = pl.Series(list(contributors_dict.values()))
+
+#     # Apply canonical forms to entries that are in dictionary
+#     canonical_exprs = [
+#         pl.when(pl.col(f"{col}_in_dict"))
+#         .then(pl.col(col).str.to_lowercase().replace(lookup_keys, canonical_values))
+#         .otherwise(pl.col(col))
+#         .alias(col)
+#         for col in columns
+#     ]
+
+#     df_with_canonical = df.with_columns(canonical_exprs)
+
+#     # Now normalize the remaining entries using the vectorized approach
+#     return vectorized_normalize_contributors(df_with_canonical, columns, contributors_dict)
+
+def selective_normalize_contributors(
+    df: pl.DataFrame,
+    columns: List[str],
+    contributors_dict: Dict[str, str]
+) -> pl.DataFrame:
     """
-    Selectively normalize contributor columns, only processing entries that are not already
-    in the disambiguation dictionary.
-
-    This function uses Polars conditional logic to surgically avoid processing
-    contributor entries that are already in their canonical form, improving
-    efficiency and preventing unnecessary database updates.
-
-    Args:
-        df: DataFrame with contributor columns and mask columns
-        columns: List of contributor column names to normalize
-        contributors_dict: Dictionary mapping lowercase names to canonical forms
-
-    Returns:
-        DataFrame with selectively normalized contributor columns
+    Selectively normalize contributor columns using vectorized Polars operations.
     """
+    # First, handle the easy case: entries already in dictionary
+    lookup_keys = pl.Series(list(contributors_dict.keys()))
+    canonical_values = pl.Series(list(contributors_dict.values()))
+
     expressions = []
 
     for column in columns:
-        # Only normalize if the entry is not in the dictionary
-        expr = (
-            pl.when(pl.col(f"{column}_in_dict"))
-            .then(pl.col(column))  # Keep original if in dictionary
-            .otherwise(
-                pl.col(column).map_elements(
-                    lambda x: normalize_contributor_entry(x, contributors_dict),
-                    return_dtype=pl.Utf8
-                )
-            )
-            .alias(column)
+        current_col = pl.col(column)
+
+        # NEW: Check if value is already canonical before processing
+        is_already_canonical = (
+            current_col.str.to_lowercase()
+            .replace(lookup_keys, canonical_values)
+            == current_col
         )
-        expressions.append(expr)
 
-    return df.with_columns(expressions)
+        # Only process non-canonical values
+        needs_processing = ~is_already_canonical
 
-def detect_changes_with_masks(original_df: pl.DataFrame, updated_df: pl.DataFrame, columns: List[str]) -> List[int]:
+        # Apply canonical forms to entries that are in dictionary but not canonical
+        canonical_expr = pl.when(pl.col(f"{column}_in_dict") & needs_processing).then(
+            current_col.str.to_lowercase().replace(lookup_keys, canonical_values)
+        ).otherwise(current_col)
+
+        expressions.append(canonical_expr.alias(column))
+
+    df_with_canonical = df.with_columns(expressions)
+
+    # Now normalize the remaining entries using the vectorized approach
+    return vectorized_normalize_contributors(df_with_canonical, columns, contributors_dict)
+
+def detect_changes_vectorized(
+    original_df: pl.DataFrame,
+    updated_df: pl.DataFrame,
+    columns: List[str]
+) -> pl.DataFrame:
     """
-    Detect changes between original and updated DataFrames, but only for columns
-    that were actually processed (not skipped due to dictionary matches).
-
-    This prevents false positive change detection for entries that were already
-    in the disambiguation dictionary and didn't need processing.
+    Vectorized change detection using Polars native operations.
 
     Args:
-        original_df: Original DataFrame with mask columns
-        updated_df: Updated DataFrame after selective normalization
+        original_df: Original DataFrame
+        updated_df: Updated DataFrame after normalization
         columns: List of contributor column names
 
     Returns:
-        List of rowids that have actual changes requiring database updates
+        DataFrame with changed rowids
     """
-    # Create change detection expressions only for columns that were processed
-    change_expressions = []
+    # Create change detection expressions
+    change_exprs = [
+        (original_df[col] != updated_df[col]) & original_df[col].is_not_null()
+        for col in columns
+    ]
 
-    for col in columns:
-        # Only consider it a change if:
-        # 1. The column was not in dictionary (was processed)
-        # 2. The original value was not null
-        # 3. The values actually differ
-        change_expr = (
-            ~original_df[f"{col}_in_dict"] &  # Was not in dictionary
-            original_df[col].is_not_null() &  # Original value exists
-            (original_df[col] != updated_df[col])  # Values differ
-        )
-        change_expressions.append(change_expr)
+    # Find rows with any changes
+    changed_rows = updated_df.filter(
+        pl.any_horizontal(change_exprs)
+    ).select("rowid")
 
-    # Any row with at least one qualifying change
-    any_change_expr = pl.any_horizontal(change_expressions)
-
-    return updated_df.filter(any_change_expr)["rowid"].to_list()
+    return changed_rows
 
 # ---------- Database Update Functions ----------
 
@@ -604,11 +833,10 @@ def main():
     Process flow:
     1. Load disambiguation dictionary from database
     2. Load track data with contributor fields
-    3. Create masks to identify entries already in dictionary
-    4. Filter to tracks that need processing
-    5. Selectively normalize only unmatched contributors
-    6. Detect actual changes using mask-aware comparison
-    7. Update database with changes and log to changelog
+    3. Create masks and filter to tracks that need processing
+    4. Selectively normalize only unmatched contributors
+    5. Detect actual changes using vectorized comparison
+    6. Update database with changes and log to changelog
     """
     logging.info(f"Connecting to database: {DB_PATH}")
     conn = sqlite3.connect(DB_PATH)
@@ -652,12 +880,9 @@ def main():
             "conductor", "producer", "engineer", "mixer", "remixer"
         ]
 
-        # Create surgical filtering masks
-        logging.info("Creating contributor masks for surgical filtering...")
-        tracks_with_masks = create_contributor_masks(tracks, columns_to_replace, contributors_dict)
-
-        # Filter to only tracks that need processing
-        tracks_filtered = filter_processable_tracks(tracks_with_masks, columns_to_replace)
+        # Create masks and filter to only tracks that need processing
+        logging.info("Creating contributor masks and filtering tracks...")
+        tracks_filtered = create_and_filter_tracks(tracks, columns_to_replace, contributors_dict)
         logging.info(f"Processing {tracks_filtered.height} tracks to validate...")
 
         if tracks_filtered.height == 0:
@@ -671,14 +896,17 @@ def main():
         logging.info("Performing selective contributor normalization...")
         updated_tracks = selective_normalize_contributors(tracks_filtered, columns_to_replace, contributors_dict)
 
-        # Detect changes using mask-aware comparison
-        changed_rowids = detect_changes_with_masks(original_tracks, updated_tracks, columns_to_replace)
+        # Detect changes using vectorized comparison
+        logging.info("Detecting changes...")
+        changed_rows = detect_changes_vectorized(original_tracks, updated_tracks, columns_to_replace)
+        changed_rowids = changed_rows["rowid"].to_list()
         logging.info(f"Found {len(changed_rowids)} tracks with changes")
 
         if changed_rowids:
             # Remove mask columns before writing to database
-            updated_tracks_clean = updated_tracks.drop([f"{col}_in_dict" for col in columns_to_replace])
-            original_tracks_clean = original_tracks.drop([f"{col}_in_dict" for col in columns_to_replace])
+            mask_columns = [f"{col}_in_dict" for col in columns_to_replace]
+            updated_tracks_clean = updated_tracks.drop(mask_columns)
+            original_tracks_clean = original_tracks.drop(mask_columns)
 
             num_updated = write_updates_to_db(
                 conn,
