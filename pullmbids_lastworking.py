@@ -89,28 +89,6 @@ def cleanup_previous_run(db_name: str = "dbtemplate.db"):
     except Exception as e:
         print(f"Error during cleanup: {e}")
 
-# def create_sqlite_table(conn: sqlite3.Connection):
-#     """
-#     Create the SQLite table with the specific column schema.
-#     Uses csv_row_number as the primary key for traceability to source CSV.
-
-#     Args:
-#         conn: SQLite database connection object
-#     """
-#     create_table_sql = """
-#     CREATE TABLE IF NOT EXISTS musicbrainz_source (
-#         csv_row_number INTEGER PRIMARY KEY,
-#         mbid TEXT NOT NULL,
-#         contributor TEXT,
-#         gender TEXT,
-#         disambiguation TEXT,
-#         import_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-#     )
-#     """
-
-#     conn.execute(create_table_sql)
-#     conn.commit()
-
 def create_sqlite_table(conn: sqlite3.Connection):
     """
     Create the SQLite table with the specific column schema.
@@ -126,7 +104,6 @@ def create_sqlite_table(conn: sqlite3.Connection):
         contributor TEXT,
         gender TEXT,
         disambiguation TEXT,
-        updated_from_allmusic TEXT,
         import_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """
@@ -432,67 +409,6 @@ def validate_df_vectorized(df: pl.DataFrame) -> pl.DataFrame:
         binary_details
     ])
 
-# def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
-#     """
-#     Insert valid rows into the SQLite table using CSV row number as ID.
-#     Replaces all instances of '""' with '"' in contributor column (same as original script).
-#     Cleanses problematic apostrophes in contributor column (vectorized operation).
-#     Only inserts rows where mbid is not null and not empty.
-
-#     Args:
-#         conn: SQLite database connection object
-#         df: Polars DataFrame containing validated data
-
-#     Returns:
-#         Tuple of (inserted_count, skipped_count)
-#     """
-#     # Prepare INSERT statement with csv_row_number as primary key
-#     insert_sql = """
-#     INSERT INTO musicbrainz_source (csv_row_number, mbid, contributor, gender, disambiguation)
-#     VALUES (?, ?, ?, ?, ?)
-#     """
-
-#     # Single-pass vectorized replacement using regex to replace all consecutive double quotes
-#     # This replaces any even number of consecutive double quotes with half the number of single quotes
-#     # Applied specifically to the contributor column (same as original)
-#     df = df.with_columns(
-#         pl.col("contributor")
-#         .str.replace_all(r'"{2,}', '"')
-#         .alias("contributor")
-#     )
-
-#     # Vectorized apostrophe cleansing for contributor column
-#     df = df.with_columns(
-#         clean_contributor_apostrophes(pl.col("contributor")).alias("contributor")
-#     )
-
-#     # Filter out rows where mbid is null or empty (this should already be done by validation, but double-check)
-#     df_with_mbid = df.filter(
-#         pl.col("mbid").is_not_null() &
-#         (pl.col("mbid").str.strip_chars().str.len_chars() > 0)
-#     )
-
-#     skipped_count = len(df) - len(df_with_mbid)
-
-#     # Convert all values to strings but preserve None values
-#     string_df = df_with_mbid.select([
-#         pl.col("original_row_number").cast(pl.Int64),
-#         pl.col("mbid"),  # Don't cast to String if it's None
-#         pl.col("contributor"),  # Don't cast to String if it's None
-#         pl.col("gender"),  # Don't cast to String if it's None
-#         pl.col("disambiguation")  # Don't cast to String if it's None
-#     ])
-
-#     # Convert Polars DataFrame to list of tuples for batch insertion
-#     rows_to_insert = string_df.iter_rows()
-
-#     # Batch insert
-#     cursor = conn.cursor()
-#     cursor.executemany(insert_sql, rows_to_insert)
-#     conn.commit()
-
-#     return cursor.rowcount, skipped_count
-
 def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
     """
     Insert valid rows into the SQLite table using CSV row number as ID.
@@ -509,8 +425,8 @@ def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
     """
     # Prepare INSERT statement with csv_row_number as primary key
     insert_sql = """
-    INSERT INTO musicbrainz_source (csv_row_number, mbid, contributor, gender, disambiguation, updated_from_allmusic)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO musicbrainz_source (csv_row_number, mbid, contributor, gender, disambiguation)
+    VALUES (?, ?, ?, ?, ?)
     """
 
     # Single-pass vectorized replacement using regex to replace all consecutive double quotes
@@ -527,11 +443,6 @@ def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
         clean_contributor_apostrophes(pl.col("contributor")).alias("contributor")
     )
 
-    # Add the new column with NULL values
-    df = df.with_columns(
-        pl.lit(None).alias("updated_from_allmusic")
-    )
-
     # Filter out rows where mbid is null or empty (this should already be done by validation, but double-check)
     df_with_mbid = df.filter(
         pl.col("mbid").is_not_null() &
@@ -546,8 +457,7 @@ def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
         pl.col("mbid"),  # Don't cast to String if it's None
         pl.col("contributor"),  # Don't cast to String if it's None
         pl.col("gender"),  # Don't cast to String if it's None
-        pl.col("disambiguation"),  # Don't cast to String if it's None
-        pl.col("updated_from_allmusic")  # This will be NULL for all rows
+        pl.col("disambiguation")  # Don't cast to String if it's None
     ])
 
     # Convert Polars DataFrame to list of tuples for batch insertion
