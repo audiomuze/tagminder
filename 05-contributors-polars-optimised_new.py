@@ -78,6 +78,7 @@ SURNAME_DICT = {
     "macneil": "MacNeil",
 
     # Mc Surnames
+    "mcdaniel": "McDaniel",
     "mcdonald": "McDonald",
     "mcintyre": "McIntyre",
     "mckenzie": "McKenzie",
