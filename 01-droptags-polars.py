@@ -22,6 +22,8 @@ Updated: 2025-4-21
 import polars as pl
 import sqlite3
 import logging
+import sys
+import os
 from typing import List, Dict, Tuple
 from datetime import datetime, timezone
 
@@ -30,6 +32,20 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+def get_script_name(with_extension=True):
+    """
+    Returns the name of the currently executing script.
+    
+    Args:
+        with_extension (bool): If True, returns the script name with its file extension.
+                               If False, returns the name without the extension.
+    """
+    script_path = sys.argv[0]
+    script_name = os.path.basename(script_path)
+    if not with_extension:
+        script_name = os.path.splitext(script_name)[0]
+    return script_name
 
 def sqlite_to_polars(conn: sqlite3.Connection, query: str, id_column: str = None) -> pl.DataFrame:
     cursor = conn.cursor()
@@ -51,6 +67,84 @@ def sqlite_to_polars(conn: sqlite3.Connection, query: str, id_column: str = None
 
     return pl.DataFrame(data)
 
+
+def merge_columns_before_cleanup(
+    df: pl.DataFrame
+) -> Tuple[pl.DataFrame, List[Tuple[int, str, str, str]]]:
+    """
+    Merge involvedpeople with personnel and author with composer before cleanup.
+    Returns updated dataframe and list of merge changes for logging.
+    """
+    merge_changes: List[Tuple[int, str, str, str]] = []
+    df_updated = df.clone()
+    
+    # Handle involvedpeople -> personnel merge
+    if "involvedpeople" in df.columns:
+        # Ensure personnel column exists
+        if "personnel" not in df.columns:
+            df_updated = df_updated.with_columns(pl.lit(None).alias("personnel"))
+        
+        for i in range(df.height):
+            rowid = int(df_updated["rowid"][i])
+            involvedpeople_val = df_updated["involvedpeople"][i]
+            personnel_val = df_updated["personnel"][i]
+            
+            if (involvedpeople_val is not None and 
+                str(involvedpeople_val).strip() != ""):
+                
+                if personnel_val is None or str(personnel_val).strip() == "":
+                    new_personnel = str(involvedpeople_val).strip()
+                else:
+                    personnel_str = str(personnel_val).strip()
+                    involvedpeople_str = str(involvedpeople_val).strip()
+                    if involvedpeople_str not in personnel_str:
+                        new_personnel = f"{personnel_str}\\\\{involvedpeople_str}"
+                    else:
+                        new_personnel = personnel_str
+                
+                if new_personnel != str(personnel_val or ""):
+                    df_updated = df_updated.with_columns(
+                        pl.when(pl.col("rowid") == rowid)
+                        .then(pl.lit(new_personnel))
+                        .otherwise(pl.col("personnel"))
+                        .alias("personnel")
+                    )
+                    merge_changes.append((rowid, "personnel", str(personnel_val or ""), new_personnel))
+    
+    # Handle author -> composer merge
+    if "author" in df.columns:
+        # Ensure composer column exists
+        if "composer" not in df.columns:
+            df_updated = df_updated.with_columns(pl.lit(None).alias("composer"))
+        
+        for i in range(df.height):
+            rowid = int(df_updated["rowid"][i])
+            author_val = df_updated["author"][i]
+            composer_val = df_updated["composer"][i]
+            
+            if (author_val is not None and 
+                str(author_val).strip() != ""):
+                
+                if composer_val is None or str(composer_val).strip() == "":
+                    new_composer = str(author_val).strip()
+                else:
+                    composer_str = str(composer_val).strip()
+                    author_str = str(author_val).strip()
+                    if author_str not in composer_str:
+                        new_composer = f"{composer_str}\\\\{author_str}"
+                    else:
+                        new_composer = composer_str
+                
+                if new_composer != str(composer_val or ""):
+                    df_updated = df_updated.with_columns(
+                        pl.when(pl.col("rowid") == rowid)
+                        .then(pl.lit(new_composer))
+                        .otherwise(pl.col("composer"))
+                        .alias("composer")
+                    )
+                    merge_changes.append((rowid, "composer", str(composer_val or ""), new_composer))
+    
+    return df_updated, merge_changes
 
 
 def cleanup_dataframe(
@@ -77,17 +171,22 @@ def cleanup_dataframe(
     return rowid_mod_map, change_log, null_updates, changes_by_column
 
 
-
 def write_updates_to_db(
     conn: sqlite3.Connection,
     rowid_mod_map: Dict[int, int],
     change_log: List[Tuple[int, str, str, None]],
-    null_updates: List[Tuple[str, int]]
+    null_updates: List[Tuple[str, int]],
+    merge_changes: List[Tuple[int, str, str, str]]
 ) -> int:
     cursor = conn.cursor()
     updated_rows_count = len(rowid_mod_map)
 
-    if updated_rows_count == 0:
+    # Include merge changes in the total updated rows count
+    all_updated_rowids = set(rowid_mod_map.keys())
+    all_updated_rowids.update(rowid for rowid, _, _, _ in merge_changes)
+    total_updated_rows = len(all_updated_rowids)
+
+    if total_updated_rows == 0:
         return 0
 
     cursor.execute("""
@@ -104,7 +203,14 @@ def write_updates_to_db(
 
     conn.execute("BEGIN TRANSACTION")
     try:
-        # 1. Nullify unwanted values
+        # 1. Apply merge changes first
+        for rowid, column, old_value, new_value in merge_changes:
+            cursor.execute(
+                f'UPDATE alib SET "{column}" = ? WHERE rowid = ?',
+                (new_value, rowid)
+            )
+
+        # 2. Nullify unwanted values
         updates_by_column: Dict[str, List[int]] = {}
         for col, rowid in null_updates:
             updates_by_column.setdefault(col, []).append(rowid)
@@ -115,25 +221,47 @@ def write_updates_to_db(
                 [(rowid,) for rowid in rowids]
             )
 
-        # 2. Update sqlmodded
-        cursor.executemany(
-            "UPDATE alib SET sqlmodded = COALESCE(sqlmodded, 0) + ? WHERE rowid = ?",
-            [(mod_count, rowid) for rowid, mod_count in rowid_mod_map.items()]
-        )
+        # 3. Update sqlmodded for drop changes
+        if rowid_mod_map:
+            cursor.executemany(
+                "UPDATE alib SET sqlmodded = COALESCE(sqlmodded, 0) + ? WHERE rowid = ?",
+                [(mod_count, rowid) for rowid, mod_count in rowid_mod_map.items()]
+            )
 
-        # 3. Write changelog
-        cursor.executemany(
-            "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
-            [(rowid, col, old, new, timestamp, "droptags-polars.py") for (rowid, col, old, new) in change_log]
-        )
+        # 4. Update sqlmodded for merge changes (increment by 1 for each merge)
+        merge_mod_counts = {}
+        for rowid, _, _, _ in merge_changes:
+            merge_mod_counts[rowid] = merge_mod_counts.get(rowid, 0) + 1
+        
+        if merge_mod_counts:
+            cursor.executemany(
+                "UPDATE alib SET sqlmodded = COALESCE(sqlmodded, 0) + ? WHERE rowid = ?",
+                [(mod_count, rowid) for rowid, mod_count in merge_mod_counts.items()]
+            )
+
+        # 5. Write changelog for both merge and drop changes
+        all_changes = []
+        
+        # Add merge changes to changelog
+        for rowid, column, old_value, new_value in merge_changes:
+            all_changes.append((rowid, column, old_value, new_value, timestamp, get_script_name()))
+        
+        # Add drop changes to changelog
+        for (rowid, col, old, new) in change_log:
+            all_changes.append((rowid, col, old, new, timestamp, get_script_name()))
+        
+        if all_changes:
+            cursor.executemany(
+                "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+                all_changes
+            )
 
         conn.commit()
-        return updated_rows_count
+        return total_updated_rows
     except Exception as e:
         conn.rollback()
         logging.error(f"Error writing updates to database: {str(e)}")
         raise
-
 
 
 def main():
@@ -186,19 +314,32 @@ def main():
         tracks_df = sqlite_to_polars(conn, query, id_column="rowid")
         logging.info(f"Loaded DataFrame with {tracks_df.height} rows and {len(tracks_df.columns)} columns")
 
+        logging.info("Processing column merges...")
+        tracks_df, merge_changes = merge_columns_before_cleanup(tracks_df)
+        if merge_changes:
+            merge_counts = {}
+            for _, column, _, _ in merge_changes:
+                merge_counts[column] = merge_counts.get(column, 0) + 1
+            logging.info(f"Merged {len(merge_changes)} values:")
+            for column, count in merge_counts.items():
+                logging.info(f"  - {column}: {count} merges")
+
         logging.info("Cleaning up dataframe...")
         rowid_mod_map, change_log, null_updates, changes_by_column = cleanup_dataframe(tracks_df, fixed_columns)
         total_rows_changed = len(rowid_mod_map)
-        logging.info(f"Total number of rows with changes: {total_rows_changed}")
-        logging.info("Number of changes by column:")
+        logging.info(f"Total number of rows with drop changes: {total_rows_changed}")
+        logging.info("Number of drop changes by column:")
         for col, count in changes_by_column.items():
             logging.info(f"  - {col}: {count}")
 
-        if total_rows_changed > 0:
+        if total_rows_changed > 0 or merge_changes:
             logging.info("Writing updates back to database...")
-            logging.info(f"Rows flagged for update: {total_rows_changed}")
-            updated_count = write_updates_to_db(conn, rowid_mod_map, change_log, null_updates)
-            logging.info(f"Successfully updated {updated_count} rows in the database and logged {len(change_log)} changes.")
+            all_updated_rowids = set(rowid_mod_map.keys())
+            all_updated_rowids.update(rowid for rowid, _, _, _ in merge_changes)
+            logging.info(f"Rows flagged for update: {len(all_updated_rowids)}")
+            updated_count = write_updates_to_db(conn, rowid_mod_map, change_log, null_updates, merge_changes)
+            total_changes = len(change_log) + len(merge_changes)
+            logging.info(f"Successfully updated {updated_count} rows in the database and logged {total_changes} changes.")
         else:
             logging.info("No changes detected, database not updated.")
 
