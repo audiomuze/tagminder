@@ -281,9 +281,109 @@ def smart_title(text):
     return processed_text
 
 
+# def _vectorized_process_part(part: str, contributors_dict: Dict[str, str]) -> str:
+#     """
+#     Process a single part with full normalization logic.
+#     Returns None for empty results to be filtered out.
+#     """
+#     if not part or not part.strip():
+#         return None
+
+#     part = part.strip()
+
+#     # Check direct dictionary lookup first
+#     lowered = part.lower()
+#     if lowered in contributors_dict:
+#         return contributors_dict[lowered]
+
+#     # Handle comma-containing entries that might be in dictionary
+#     if "," in part and lowered in contributors_dict:
+#         return contributors_dict[lowered]
+
+#     # Split on secondary delimiters
+#     sub_parts = SPLIT_PATTERN.split(part)
+#     processed_items = []
+#     seen = set()
+
+#     for sub_part in sub_parts:
+#         stripped = sub_part.strip()
+#         if not stripped:
+#             continue
+
+#         sub_lowered = stripped.lower()
+#         if sub_lowered in contributors_dict:
+#             normalized = contributors_dict[sub_lowered]
+#         else:
+#             normalized = smart_title(stripped)
+
+#         if normalized and normalized not in seen:
+#             processed_items.append(normalized)
+#             seen.add(normalized)
+
+#     return DELIMITER.join(processed_items) if processed_items else None
+
+
+# def optimized_vectorized_normalize_contributors(
+#     df: pl.DataFrame, columns: List[str], contributors_dict: Dict[str, str]
+# ) -> pl.DataFrame:
+#     """
+#     Optimized vectorized contributor normalization using efficient Polars operations.
+#     Fixed to handle null dtype issues with list.join operations.
+#     """
+#     expressions = []
+
+#     for column in columns:
+#         current_col = pl.col(column)
+
+#         # Create the normalization pipeline with proper null and dtype handling
+#         processed_list = (
+#             current_col.str.split(DELIMITER)
+#             .list.eval(
+#                 pl.element().map_elements(
+#                     lambda x: _vectorized_process_part(x, contributors_dict),
+#                     return_dtype=pl.Utf8,
+#                 )
+#             )
+#             .list.drop_nulls()
+#             .list.unique()
+#         )
+
+#         # Handle the join operation with explicit dtype casting and null safety
+#         normalized_expr = (
+#             pl.when(current_col.is_null())
+#             .then(None)
+#             .otherwise(
+#                 pl.when(processed_list.is_null() | (processed_list.list.len() == 0))
+#                 .then(None)
+#                 .otherwise(
+#                     # Ensure we have a string list before joining
+#                     # Cast to string explicitly to avoid dtype null issues
+#                     processed_list.list.eval(
+#                         pl.when(pl.element().is_null())
+#                         .then(pl.lit(""))  # Convert nulls to empty strings
+#                         .otherwise(pl.element().cast(pl.Utf8))
+#                     )
+#                     .list.filter(pl.element() != "")  # Remove empty strings
+#                     .list.join(DELIMITER)
+#                 )
+#             )
+#         )
+
+#         # Handle case where result is empty string and ensure final null handling
+#         final_expr = (
+#             pl.when((normalized_expr == "") | normalized_expr.is_null())
+#             .then(None)
+#             .otherwise(normalized_expr)
+#         )
+
+#         expressions.append(final_expr.alias(column))
+
+#     return df.with_columns(expressions)
+
+
 def _vectorized_process_part(part: str, contributors_dict: Dict[str, str]) -> str:
     """
-    Process a single part with full normalization logic.
+    Process a single part with full normalization logic and order-preserving deduplication.
     Returns None for empty results to be filtered out.
     """
     if not part or not part.strip():
@@ -303,7 +403,6 @@ def _vectorized_process_part(part: str, contributors_dict: Dict[str, str]) -> st
     # Split on secondary delimiters
     sub_parts = SPLIT_PATTERN.split(part)
     processed_items = []
-    seen = set()
 
     for sub_part in sub_parts:
         stripped = sub_part.strip()
@@ -316,11 +415,15 @@ def _vectorized_process_part(part: str, contributors_dict: Dict[str, str]) -> st
         else:
             normalized = smart_title(stripped)
 
-        if normalized and normalized not in seen:
+        if normalized:
             processed_items.append(normalized)
-            seen.add(normalized)
 
-    return DELIMITER.join(processed_items) if processed_items else None
+    # Fast order-preserving deduplication using dict.fromkeys()
+    if processed_items:
+        deduplicated = list(dict.fromkeys(processed_items))
+        return DELIMITER.join(deduplicated)
+
+    return None
 
 
 def optimized_vectorized_normalize_contributors(
@@ -328,7 +431,7 @@ def optimized_vectorized_normalize_contributors(
 ) -> pl.DataFrame:
     """
     Optimized vectorized contributor normalization using efficient Polars operations.
-    Fixed to handle null dtype issues with list.join operations.
+    Fixed to handle null dtype issues with list.join operations and preserve order.
     """
     expressions = []
 
@@ -345,7 +448,7 @@ def optimized_vectorized_normalize_contributors(
                 )
             )
             .list.drop_nulls()
-            .list.unique()
+            .list.unique(maintain_order=True)  # ORDER-PRESERVING deduplication
         )
 
         # Handle the join operation with explicit dtype casting and null safety
@@ -375,7 +478,7 @@ def optimized_vectorized_normalize_contributors(
             .then(None)
             .otherwise(normalized_expr)
         )
-        
+
         expressions.append(final_expr.alias(column))
 
     return df.with_columns(expressions)
