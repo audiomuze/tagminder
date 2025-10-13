@@ -48,22 +48,30 @@ except ImportError:
 # Required dependencies
 try:
     # import puddlestuff
-    from puddlestuff import audioinfo # Reverted: Import audioinfo module
+    # from puddlestuff import audioinfo  # Reverted: Import audioinfo module
+    import audioinfo
 except ImportError:
-    print("Error: puddlestuff module or audioinfo submodule not found. Please ensure puddlestuff is installed correctly.", file=sys.stderr)
+    print(
+        # "Error: puddlestuff module or audioinfo submodule not found. Please ensure puddlestuff is installed correctly.",
+        "Error: audioinfo module not found. Please ensure audioinfo is installed correctly.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 try:
     import polars as pl
 except ImportError:
-    print("Error: polars module not found. Please install it with: pip install polars", file=sys.stderr)
+    print(
+        "Error: polars module not found. Please install it with: pip install polars",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 # --- Constants ---
-AUDIO_EXTENSIONS = {'.flac', '.wv', '.m4a', '.aiff', '.ape''.mp3', '.ogg'}
-DATABASE_PATH = 'alib.db' # Default database name
-TABLE_NAME = 'alib'
-LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
+AUDIO_EXTENSIONS = {".flac", ".wv", ".m4a", ".aiff", ".ape", ".mp3", ".ogg"}
+DATABASE_PATH = "alib.db"  # Default database name
+TABLE_NAME = "alib"
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
@@ -72,7 +80,7 @@ logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 # Defines the schema for the Polars DataFrame, mapping column names to Polars data types.
 # This ensures consistent data types when building the DataFrame and inserting into the database.
 ALBUM_INFO_SCHEMA = {
-    "__path": pl.Utf8, # <-- Primary Key (full file path)
+    "__path": pl.Utf8,  # <-- Primary Key (full file path)
     "__dirpath": pl.Utf8,
     "__filename": pl.Utf8,
     "__filename_no_ext": pl.Utf8,
@@ -203,8 +211,9 @@ ALBUM_INFO_SCHEMA = {
     "roonradioban": pl.Utf8,
     "roontracktag": pl.Utf8,
     "upc": pl.Utf8,
-    "__albumgain": pl.Utf8
+    "__albumgain": pl.Utf8,
 }
+
 
 # --- Helper Functions ---
 def sanitize_value(value: Any) -> str:
@@ -216,6 +225,7 @@ def sanitize_value(value: Any) -> str:
     if isinstance(value, list):
         return "; ".join(map(str, value))
     return str(value)
+
 
 # def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
 #     """
@@ -265,6 +275,7 @@ def sanitize_value(value: Any) -> str:
 #         cleaned_dict[safe_k] = v
 #     return cleaned_dict
 
+
 def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
     """
     Convert a puddlestuff Tag object to a dictionary,
@@ -281,13 +292,13 @@ def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
     tag_dict = dict(tag)
 
     # Always include the file path
-    tag_dict['__path'] = tag.filepath
+    tag_dict["__path"] = tag.filepath
 
     # Clean and normalize the keys
     cleaned_dict = {}
     for k, v in tag_dict.items():
         # Remove quotes and convert to lowercase
-        safe_k = k.replace('"', '').lower() if isinstance(k, str) else str(k).lower()
+        safe_k = k.replace('"', "").lower() if isinstance(k, str) else str(k).lower()
 
         # Convert list values to delimited strings
         if isinstance(v, list):
@@ -303,22 +314,43 @@ def scantree(path: str) -> Iterator[str]:
     Recursively yields file paths matching AUDIO_EXTENSIONS from a directory tree.
     Uses os.scandir for efficient directory listing.
     """
-    for entry in scandir(path):
-        if entry.is_dir(follow_symlinks=False):
-            yield from scantree(entry.path)
-        elif entry.is_file(follow_symlinks=False):
-            if os.path.splitext(entry.name)[1].lower() in AUDIO_EXTENSIONS:
-                yield entry.path
+    try:
+        for entry in scandir(path):
+            if entry.is_dir(follow_symlinks=False):
+                try:
+                    yield from scantree(entry.path)
+                except PermissionError:
+                    logging.warning(
+                        f"Permission denied accessing directory: {entry.path}"
+                    )
+                except OSError as e:
+                    logging.warning(f"OS error accessing directory {entry.path}: {e}")
+            elif entry.is_file(follow_symlinks=False):
+                if os.path.splitext(entry.name)[1].lower() in AUDIO_EXTENSIONS:
+                    yield entry.path
+    except PermissionError:
+        logging.warning(f"Permission denied scanning directory: {path}")
+    except OSError as e:
+        logging.warning(f"OS error scanning directory {path}: {e}")
+
 
 def scan_single(path: str) -> Tuple[str, List[str]]:
     """
     Scans a single directory path and returns the path itself and a list of found audio files.
     This function is designed to be run in a separate thread.
     """
-    logging.info(f"Scanning {path}...")
-    files = list(scantree(path))
-    logging.info(f"Finished scanning {path}. Found {len(files)} files.")
-    return path, files
+    try:
+        logging.info(f"Scanning {path}...")
+        files = list(scantree(path))
+        logging.info(f"Finished scanning {path}. Found {len(files)} files.")
+        return path, files
+    except PermissionError:
+        logging.error(f"Permission denied scanning directory: {path}")
+        return path, []
+    except OSError as e:
+        logging.error(f"OS error scanning directory {path}: {e}")
+        return path, []
+
 
 def parallel_scantree(dirpaths: List[str], workers: int) -> Dict[str, List[str]]:
     """
@@ -327,14 +359,19 @@ def parallel_scantree(dirpaths: List[str], workers: int) -> Dict[str, List[str]]
     """
     drive_files: Dict[str, List[str]] = {}
     # Using ThreadPoolExecutor for I/O-bound scanning is efficient as threads wait for disk.
-    with ThreadPoolExecutor(max_workers=workers) as executor: # Corrected: use the 'workers' argument
+    with ThreadPoolExecutor(
+        max_workers=workers
+    ) as executor:  # Corrected: use the 'workers' argument
         futures = {executor.submit(scan_single, path): path for path in dirpaths}
         for future in concurrent.futures.as_completed(futures):
             drive_path, files = future.result()
             drive_files[drive_path] = files
     return drive_files
 
-def process_chunk_optimized(filepaths: List[str]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+
+def process_chunk_optimized(
+    filepaths: List[str],
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """
     Processes a chunk of filepaths, parses their tags using audioinfo.Tag,
     and returns the list of parsed tags and statistics (processed/failed files) for the chunk.
@@ -344,14 +381,24 @@ def process_chunk_optimized(filepaths: List[str]) -> Tuple[List[Dict[str, Any]],
     chunk_stats = {"processed": 0, "failed": 0}
     for filepath in filepaths:
         try:
-            info = audioinfo.Tag(filepath) # Reverted: Use audioinfo.Tag
+            # Check if file is readable before attempting to process
+            if not os.access(filepath, os.R_OK):
+                logging.warning(f"No read permission for file: {filepath}")
+                chunk_stats["failed"] += 1
+                continue
+
+            info = audioinfo.Tag(filepath)  # Reverted: Use audioinfo.Tag
             parsed_tags = tag_to_dict_raw(info)
             tags_in_chunk.append(parsed_tags)
             chunk_stats["processed"] += 1
+        except PermissionError:
+            logging.warning(f"Permission denied reading file: {filepath}")
+            chunk_stats["failed"] += 1
         except Exception as e:
             logging.warning(f"Failed to parse tags for {filepath}: {e}")
             chunk_stats["failed"] += 1
     return tags_in_chunk, chunk_stats
+
 
 def clean_and_normalize_tags_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     """Apply vectorized data cleaning and normalization to tag DataFrame.
@@ -379,7 +426,7 @@ def clean_and_normalize_tags_vectorized(df: pl.DataFrame) -> pl.DataFrame:
                 .otherwise(
                     pl.col(col)
                     .list.eval(pl.element().cast(pl.Utf8))
-                    .list.join("\\\\") # Use double backslash as a deliberate separator
+                    .list.join("\\\\")  # Use double backslash as a deliberate separator
                 )
                 .alias(col)
             )
@@ -427,8 +474,8 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
     #    to prevent type errors on creation. The original schema's `Int64` for `sqlmodded`
     #    is respected as it's an internal field, not a "tag".
     ingestion_schema = {key: pl.Utf8 for key in all_keys}
-    if 'sqlmodded' in ingestion_schema:
-        ingestion_schema['sqlmodded'] = pl.Int64
+    if "sqlmodded" in ingestion_schema:
+        ingestion_schema["sqlmodded"] = pl.Int64
 
     # 3. Pre-process the raw tag data. The primary goal is to convert list values
     #    into strings BEFORE they are passed to the DataFrame constructor. This avoids
@@ -449,8 +496,8 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
                 processed_dict[key] = None
 
         # Ensure 'sqlmodded' has a default value if missing/None.
-        if processed_dict.get('sqlmodded') is None:
-            processed_dict['sqlmodded'] = 0
+        if processed_dict.get("sqlmodded") is None:
+            processed_dict["sqlmodded"] = 0
 
         pre_processed_tags.append(processed_dict)
 
@@ -461,6 +508,7 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
     # 5. The original call to `clean_and_normalize_tags_vectorized` is no longer necessary
     #    as its work (list conversion, ensuring columns) is now done *before* DataFrame creation.
     return df
+
 
 # def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection, df_columns: List[str] = None):
 #     cursor = conn.cursor()
@@ -510,7 +558,9 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
 #     logging.info(f"Database table '{TABLE_NAME}' ensured to exist with {len(ordered_columns)} columns.")
 
 
-def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection, df_columns: List[str] = None) -> None:
+def create_and_migrate_db(
+    dbpath: str, conn: sqlite3.Connection, df_columns: List[str] = None
+) -> None:
     cursor = conn.cursor()
 
     # 1. Get current columns (primary key first, then others in existing order)
@@ -520,8 +570,9 @@ def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection, df_columns: Lis
     # 2. Define required columns (schema columns first, then new ones)
     required_columns = list(ALBUM_INFO_SCHEMA.keys())  # Preserves order
     if df_columns:
-        required_columns += [col for col in df_columns
-                           if col not in ALBUM_INFO_SCHEMA]  # New tags appended
+        required_columns += [
+            col for col in df_columns if col not in ALBUM_INFO_SCHEMA
+        ]  # New tags appended
 
     # 3. Create table if missing (with perfect schema order)
     if not existing_columns:
@@ -541,8 +592,7 @@ def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection, df_columns: Lis
         return
 
     # 4. Just add missing columns (all as TEXT since new tags are pl.Utf8)
-    missing_columns = [col for col in required_columns
-                      if col not in existing_columns]
+    missing_columns = [col for col in required_columns if col not in existing_columns]
 
     for col in missing_columns:
         try:
@@ -555,10 +605,7 @@ def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection, df_columns: Lis
 
 
 def process_single_drive(
-    drive_path: str,
-    files: List[str],
-    chunk_size: int,
-    workers_per_drive: int
+    drive_path: str, files: List[str], chunk_size: int, workers_per_drive: int
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Processes all files for a single drive in parallel using a dedicated ProcessPoolExecutor.
@@ -576,7 +623,9 @@ def process_single_drive(
             - A list of all successfully parsed tag dictionaries from this drive.
             - A dictionary of total statistics for this drive (e.g., "processed_files", "failed_files").
     """
-    logging.info(f"Starting parallel processing for drive: {drive_path} with {len(files)} files")
+    logging.info(
+        f"Starting parallel processing for drive: {drive_path} with {len(files)} files"
+    )
 
     # --- START OF CHANGE ---
     # Sort the files list for the current drive to improve locality of reference
@@ -596,7 +645,7 @@ def process_single_drive(
         futures = []
         # Submit chunks of files from this drive to its dedicated pool
         for i in range(0, len(files), chunk_size):
-            chunk = files[i:i + chunk_size]
+            chunk = files[i : i + chunk_size]
             futures.append(executor.submit(process_chunk_optimized, chunk))
 
         # Collect results from this drive's chunks as they complete
@@ -610,7 +659,9 @@ def process_single_drive(
                 # Progress tracking
                 completed_chunks += 1
                 progress_percent = (completed_chunks / total_chunks) * 100
-                logging.info(f"Drive {drive_path}: {completed_chunks}/{total_chunks} chunks completed ({progress_percent:.1f}%)")
+                logging.info(
+                    f"Drive {drive_path}: {completed_chunks}/{total_chunks} chunks completed ({progress_percent:.1f}%)"
+                )
 
             except Exception as e:
                 logging.error(f"Error processing chunk for drive {drive_path}: {e}")
@@ -619,17 +670,21 @@ def process_single_drive(
                 # Still increment completed chunks for progress tracking
                 completed_chunks += 1
                 progress_percent = (completed_chunks / total_chunks) * 100
-                logging.info(f"Drive {drive_path}: {completed_chunks}/{total_chunks} chunks completed ({progress_percent:.1f}%) - chunk failed")
+                logging.info(
+                    f"Drive {drive_path}: {completed_chunks}/{total_chunks} chunks completed ({progress_percent:.1f}%) - chunk failed"
+                )
 
-    logging.info(f"Finished processing drive: {drive_path}. Processed {drive_total_stats['processed_files']} files, failed {drive_total_stats['failed_files']}.")
+    logging.info(
+        f"Finished processing drive: {drive_path}. Processed {drive_total_stats['processed_files']} files, failed {drive_total_stats['failed_files']}."
+    )
     return drive_all_tags, drive_total_stats
 
 
 def import_dir_optimized(
     dbpath: str,
     dirpaths: List[str],
-    workers: Optional[int] = None, # Renamed to 'workers' to indicate workers PER DRIVE
-    chunk_size: int = 4000
+    workers: Optional[int] = None,  # Renamed to 'workers' to indicate workers PER DRIVE
+    chunk_size: int = 4000,
 ) -> None:
     """
     Optimized function to import audio metadata tags from multiple directories into a SQLite database.
@@ -650,7 +705,7 @@ def import_dir_optimized(
     logging.info("Phase 1: Scanning directories in parallel...")
     # Determine the number of worker threads for scanning. Max out at 16 (common CPU core count) or number of drives.
     scan_threads = min(len(dirpaths), multiprocessing.cpu_count(), 16)
-    drive_files = parallel_scantree(dirpaths, scan_threads) # Pass scan_threads
+    drive_files = parallel_scantree(dirpaths, scan_threads)  # Pass scan_threads
     logging.info("Phase 1 Complete.")
 
     total_files_to_process = sum(len(files) for files in drive_files.values())
@@ -667,12 +722,15 @@ def import_dir_optimized(
         # Default strategy: distribute CPU cores as evenly as possible among active drives.
         # Ensure at least 1 worker process per drive.
         workers_per_drive = max(1, num_cpu_cores // active_drives_count)
-        logging.info(f"Auto-determining workers: {num_cpu_cores} CPU cores / {active_drives_count} drives = {workers_per_drive} workers per drive.")
+        logging.info(
+            f"Auto-determining workers: {num_cpu_cores} CPU cores / {active_drives_count} drives = {workers_per_drive} workers per drive."
+        )
     else:
         # If user explicitly specified workers, use that number for each drive's pool.
         workers_per_drive = max(1, workers)
-        logging.info(f"Using user-specified {workers_per_drive} worker processes per drive.")
-
+        logging.info(
+            f"Using user-specified {workers_per_drive} worker processes per drive."
+        )
 
     # Phase 2: Process tags for each drive using its own dedicated ProcessPoolExecutor.
     # An outer ThreadPoolExecutor (drive_manager_executor) manages the concurrent launch
@@ -687,10 +745,14 @@ def import_dir_optimized(
     with ThreadPoolExecutor(max_workers=active_drives_count) as drive_manager_executor:
         drive_processing_futures = []
         for drive_path, files in drive_files.items():
-            if files: # Only submit processing for drives that actually have files
+            if files:  # Only submit processing for drives that actually have files
                 drive_processing_futures.append(
                     drive_manager_executor.submit(
-                        process_single_drive, drive_path, files, chunk_size, workers_per_drive
+                        process_single_drive,
+                        drive_path,
+                        files,
+                        chunk_size,
+                        workers_per_drive,
                     )
                 )
 
@@ -698,7 +760,7 @@ def import_dir_optimized(
         for future in concurrent.futures.as_completed(drive_processing_futures):
             try:
                 drive_tags, drive_stats = future.result()
-                all_tags.extend(drive_tags) # Consolidate all tags into one list
+                all_tags.extend(drive_tags)  # Consolidate all tags into one list
                 total_processed_files += drive_stats["processed_files"]
                 total_failed_files += drive_stats["failed_files"]
             except Exception as e:
@@ -706,7 +768,9 @@ def import_dir_optimized(
                 # Note: Exact failed file count from inner process might be lost on critical failure here.
 
     logging.info("Phase 2 Complete.")
-    logging.info(f"Summary: Total files processed successfully: {total_processed_files}")
+    logging.info(
+        f"Summary: Total files processed successfully: {total_processed_files}"
+    )
     if total_failed_files > 0:
         logging.warning(f"Summary: Total files failed to process: {total_failed_files}")
 
@@ -740,26 +804,30 @@ def import_dir_optimized(
             # insert_sql = f"INSERT OR REPLACE INTO {TABLE_NAME} ({columns_str}) VALUES ({placeholders})"
 
             quoted_columns = [f'"{col}"' for col in column_order]
-            placeholders = ', '.join(['?'] * len(column_order))
-            columns_str = ', '.join(quoted_columns)
+            placeholders = ", ".join(["?"] * len(column_order))
+            columns_str = ", ".join(quoted_columns)
             insert_sql = f'INSERT OR REPLACE INTO "{TABLE_NAME}" ({columns_str}) VALUES ({placeholders})'
-
 
             cursor = conn.cursor()
             cursor.executemany(insert_sql, data_to_insert)
             conn.commit()
-            logging.info(f"Successfully inserted/updated {len(data_to_insert)} records into {dbpath}")
+            logging.info(
+                f"Successfully inserted/updated {len(data_to_insert)} records into {dbpath}"
+            )
 
     except sqlite3.Error as e:
         logging.error(f"SQLite database error during write operation: {e}")
         sys.exit(1)
     except Exception as e:
-        logging.error(f"An unexpected error occurred during database write: {e}", exc_info=True)
+        logging.error(
+            f"An unexpected error occurred during database write: {e}", exc_info=True
+        )
         sys.exit(1)
     logging.info("Phase 4 Complete.")
 
     end_time = time.time()
     logging.info(f"Import process finished in {end_time - start_time:.2f} seconds.")
+
 
 def clean_values_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     """Clean all values in DataFrame using vectorized operations."""
@@ -769,9 +837,7 @@ def clean_values_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     for col in string_cols:
         # First handle empty strings by converting to None
         df = df.with_columns(
-            pl.when(
-                pl.col(col).is_null() | (pl.col(col).str.strip_chars() == "")
-            )
+            pl.when(pl.col(col).is_null() | (pl.col(col).str.strip_chars() == ""))
             .then(None)
             .otherwise(pl.col(col))
             .alias(col)
@@ -810,9 +876,10 @@ def build_path_filter_condition(dirpath: str) -> str:
     # GLOB is case-sensitive and works well for path prefixes
     return f"__path GLOB '{normalized_path}*'"
 
+
 def process_files(df: pl.DataFrame, preserve_mtime: bool) -> dict:
     stats = {"processed": 0, "errors": 0, "skipped": 0}
-    tag_cols = [col for col in df.columns if not col.startswith('__')]
+    tag_cols = [col for col in df.columns if not col.startswith("__")]
 
     for row in df.iter_rows(named=True):
         try:
@@ -823,7 +890,7 @@ def process_files(df: pl.DataFrame, preserve_mtime: bool) -> dict:
             tag = audioinfo.Tag(row["__path"])
             for col in tag_cols:
                 if (val := row[col]) is not None:
-                    tag[col] = val.split('\\\\') if '\\\\' in str(val) else val
+                    tag[col] = val.split("\\\\") if "\\\\" in str(val) else val
 
             tag.save()
 
@@ -832,7 +899,9 @@ def process_files(df: pl.DataFrame, preserve_mtime: bool) -> dict:
                     mtime = float(row["__file_mod_datetime_raw"])
                     os.utime(row["__path"], times=(mtime, mtime))
                 except Exception as e:
-                        logging.warning(f"Could not preserve mtime for {row['__path']}: {str(e)}")
+                    logging.warning(
+                        f"Could not preserve mtime for {row['__path']}: {str(e)}"
+                    )
 
             stats["processed"] += 1
 
@@ -867,9 +936,7 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
 
         logging.info("Querying candidate file paths...")
         path_df = pl.read_database(
-            query=path_query,
-            connection=conn,
-            schema_overrides={"__path": pl.Utf8}
+            query=path_query, connection=conn, schema_overrides={"__path": pl.Utf8}
         )
 
         if path_df.is_empty():
@@ -893,10 +960,14 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
         skipped_count = total_candidates - existing_count
 
         if skipped_count > 0:
-            logging.info(f"Skipped {skipped_count} database entries - files not found on disk")
+            logging.info(
+                f"Skipped {skipped_count} database entries - files not found on disk"
+            )
 
         if existing_count == 0:
-            logging.warning(f"No files found on disk for any database records under: {dirpath}")
+            logging.warning(
+                f"No files found on disk for any database records under: {dirpath}"
+            )
             conn.close()
             return
 
@@ -909,8 +980,8 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
 
         logging.info(f"Querying database in batches of {batch_size}...")
         for i in range(0, existing_count, batch_size):
-            batch_paths = existing_paths[i:i + batch_size]
-            placeholders = ','.join(['?'] * len(batch_paths))
+            batch_paths = existing_paths[i : i + batch_size]
+            placeholders = ",".join(["?"] * len(batch_paths))
             final_query = f"""
             SELECT * FROM {TABLE_NAME}
             WHERE __path IN ({placeholders})
@@ -921,19 +992,21 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
                 query=final_query,
                 connection=conn,
                 execute_options={"parameters": batch_paths},
-                schema_overrides=table_schema
+                schema_overrides=table_schema,
             )
             all_dfs.append(batch_df)
 
             # Log progress every 10 batches or on last batch
             if (i // batch_size) % 10 == 0 or (i + batch_size >= existing_count):
-                logging.info(f"Processed batch {i//batch_size + 1}/{total_batches}")
+                logging.info(f"Processed batch {i // batch_size + 1}/{total_batches}")
 
         # Combine all batches into single DataFrame - already sorted by __path
         df = pl.concat(all_dfs)
         conn.close()
 
-        logging.info(f"Loaded {len(df)} records for processing (sorted by __path for locality)")
+        logging.info(
+            f"Loaded {len(df)} records for processing (sorted by __path for locality)"
+        )
 
         # Vectorized data cleaning
         logging.info("Applying vectorized data cleaning...")
@@ -943,17 +1016,151 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
         logging.info("Processing files with optimized path handling...")
         stats = process_files_with_directory_grouping(df_cleaned, batch_size=1000)
 
-        logging.info(f'Export complete. Processed: {stats["processed"]}, '
-                    f'Errors: {stats["errors"]}, Skipped: {stats["skipped"]}')
+        logging.info(
+            f"Export complete. Processed: {stats['processed']}, "
+            f"Errors: {stats['errors']}, Skipped: {stats['skipped']}"
+        )
 
     except Exception as e:
         logging.error(f"Error during export: {str(e)}", exc_info=True)
-        if 'conn' in locals():
+        if "conn" in locals():
             conn.close()
         raise
 
 
-def process_files_with_directory_grouping(df: pl.DataFrame, batch_size: int = 1000) -> Dict[str, int]:
+# def process_files_with_directory_grouping(
+#     df: pl.DataFrame, batch_size: int = 1000
+# ) -> Dict[str, int]:
+#     """Alternative approach: Group by directory for even better locality.
+
+#     This version processes files directory by directory, which can be even more
+#     efficient for disk I/O patterns.
+#     """
+#     stats = {"processed": 0, "errors": 0, "skipped": 0}
+
+#     # Get exportable columns
+#     exportable_columns = [col for col in df.columns if not col.startswith("__")]
+#     logging.info(
+#         f"Will export {len(exportable_columns)} tag fields (excluding __ fields)"
+#     )
+
+#     # Group by __dirpath if available, otherwise extract from __path
+#     if "__dirpath" in df.columns:
+#         # Use the existing __dirpath column for grouping
+#         grouped = df.group_by("__dirpath", maintain_order=True)
+#     else:
+#         # Fallback: extract directory from __path
+#         df = df.with_columns(
+#             pl.col("__path")
+#             .map_elements(lambda x: os.path.dirname(x), return_dtype=pl.Utf8)
+#             .alias("__dirpath")
+#         )
+#         grouped = df.group_by("__dirpath", maintain_order=True)
+
+#     # Get the groups as a dictionary
+#     dir_groups = dict(grouped)
+
+#     total_directories = len(dir_groups)
+#     processed_directories = 0
+
+#     logging.info(f"Processing {len(df)} files across {total_directories} directories")
+
+#     # Process each directory group
+#     for dirpath, dir_df in dir_groups.items():
+#         try:
+#             # Check if directory is accessible before processing
+#             if not os.path.exists(dirpath):
+#                 logging.warning(f"Directory no longer exists: {dirpath}")
+#                 stats["skipped"] += len(dir_df)
+#                 continue
+
+#             if not os.access(dirpath, os.R_OK | os.W_OK):
+#                 logging.warning(f"Insufficient permissions for directory: {dirpath}")
+#                 stats["skipped"] += len(dir_df)
+#                 continue
+
+#             # Process files in this directory
+#             filepaths = dir_df.get_column("__path").to_list()
+
+#             # Pre-extract tag data for this directory
+#             tag_columns = {}
+#             for col in exportable_columns:
+#                 tag_columns[col] = dir_df.get_column(col).to_list()
+
+#             # Process each file in the directory
+#             for i, filepath in enumerate(filepaths):
+#                 try:
+#                     if not os.path.exists(filepath):
+#                         stats["skipped"] += 1
+#                         logging.warning(f"File not found, skipping: {filepath}")
+#                         continue
+
+#                     # Check file permissions
+#                     if not os.access(filepath, os.R_OK | os.W_OK):
+#                         logging.warning(
+#                             f"Insufficient permissions for file: {filepath}"
+#                         )
+#                         stats["errors"] += 1
+#                         continue
+
+#                     # Build tag dictionary
+#                     tag_values = {
+#                         col: tag_columns[col][i] for col in exportable_columns
+#                     }
+
+#                     # Process the file using full path
+#                     tag = audioinfo.Tag(filepath)
+
+#                     # Update tags
+#                     for key, value in tag_values.items():
+#                         if value is None or (
+#                             isinstance(value, str) and value.strip() == ""
+#                         ):
+#                             if key in tag:
+#                                 del tag[key]
+#                         elif isinstance(value, str) and "\\\\" in value:
+#                             tag[key] = value.split("\\\\")
+#                         elif (
+#                             isinstance(value, str)
+#                             and "\\" in value
+#                             and not key.endswith("path")
+#                         ):
+#                             tag[key] = value.split("\\")
+#                         else:
+#                             tag[key] = value
+
+#                     tag.save()
+#                     stats["processed"] += 1
+
+#                 except Exception as e:
+#                     stats["errors"] += 1
+#                     logging.error(f"Could not update {filepath}: {str(e)}")
+
+#             processed_directories += 1
+
+#             # Progress logging
+#             if (
+#                 processed_directories % 100 == 0
+#                 or processed_directories == total_directories
+#             ):
+#                 logging.info(
+#                     f"Processed {processed_directories}/{total_directories} directories "
+#                     f"({stats['processed']} files so far)..."
+#                 )
+#         except PermissionError:
+#             logging.error(f"Permission denied accessing directory: {dirpath}")
+#             stats["skipped"] += len(dir_df)
+#             continue
+#         except Exception as e:
+#             logging.error(f"Error processing directory {dirpath}: {str(e)}")
+#             continue
+
+#     return stats
+
+
+def process_files_with_directory_grouping(
+    df: pl.DataFrame, batch_size: int = 1000
+) -> Dict[str, int]:
     """Alternative approach: Group by directory for even better locality.
 
     This version processes files directory by directory, which can be even more
@@ -962,31 +1169,45 @@ def process_files_with_directory_grouping(df: pl.DataFrame, batch_size: int = 10
     stats = {"processed": 0, "errors": 0, "skipped": 0}
 
     # Get exportable columns
-    exportable_columns = [col for col in df.columns if not col.startswith('__')]
-    logging.info(f"Will export {len(exportable_columns)} tag fields (excluding __ fields)")
+    exportable_columns = [col for col in df.columns if not col.startswith("__")]
+    logging.info(
+        f"Will export {len(exportable_columns)} tag fields (excluding __ fields)"
+    )
 
-    # Group by __dirpath if available, otherwise extract from __path
-    if "__dirpath" in df.columns:
-        # Use the existing __dirpath column for grouping
-        grouped = df.group_by("__dirpath", maintain_order=True)
-    else:
-        # Fallback: extract directory from __path
+    # Ensure we have __dirpath column
+    if "__dirpath" not in df.columns:
+        # Extract directory from __path
         df = df.with_columns(
-            pl.col("__path").map_elements(lambda x: os.path.dirname(x), return_dtype=pl.Utf8).alias("__dirpath")
+            pl.col("__path")
+            .map_elements(lambda x: os.path.dirname(x), return_dtype=pl.Utf8)
+            .alias("__dirpath")
         )
-        grouped = df.group_by("__dirpath", maintain_order=True)
 
-    # Get the groups as a dictionary
-    dir_groups = dict(grouped)
+    # Use partition_by which returns a proper dict with string keys (not tuples)
+    partitioned_list = df.partition_by("__dirpath", maintain_order=True)
 
-    total_directories = len(dir_groups)
+    total_directories = len(partitioned_list)
     processed_directories = 0
 
     logging.info(f"Processing {len(df)} files across {total_directories} directories")
 
     # Process each directory group
-    for dirpath, dir_df in dir_groups.items():
+    for dir_df in partitioned_list:
+        # Extract the directory path from the first row of this partition
+        dirpath = dir_df.select("__dirpath").item(0, 0)
+
         try:
+            # Check if directory is accessible before processing
+            if not os.path.exists(dirpath):
+                logging.warning(f"Directory no longer exists: {dirpath}")
+                stats["skipped"] += len(dir_df)
+                continue
+
+            if not os.access(dirpath, os.R_OK | os.W_OK):
+                logging.warning(f"Insufficient permissions for directory: {dirpath}")
+                stats["skipped"] += len(dir_df)
+                continue
+
             # Process files in this directory
             filepaths = dir_df.get_column("__path").to_list()
 
@@ -1000,44 +1221,67 @@ def process_files_with_directory_grouping(df: pl.DataFrame, batch_size: int = 10
                 try:
                     if not os.path.exists(filepath):
                         stats["skipped"] += 1
-                        logging.warning(f'File not found, skipping: {filepath}')
+                        logging.warning(f"File not found, skipping: {filepath}")
+                        continue
+
+                    # Check file permissions
+                    if not os.access(filepath, os.R_OK | os.W_OK):
+                        logging.warning(
+                            f"Insufficient permissions for file: {filepath}"
+                        )
+                        stats["errors"] += 1
                         continue
 
                     # Build tag dictionary
-                    tag_values = {col: tag_columns[col][i] for col in exportable_columns}
+                    tag_values = {
+                        col: tag_columns[col][i] for col in exportable_columns
+                    }
 
                     # Process the file using full path
                     tag = audioinfo.Tag(filepath)
 
                     # Update tags
                     for key, value in tag_values.items():
-                        if value is None or (isinstance(value, str) and value.strip() == ""):
+                        if value is None or (
+                            isinstance(value, str) and value.strip() == ""
+                        ):
                             if key in tag:
                                 del tag[key]
-                        elif isinstance(value, str) and '\\\\' in value:
-                            tag[key] = value.split('\\\\')
-                        elif isinstance(value, str) and '\\' in value and not key.endswith('path'):
-                            tag[key] = value.split('\\')
+                        elif isinstance(value, str) and "\\\\" in value:
+                            tag[key] = value.split("\\\\")
+                        elif (
+                            isinstance(value, str)
+                            and "\\" in value
+                            and not key.endswith("path")
+                        ):
+                            tag[key] = value.split("\\")
                         else:
                             tag[key] = value
-
 
                     tag.save()
                     stats["processed"] += 1
 
                 except Exception as e:
                     stats["errors"] += 1
-                    logging.error(f'Could not update {filepath}: {str(e)}')
+                    logging.error(f"Could not update {filepath}: {str(e)}")
 
             processed_directories += 1
 
             # Progress logging
-            if processed_directories % 100 == 0 or processed_directories == total_directories:
-                logging.info(f'Processed {processed_directories}/{total_directories} directories '
-                           f'({stats["processed"]} files so far)...')
-
+            if (
+                processed_directories % 100 == 0
+                or processed_directories == total_directories
+            ):
+                logging.info(
+                    f"Processed {processed_directories}/{total_directories} directories "
+                    f"({stats['processed']} files so far)..."
+                )
+        except PermissionError:
+            logging.error(f"Permission denied accessing directory: {dirpath}")
+            stats["skipped"] += len(dir_df)
+            continue
         except Exception as e:
-            logging.error(f'Error processing directory {dirpath}: {str(e)}')
+            logging.error(f"Error processing directory {dirpath}: {str(e)}")
             continue
 
     return stats
@@ -1049,7 +1293,7 @@ def setup_logging(level: str) -> None:
     Args:
         level: Logging level
     """
-    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    log_format = "%(asctime)s - %(levelname)s - %(message)s"
     try:
         level = getattr(logging, level.upper(), logging.INFO)
     except AttributeError:
@@ -1057,56 +1301,62 @@ def setup_logging(level: str) -> None:
         print(f"Invalid log level: {level}, defaulting to INFO", file=sys.stderr)
 
     logging.basicConfig(
-        level=level,
-        format=log_format,
-        handlers=[logging.StreamHandler()]
+        level=level, format=log_format, handlers=[logging.StreamHandler()]
     )
 
 
 def main() -> None:
     """Main entry point with support for parallel processing and multiple directories."""
     parser = argparse.ArgumentParser(
-        description='Import/Export audio file tags to/from SQLite database.',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description="Import/Export audio file tags to/from SQLite database.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    subparsers = parser.add_subparsers(dest='action', help='Action to perform')
+    subparsers = parser.add_subparsers(dest="action", help="Action to perform")
     subparsers.required = True
 
     # Import subcommand
-    import_parser = subparsers.add_parser('import', help='Import audio files to database')
-    import_parser.add_argument('dbpath', help='Path to SQLite database')
+    import_parser = subparsers.add_parser(
+        "import", help="Import audio files to database"
+    )
+    import_parser.add_argument("dbpath", help="Path to SQLite database")
     import_parser.add_argument(
-        'musicdirs',
-        nargs='+',
-        help='Paths to music directories to import (can specify multiple)'
+        "musicdirs",
+        nargs="+",
+        help="Paths to music directories to import (can specify multiple)",
     )
     import_parser.add_argument(
-        '--workers',
+        "--workers",
         type=int,
         default=None,
-        help='Number of worker processes for tag processing PER DRIVE. '
-             'If not specified, defaults to CPU count // number of active drives.'
+        help="Number of worker processes for tag processing PER DRIVE. "
+        "If not specified, defaults to CPU count // number of active drives.",
     )
     import_parser.add_argument(
-        '--chunk-size',
+        "--chunk-size",
         type=int,
         default=4000,
-        help='Number of files to process per chunk (for tag reading). Default is 4000.'
+        help="Number of files to process per chunk (for tag reading). Default is 4000.",
     )
 
     # Export subcommand
-    export_parser = subparsers.add_parser('export', help='Export database to audio files')
-    export_parser.add_argument('--ignore-lastmodded',action='store_true',help="Don't preserve last modification timestamps when writing tags to file")
-    export_parser.add_argument('dbpath', help='Path to SQLite database')
-    export_parser.add_argument('musicdir', help='Path to music directory to export to')
+    export_parser = subparsers.add_parser(
+        "export", help="Export database to audio files"
+    )
+    export_parser.add_argument(
+        "--ignore-lastmodded",
+        action="store_true",
+        help="Don't preserve last modification timestamps when writing tags to file",
+    )
+    export_parser.add_argument("dbpath", help="Path to SQLite database")
+    export_parser.add_argument("musicdir", help="Path to music directory to export to")
 
     # Common arguments
     for p in [import_parser, export_parser]:
         p.add_argument(
-            '--log',
-            choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-            default='INFO',
-            help='Log level'
+            "--log",
+            choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            default="INFO",
+            help="Log level",
         )
 
     try:
@@ -1114,10 +1364,12 @@ def main() -> None:
         setup_logging(args.log)
 
         # Validate paths
-        if args.action == 'import':
+        if args.action == "import":
             invalid_paths = [p for p in args.musicdirs if not os.path.exists(p)]
             if invalid_paths:
-                logging.error(f"Error: One or more specified music directories do not exist: {', '.join(invalid_paths)}")
+                logging.error(
+                    f"Error: One or more specified music directories do not exist: {', '.join(invalid_paths)}"
+                )
                 sys.exit(1)
 
             dbpath = os.path.realpath(args.dbpath)
@@ -1128,32 +1380,44 @@ def main() -> None:
                 logging.info(f"  {i}. {path}")
 
             if args.workers is not None and args.workers < 1:
-                logging.warning("Warning: Worker count must be 1 or greater. Using default calculation for workers per drive.")
-                args.workers = None # Reset to None to trigger default calculation
+                logging.warning(
+                    "Warning: Worker count must be 1 or greater. Using default calculation for workers per drive."
+                )
+                args.workers = None  # Reset to None to trigger default calculation
 
             import_dir_optimized(
                 dbpath=dbpath,
                 dirpaths=musicdirs,
                 workers=args.workers,
-                chunk_size=args.chunk_size
+                chunk_size=args.chunk_size,
             )
 
         else:  # export
             musicdir_for_export = args.musicdir
 
             if not os.path.exists(musicdir_for_export):
-                logging.error(f"Error: Music directory for export does not exist: {musicdir_for_export}")
+                logging.error(
+                    f"Error: Music directory for export does not exist: {musicdir_for_export}"
+                )
                 sys.exit(1)
 
             dbpath = os.path.realpath(args.dbpath)
             musicdir_resolved = os.path.realpath(musicdir_for_export)
 
-            logging.info(f"Starting export operation filtered by music directory: {musicdir_resolved}")
-            export_db(dbpath, musicdir_resolved, preserve_mtime=not args.ignore_lastmodded)
+            logging.info(
+                f"Starting export operation filtered by music directory: {musicdir_resolved}"
+            )
+            export_db(
+                dbpath, musicdir_resolved, preserve_mtime=not args.ignore_lastmodded
+            )
 
     except Exception as e:
-        logging.error(f"An unhandled error occurred during script execution: {str(e)}", exc_info=True)
+        logging.error(
+            f"An unhandled error occurred during script execution: {str(e)}",
+            exc_info=True,
+        )
         sys.exit(1)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
