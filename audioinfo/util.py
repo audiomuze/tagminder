@@ -690,13 +690,30 @@ def usertags(tag):
     return ret
 
 
+# def unicode_list(value):
+#     """Modifies the passed value to a unicode list.
+
+#     >>>unicode_list("value")
+#     ['value']
+#     >>>unicode_list(['value1', 'value2']
+#     ['value1', 'value2']
+#     """
+#     if not value:
+#         return []
+#     if isinstance(value, str):
+#         return [str(value)]
+#     elif isinstance(value, str):
+#         return [str(value, "utf8", "replace")]
+#     elif isinstance(value, int):
+#         return [str(value)]
+#     else:
+#         return [to_string(v, "replace") for v in value if v]
+
+
 def unicode_list(value):
     """Modifies the passed value to a unicode list.
 
-    >>>unicode_list("value")
-    ['value']
-    >>>unicode_list(['value1', 'value2']
-    ['value1', 'value2']
+    Preserves empty strings to maintain multi-value tag alignment.
     """
     if not value:
         return []
@@ -707,7 +724,8 @@ def unicode_list(value):
     elif isinstance(value, int):
         return [str(value)]
     else:
-        return [to_string(v, "replace") for v in value if v]
+        # CHANGED: Remove 'if v' filter to preserve empty strings
+        return [to_string(v, "replace") for v in value]
 
 
 def writeable(tags):
