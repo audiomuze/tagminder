@@ -47,16 +47,18 @@ import os
 import sys
 import re
 
+
 def setup_logging():
     """
     Set up logging after cleanup to ensure the log file exists.
     Configures error logging to mbartist_errors.log with timestamp format.
     """
     logging.basicConfig(
-        filename='mbartist_errors.log',
+        filename="mbartist_errors.log",
         level=logging.ERROR,
-        format='%(asctime)s - %(message)s'
+        format="%(asctime)s - %(message)s",
     )
+
 
 def cleanup_previous_run(db_name: str = "dbtemplate.db"):
     """
@@ -67,8 +69,8 @@ def cleanup_previous_run(db_name: str = "dbtemplate.db"):
     """
     try:
         # Clear error log
-        if os.path.exists('mbartist_errors.log'):
-            os.remove('mbartist_errors.log')
+        if os.path.exists("mbartist_errors.log"):
+            os.remove("mbartist_errors.log")
             print("Cleared previous mbartist_errors.log")
 
         # Clear database table if it exists
@@ -76,12 +78,14 @@ def cleanup_previous_run(db_name: str = "dbtemplate.db"):
         cursor = conn.cursor()
 
         # Check if table exists
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='musicbrainz_source'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='musicbrainz_raw_data'"
+        )
         table_exists = cursor.fetchone()
 
         if table_exists:
-            cursor.execute("DELETE FROM musicbrainz_source")
-            print("Cleared previous data from musicbrainz_source table")
+            cursor.execute("DELETE FROM musicbrainz_raw_data")
+            print("Cleared previous data from musicbrainz_raw_data table")
 
         conn.commit()
         conn.close()
@@ -89,27 +93,6 @@ def cleanup_previous_run(db_name: str = "dbtemplate.db"):
     except Exception as e:
         print(f"Error during cleanup: {e}")
 
-# def create_sqlite_table(conn: sqlite3.Connection):
-#     """
-#     Create the SQLite table with the specific column schema.
-#     Uses csv_row_number as the primary key for traceability to source CSV.
-
-#     Args:
-#         conn: SQLite database connection object
-#     """
-#     create_table_sql = """
-#     CREATE TABLE IF NOT EXISTS musicbrainz_source (
-#         csv_row_number INTEGER PRIMARY KEY,
-#         mbid TEXT NOT NULL,
-#         contributor TEXT,
-#         gender TEXT,
-#         disambiguation TEXT,
-#         import_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-#     )
-#     """
-
-#     conn.execute(create_table_sql)
-#     conn.commit()
 
 def create_sqlite_table(conn: sqlite3.Connection):
     """
@@ -120,7 +103,7 @@ def create_sqlite_table(conn: sqlite3.Connection):
         conn: SQLite database connection object
     """
     create_table_sql = """
-    CREATE TABLE IF NOT EXISTS musicbrainz_source (
+    CREATE TABLE IF NOT EXISTS musicbrainz_raw_data (
         csv_row_number INTEGER PRIMARY KEY,
         mbid TEXT NOT NULL,
         contributor TEXT,
@@ -133,6 +116,7 @@ def create_sqlite_table(conn: sqlite3.Connection):
 
     conn.execute(create_table_sql)
     conn.commit()
+
 
 def clean_null_chars(value):
     """
@@ -149,19 +133,22 @@ def clean_null_chars(value):
         return None
     elif isinstance(value, bytes):
         # Remove null bytes from binary data
-        cleaned_bytes = value.replace(b'\x00', b'')
+        cleaned_bytes = value.replace(b"\x00", b"")
         try:
             # Try to decode as UTF-8
-            return cleaned_bytes.decode('utf-8', errors='replace')
+            return cleaned_bytes.decode("utf-8", errors="replace")
         except UnicodeDecodeError:
             # If it's not valid UTF-8, return as hex representation
-            return f"[BINARY: {len(cleaned_bytes)} bytes: {cleaned_bytes.hex()[:20]}...]"
+            return (
+                f"[BINARY: {len(cleaned_bytes)} bytes: {cleaned_bytes.hex()[:20]}...]"
+            )
     elif isinstance(value, str):
         # Remove null characters from strings
-        return value.replace('\x00', '')
+        return value.replace("\x00", "")
     else:
         # Convert to string and remove nulls
-        return str(value).replace('\x00', '')
+        return str(value).replace("\x00", "")
+
 
 def read_mbartist_csv(input_file: str):
     """
@@ -183,14 +170,15 @@ def read_mbartist_csv(input_file: str):
         print("Attempting fallback method with manual line parsing...")
         return _read_mbartist_csv_fallback(input_file)
 
+
 def _read_mbartist_csv_primary(input_file: str):
     """
     Primary method for reading MBArtist CSV using Polars - simplified approach.
     """
     # First, determine the number of columns by reading the first line
-    with open(input_file, 'r', encoding='utf-8', errors='replace') as f:
+    with open(input_file, "r", encoding="utf-8", errors="replace") as f:
         first_line = f.readline().strip()
-        num_columns = first_line.count('\t') + 1
+        num_columns = first_line.count("\t") + 1
         print(f"Detected {num_columns} columns in the CSV file")
 
     # Check if we have enough columns for the ones we need
@@ -198,10 +186,12 @@ def _read_mbartist_csv_primary(input_file: str):
     max_required = max(required_columns)
 
     if num_columns <= max_required:
-        raise ValueError(f"CSV file has only {num_columns} columns, but need at least {max_required + 1} columns for indices {required_columns}")
+        raise ValueError(
+            f"CSV file has only {num_columns} columns, but need at least {max_required + 1} columns for indices {required_columns}"
+        )
 
     # Create a schema with all columns as strings
-    schema = {f"column_{i+1}": pl.String for i in range(num_columns)}
+    schema = {f"column_{i + 1}": pl.String for i in range(num_columns)}
 
     # Simple approach: treat everything between tabs as literal data
     df = pl.read_csv(
@@ -217,21 +207,23 @@ def _read_mbartist_csv_primary(input_file: str):
         null_values=["\\N"],
         # The key fix: disable ALL quote processing
         quote_char="",  # Empty string disables quote processing entirely
-        low_memory=True
+        low_memory=True,
     )
 
     # Select only the columns we need: 1, 2, 12, 13 (0-based indexing)
     # Map to meaningful names immediately for easier processing
-    selected_columns = [f"column_{i+1}" for i in [1, 2, 12, 13]]
+    selected_columns = [f"column_{i + 1}" for i in [1, 2, 12, 13]]
     df_selected = df.select(selected_columns)
 
     # Rename columns to meaningful names
-    df_selected = df_selected.rename({
-        "column_2": "mbid",
-        "column_3": "contributor",
-        "column_13": "gender",
-        "column_14": "disambiguation"
-    })
+    df_selected = df_selected.rename(
+        {
+            "column_2": "mbid",
+            "column_3": "contributor",
+            "column_13": "gender",
+            "column_14": "disambiguation",
+        }
+    )
 
     # Clean null characters from all selected columns
     for col in df_selected.columns:
@@ -240,6 +232,7 @@ def _read_mbartist_csv_primary(input_file: str):
         )
 
     return df_selected
+
 
 def _read_mbartist_csv_fallback(input_file: str):
     """
@@ -251,29 +244,39 @@ def _read_mbartist_csv_fallback(input_file: str):
         row_count = 0
         required_columns = [1, 2, 12, 13]  # 0-based indexing
 
-        with open(input_file, 'r', encoding='utf-8', errors='replace') as f:
+        with open(input_file, "r", encoding="utf-8", errors="replace") as f:
             for line_num, line in enumerate(f, 1):
                 try:
                     # Strip newline and split on tabs
-                    line = line.rstrip('\n\r')
-                    fields = line.split('\t')
+                    line = line.rstrip("\n\r")
+                    fields = line.split("\t")
 
                     # Check if we have enough columns
                     if len(fields) <= max(required_columns):
                         # Pad with empty strings if needed
                         while len(fields) <= max(required_columns):
-                            fields.append('')
+                            fields.append("")
 
                     # Extract only the columns we need
                     selected_fields = [
-                        fields[1] if len(fields) > 1 and fields[1] != "\\N" else None,      # mbid
-                        fields[2] if len(fields) > 2 and fields[2] != "\\N" else None,      # contributor
-                        fields[12] if len(fields) > 12 and fields[12] != "\\N" else None,   # gender
-                        fields[13] if len(fields) > 13 and fields[13] != "\\N" else None    # disambiguation
+                        fields[1]
+                        if len(fields) > 1 and fields[1] != "\\N"
+                        else None,  # mbid
+                        fields[2]
+                        if len(fields) > 2 and fields[2] != "\\N"
+                        else None,  # contributor
+                        fields[12]
+                        if len(fields) > 12 and fields[12] != "\\N"
+                        else None,  # gender
+                        fields[13]
+                        if len(fields) > 13 and fields[13] != "\\N"
+                        else None,  # disambiguation
                     ]
 
                     # Clean null characters from each field
-                    cleaned_fields = [clean_null_chars(field) for field in selected_fields]
+                    cleaned_fields = [
+                        clean_null_chars(field) for field in selected_fields
+                    ]
 
                     rows.append(cleaned_fields)
                     row_count += 1
@@ -287,18 +290,20 @@ def _read_mbartist_csv_fallback(input_file: str):
                     print(f"Error processing line {line_num}: {line_error}")
                     print(f"Problematic line content: {line[:100]}...")
                     # Add empty row to maintain row number alignment
-                    rows.append(['', '', '', ''])
+                    rows.append(["", "", "", ""])
                     row_count += 1
 
         print(f"Fallback method processed {row_count} rows")
 
         # Create Polars DataFrame from manually parsed data
-        df = pl.DataFrame({
-            'mbid': [row[0] for row in rows],
-            'contributor': [row[1] for row in rows],
-            'gender': [row[2] for row in rows],
-            'disambiguation': [row[3] for row in rows]
-        })
+        df = pl.DataFrame(
+            {
+                "mbid": [row[0] for row in rows],
+                "contributor": [row[1] for row in rows],
+                "gender": [row[2] for row in rows],
+                "disambiguation": [row[3] for row in rows],
+            }
+        )
 
         return df
 
@@ -306,6 +311,7 @@ def _read_mbartist_csv_fallback(input_file: str):
         logging.error(f"Fallback CSV reading error: {e}")
         print(f"Error in fallback CSV reading: {e}")
         raise
+
 
 def clean_contributor_apostrophes(contributor_col: pl.Series) -> pl.Series:
     """
@@ -320,14 +326,16 @@ def clean_contributor_apostrophes(contributor_col: pl.Series) -> pl.Series:
     """
     # Replace problematic apostrophe encodings
     cleaned = (
-        contributor_col
-        .str.replace_all(r'â€™', "'")  # Common malformed apostrophe
-        .str.replace_all(r'Ì', "'")    # Another problematic encoding
-        .str.replace_all(r' ́', "'")    # Combining acute accent (looks like apostrophe)
-        .str.replace_all(r'’', "'")    # Right single quotation mark to standard apostrophe
+        contributor_col.str.replace_all(r"â€™", "'")  # Common malformed apostrophe
+        .str.replace_all(r"Ì", "'")  # Another problematic encoding
+        .str.replace_all(r" ́", "'")  # Combining acute accent (looks like apostrophe)
+        .str.replace_all(
+            r"’", "'"
+        )  # Right single quotation mark to standard apostrophe
     )
 
     return cleaned
+
 
 def validate_df_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     """
@@ -349,17 +357,18 @@ def validate_df_vectorized(df: pl.DataFrame) -> pl.DataFrame:
     df_with_validation = df.with_row_index("original_row_number", offset=1)
 
     # Validation 1: mbid column is required and not empty
-    mbid_valid = (
-        pl.col("mbid").is_not_null() &
-        (pl.col("mbid").str.strip_chars().str.len_chars() > 0)
+    mbid_valid = pl.col("mbid").is_not_null() & (
+        pl.col("mbid").str.strip_chars().str.len_chars() > 0
     )
 
     # Validation 2: Basic MBID format validation (UUID-like: 8-4-4-4-12 hex chars)
     # MusicBrainz IDs are UUIDs, so they should match the pattern
     mbid_format_valid = (
-        pl.col("mbid").str.strip_chars().str.contains(
-            r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-            literal=False
+        pl.col("mbid")
+        .str.strip_chars()
+        .str.contains(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            literal=False,
         )
     ).fill_null(False)
 
@@ -368,42 +377,50 @@ def validate_df_vectorized(df: pl.DataFrame) -> pl.DataFrame:
         return (
             pl.col(col).map_elements(
                 lambda x: isinstance(x, bytes) if x is not None else False,
-                return_dtype=pl.Boolean
+                return_dtype=pl.Boolean,
             )
         ).fill_null(False)
 
     # Check which columns have binary content
     binary_checks_per_column = {
-        col: has_binary_content(col) for col in df.columns if col != "original_row_number"
+        col: has_binary_content(col)
+        for col in df.columns
+        if col != "original_row_number"
     }
 
     # Get binary details for each column
     def get_binary_details(col):
         """Get binary information for each column"""
-        return pl.col(col).map_elements(
-            lambda x:
-                f"bytes_{len(x)}" if isinstance(x, bytes) else
-                "clean",
-            return_dtype=pl.String
-        ).fill_null("null")
+        return (
+            pl.col(col)
+            .map_elements(
+                lambda x: f"bytes_{len(x)}" if isinstance(x, bytes) else "clean",
+                return_dtype=pl.String,
+            )
+            .fill_null("null")
+        )
 
     binary_details_per_column = {
-        col: get_binary_details(col) for col in df.columns if col != "original_row_number"
+        col: get_binary_details(col)
+        for col in df.columns
+        if col != "original_row_number"
     }
 
     # Combine to check if ANY column has binary content
     binary_checks = pl.any_horizontal(*binary_checks_per_column.values())
 
     # Create detailed binary information string
-    binary_details = pl.concat_str([
-        pl.lit(f"{col}:") + binary_details_per_column[col] + pl.lit("; ")
-        for col in binary_details_per_column.keys()
-    ], separator="").alias("binary_details")
+    binary_details = pl.concat_str(
+        [
+            pl.lit(f"{col}:") + binary_details_per_column[col] + pl.lit("; ")
+            for col in binary_details_per_column.keys()
+        ],
+        separator="",
+    ).alias("binary_details")
 
     # Validation 4: Contributor should be present (not strictly required but flagged)
-    contributor_present = (
-        pl.col("contributor").is_not_null() &
-        (pl.col("contributor").str.strip_chars().str.len_chars() > 0)
+    contributor_present = pl.col("contributor").is_not_null() & (
+        pl.col("contributor").str.strip_chars().str.len_chars() > 0
     )
 
     # Combine all validations (contributor is optional, so not included in main validation)
@@ -411,87 +428,35 @@ def validate_df_vectorized(df: pl.DataFrame) -> pl.DataFrame:
 
     # Generate specific error messages with binary details
     error_messages = (
-        pl.when(~mbid_valid).then(pl.lit("MBID column is required and cannot be empty"))
-        .when(~mbid_format_valid).then(pl.lit("Invalid MBID format (must be valid UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"))
-        .when(binary_checks).then(pl.lit("Binary content detected after cleaning - details: ") + binary_details)
+        pl.when(~mbid_valid)
+        .then(pl.lit("MBID column is required and cannot be empty"))
+        .when(~mbid_format_valid)
+        .then(
+            pl.lit(
+                "Invalid MBID format (must be valid UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+            )
+        )
+        .when(binary_checks)
+        .then(
+            pl.lit("Binary content detected after cleaning - details: ")
+            + binary_details
+        )
         .otherwise(pl.lit(""))
         .alias("error_message")
     ).fill_null("Unknown validation error")
 
     # Add warning for missing contributor (but don't mark as invalid)
     warning_messages = (
-        pl.when(~contributor_present).then(pl.lit("Missing contributor information"))
+        pl.when(~contributor_present)
+        .then(pl.lit("Missing contributor information"))
         .otherwise(pl.lit(""))
         .alias("warning_message")
     )
 
-    return df_with_validation.with_columns([
-        is_valid.alias("is_valid"),
-        error_messages,
-        warning_messages,
-        binary_details
-    ])
+    return df_with_validation.with_columns(
+        [is_valid.alias("is_valid"), error_messages, warning_messages, binary_details]
+    )
 
-# def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
-#     """
-#     Insert valid rows into the SQLite table using CSV row number as ID.
-#     Replaces all instances of '""' with '"' in contributor column (same as original script).
-#     Cleanses problematic apostrophes in contributor column (vectorized operation).
-#     Only inserts rows where mbid is not null and not empty.
-
-#     Args:
-#         conn: SQLite database connection object
-#         df: Polars DataFrame containing validated data
-
-#     Returns:
-#         Tuple of (inserted_count, skipped_count)
-#     """
-#     # Prepare INSERT statement with csv_row_number as primary key
-#     insert_sql = """
-#     INSERT INTO musicbrainz_source (csv_row_number, mbid, contributor, gender, disambiguation)
-#     VALUES (?, ?, ?, ?, ?)
-#     """
-
-#     # Single-pass vectorized replacement using regex to replace all consecutive double quotes
-#     # This replaces any even number of consecutive double quotes with half the number of single quotes
-#     # Applied specifically to the contributor column (same as original)
-#     df = df.with_columns(
-#         pl.col("contributor")
-#         .str.replace_all(r'"{2,}', '"')
-#         .alias("contributor")
-#     )
-
-#     # Vectorized apostrophe cleansing for contributor column
-#     df = df.with_columns(
-#         clean_contributor_apostrophes(pl.col("contributor")).alias("contributor")
-#     )
-
-#     # Filter out rows where mbid is null or empty (this should already be done by validation, but double-check)
-#     df_with_mbid = df.filter(
-#         pl.col("mbid").is_not_null() &
-#         (pl.col("mbid").str.strip_chars().str.len_chars() > 0)
-#     )
-
-#     skipped_count = len(df) - len(df_with_mbid)
-
-#     # Convert all values to strings but preserve None values
-#     string_df = df_with_mbid.select([
-#         pl.col("original_row_number").cast(pl.Int64),
-#         pl.col("mbid"),  # Don't cast to String if it's None
-#         pl.col("contributor"),  # Don't cast to String if it's None
-#         pl.col("gender"),  # Don't cast to String if it's None
-#         pl.col("disambiguation")  # Don't cast to String if it's None
-#     ])
-
-#     # Convert Polars DataFrame to list of tuples for batch insertion
-#     rows_to_insert = string_df.iter_rows()
-
-#     # Batch insert
-#     cursor = conn.cursor()
-#     cursor.executemany(insert_sql, rows_to_insert)
-#     conn.commit()
-
-#     return cursor.rowcount, skipped_count
 
 def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
     """
@@ -509,7 +474,7 @@ def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
     """
     # Prepare INSERT statement with csv_row_number as primary key
     insert_sql = """
-    INSERT INTO musicbrainz_source (csv_row_number, mbid, contributor, gender, disambiguation, updated_from_allmusic)
+    INSERT INTO musicbrainz_raw_data (csv_row_number, mbid, contributor, gender, disambiguation, updated_from_allmusic)
     VALUES (?, ?, ?, ?, ?, ?)
     """
 
@@ -517,9 +482,7 @@ def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
     # This replaces any even number of consecutive double quotes with half the number of single quotes
     # Applied specifically to the contributor column (same as original)
     df = df.with_columns(
-        pl.col("contributor")
-        .str.replace_all(r'"{2,}', '"')
-        .alias("contributor")
+        pl.col("contributor").str.replace_all(r'"{2,}', '"').alias("contributor")
     )
 
     # Vectorized apostrophe cleansing for contributor column
@@ -528,27 +491,27 @@ def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
     )
 
     # Add the new column with NULL values
-    df = df.with_columns(
-        pl.lit(None).alias("updated_from_allmusic")
-    )
+    df = df.with_columns(pl.lit(None).alias("updated_from_allmusic"))
 
     # Filter out rows where mbid is null or empty (this should already be done by validation, but double-check)
     df_with_mbid = df.filter(
-        pl.col("mbid").is_not_null() &
-        (pl.col("mbid").str.strip_chars().str.len_chars() > 0)
+        pl.col("mbid").is_not_null()
+        & (pl.col("mbid").str.strip_chars().str.len_chars() > 0)
     )
 
     skipped_count = len(df) - len(df_with_mbid)
 
     # Convert all values to strings but preserve None values
-    string_df = df_with_mbid.select([
-        pl.col("original_row_number").cast(pl.Int64),
-        pl.col("mbid"),  # Don't cast to String if it's None
-        pl.col("contributor"),  # Don't cast to String if it's None
-        pl.col("gender"),  # Don't cast to String if it's None
-        pl.col("disambiguation"),  # Don't cast to String if it's None
-        pl.col("updated_from_allmusic")  # This will be NULL for all rows
-    ])
+    string_df = df_with_mbid.select(
+        [
+            pl.col("original_row_number").cast(pl.Int64),
+            pl.col("mbid"),  # Don't cast to String if it's None
+            pl.col("contributor"),  # Don't cast to String if it's None
+            pl.col("gender"),  # Don't cast to String if it's None
+            pl.col("disambiguation"),  # Don't cast to String if it's None
+            pl.col("updated_from_allmusic"),  # This will be NULL for all rows
+        ]
+    )
 
     # Convert Polars DataFrame to list of tuples for batch insertion
     rows_to_insert = string_df.iter_rows()
@@ -559,6 +522,7 @@ def insert_valid_rows(conn: sqlite3.Connection, df: pl.DataFrame):
     conn.commit()
 
     return cursor.rowcount, skipped_count
+
 
 def process_mbartist_to_sqlite(input_file: str, db_name: str = "dbtemplate.db"):
     """
@@ -612,13 +576,17 @@ def process_mbartist_to_sqlite(input_file: str, db_name: str = "dbtemplate.db"):
                 row_values = list(row_data.values())
 
                 # Safely handle error_message
-                error_msg = row.get('error_message', 'No error message')
+                error_msg = row.get("error_message", "No error message")
                 if error_msg is None:
-                    error_msg = 'No error message'
+                    error_msg = "No error message"
 
                 if "Binary content detected" in error_msg:
                     # Extract binary details from the error message
-                    binary_info = error_msg.split("details: ")[-1] if "details: " in error_msg else "No binary details"
+                    binary_info = (
+                        error_msg.split("details: ")[-1]
+                        if "details: " in error_msg
+                        else "No binary details"
+                    )
 
                     # Create a readable representation of the row
                     readable_row = []
@@ -627,19 +595,37 @@ def process_mbartist_to_sqlite(input_file: str, db_name: str = "dbtemplate.db"):
                             readable_row.append("NULL")
                         elif isinstance(value, bytes):
                             # Show binary data as hex preview
-                            hex_preview = value.hex()[:20] + "..." if len(value) > 20 else value.hex()
-                            readable_row.append(f"[BINARY: {len(value)} bytes: {hex_preview}]")
+                            hex_preview = (
+                                value.hex()[:20] + "..."
+                                if len(value) > 20
+                                else value.hex()
+                            )
+                            readable_row.append(
+                                f"[BINARY: {len(value)} bytes: {hex_preview}]"
+                            )
                         else:
-                            readable_row.append(str(value)[:100] + "..." if len(str(value)) > 100 else str(value))
+                            readable_row.append(
+                                str(value)[:100] + "..."
+                                if len(str(value)) > 100
+                                else str(value)
+                            )
 
                     row_string = " | ".join(readable_row)
-                    logging.error(f"rowid: {row['original_row_number']}: {error_msg} - {row_string}")
-                    print(f"BINARY CONTENT FOUND - row {row['original_row_number']}: {binary_info}")
+                    logging.error(
+                        f"rowid: {row['original_row_number']}: {error_msg} - {row_string}"
+                    )
+                    print(
+                        f"BINARY CONTENT FOUND - row {row['original_row_number']}: {binary_info}"
+                    )
 
                 else:
                     # For non-binary errors
-                    row_string = "\t".join(str(val) if val is not None else "" for val in row_values)
-                    logging.error(f"rowid: {row['original_row_number']}: {error_msg} - {row_string}")
+                    row_string = "\t".join(
+                        str(val) if val is not None else "" for val in row_values
+                    )
+                    logging.error(
+                        f"rowid: {row['original_row_number']}: {error_msg} - {row_string}"
+                    )
 
         # Log warnings for valid rows (like missing contributor)
         valid_rows_with_warnings = valid_rows.filter(
@@ -654,8 +640,12 @@ def process_mbartist_to_sqlite(input_file: str, db_name: str = "dbtemplate.db"):
         skipped_mbid_null_count = 0
         if len(valid_rows) > 0:
             # Drop validation columns before insertion
-            valid_rows_for_insert = valid_rows.drop(["is_valid", "error_message", "warning_message", "binary_details"])
-            inserted_count, skipped_count = insert_valid_rows(conn, valid_rows_for_insert)
+            valid_rows_for_insert = valid_rows.drop(
+                ["is_valid", "error_message", "warning_message", "binary_details"]
+            )
+            inserted_count, skipped_count = insert_valid_rows(
+                conn, valid_rows_for_insert
+            )
             skipped_mbid_null_count = skipped_count
             print(f"Inserted {inserted_count} valid rows into SQLite table")
             if skipped_count > 0:
@@ -670,12 +660,16 @@ def process_mbartist_to_sqlite(input_file: str, db_name: str = "dbtemplate.db"):
         logging.error(f"Processing error: {e}")
         print(f"Error processing file: {e}")
         import traceback
+
         traceback.print_exc()
-        if 'conn' in locals():
+        if "conn" in locals():
             conn.close()
         return 0
 
-def alternative_approach_chunked_sqlite(input_file: str, db_name: str = "dbtemplate.db"):
+
+def alternative_approach_chunked_sqlite(
+    input_file: str, db_name: str = "dbtemplate.db"
+):
     """
     Alternative approach using chunked processing for very large MusicBrainz files.
     Handles EOF errors gracefully with ZERO type inference.
@@ -696,19 +690,21 @@ def alternative_approach_chunked_sqlite(input_file: str, db_name: str = "dbtempl
         create_sqlite_table(conn)
 
         # First, determine the number of columns by reading the first line
-        with open(input_file, 'r', encoding='utf-8', errors='replace') as f:
+        with open(input_file, "r", encoding="utf-8", errors="replace") as f:
             first_line = f.readline().strip()
-            num_columns = first_line.count('\t') + 1
+            num_columns = first_line.count("\t") + 1
 
         # Check if we have enough columns
         required_columns = [1, 2, 12, 13]
         max_required = max(required_columns)
 
         if num_columns <= max_required:
-            raise ValueError(f"CSV file has only {num_columns} columns, but need at least {max_required + 1} columns")
+            raise ValueError(
+                f"CSV file has only {num_columns} columns, but need at least {max_required + 1} columns"
+            )
 
         # Define explicit schema - ALL columns as String (UTF-8)
-        schema = {f"column_{i+1}": pl.String for i in range(num_columns)}
+        schema = {f"column_{i + 1}": pl.String for i in range(num_columns)}
 
         # Process in chunks
         chunk_size = 10000
@@ -732,7 +728,7 @@ def alternative_approach_chunked_sqlite(input_file: str, db_name: str = "dbtempl
                 low_memory=True,
                 batch_size=chunk_size,
                 # The key fix: disable ALL quote processing
-                quote_char=""  # Empty string disables quote processing entirely
+                quote_char="",  # Empty string disables quote processing entirely
             )
 
             chunk_index = 0
@@ -746,19 +742,23 @@ def alternative_approach_chunked_sqlite(input_file: str, db_name: str = "dbtempl
                     total_rows += len(chunk)
 
                     # Select and rename columns
-                    selected_columns = [f"column_{i+1}" for i in [1, 2, 12, 13]]
+                    selected_columns = [f"column_{i + 1}" for i in [1, 2, 12, 13]]
                     chunk_selected = chunk.select(selected_columns)
-                    chunk_selected = chunk_selected.rename({
-                        "column_2": "mbid",
-                        "column_3": "contributor",
-                        "column_13": "gender",
-                        "column_14": "disambiguation"
-                    })
+                    chunk_selected = chunk_selected.rename(
+                        {
+                            "column_2": "mbid",
+                            "column_3": "contributor",
+                            "column_13": "gender",
+                            "column_14": "disambiguation",
+                        }
+                    )
 
                     # Clean null characters from all columns in the chunk
                     for col in chunk_selected.columns:
                         chunk_selected = chunk_selected.with_columns(
-                            pl.col(col).map_elements(clean_null_chars, return_dtype=pl.String)
+                            pl.col(col).map_elements(
+                                clean_null_chars, return_dtype=pl.String
+                            )
                         )
 
                     # Vectorized validation for the chunk
@@ -772,18 +772,29 @@ def alternative_approach_chunked_sqlite(input_file: str, db_name: str = "dbtempl
                     if len(invalid_chunk) > 0:
                         for row in invalid_chunk.iter_rows(named=True):
                             row_data = {col: row[col] for col in chunk_selected.columns}
-                            logging.error(f"rowid: {row['original_row_number']}: {row['error_message']} - {list(row_data.values())}")
+                            logging.error(
+                                f"rowid: {row['original_row_number']}: {row['error_message']} - {list(row_data.values())}"
+                            )
 
                     invalid_count += len(invalid_chunk)
 
                     # Insert valid rows into SQLite
                     chunk_inserted = 0
                     if len(valid_chunk) > 0:
-                        valid_for_insert = valid_chunk.drop(["is_valid", "error_message", "warning_message", "binary_details"])
+                        valid_for_insert = valid_chunk.drop(
+                            [
+                                "is_valid",
+                                "error_message",
+                                "warning_message",
+                                "binary_details",
+                            ]
+                        )
                         chunk_inserted, _ = insert_valid_rows(conn, valid_for_insert)
                         inserted_count += chunk_inserted
 
-                    print(f"Processed chunk {chunk_index+1}: {len(chunk)} rows, {chunk_inserted} inserted")
+                    print(
+                        f"Processed chunk {chunk_index + 1}: {len(chunk)} rows, {chunk_inserted} inserted"
+                    )
                     chunk_index += 1
 
                 except StopIteration:
@@ -808,10 +819,15 @@ def alternative_approach_chunked_sqlite(input_file: str, db_name: str = "dbtempl
     except Exception as e:
         logging.error(f"Chunked processing error: {e}")
         print(f"Error in chunked processing: {e}")
-        if 'conn' in locals():
+        if "conn" in locals():
             conn.close()
 
-def verify_database(db_name: str = "dbtemplate.db", input_file: str = "mbartist.csv", skipped_mbid_null_count: int = 0):
+
+def verify_database(
+    db_name: str = "dbtemplate.db",
+    input_file: str = "mbartist.csv",
+    skipped_mbid_null_count: int = 0,
+):
     """
     Verify the database was created correctly and reconcile record counts.
     Database records + error log rows + skipped mbid null rows should equal total CSV rows.
@@ -826,13 +842,13 @@ def verify_database(db_name: str = "dbtemplate.db", input_file: str = "mbartist.
         cursor = conn.cursor()
 
         # Count total rows in database table
-        cursor.execute("SELECT COUNT(*) FROM musicbrainz_source")
+        cursor.execute("SELECT COUNT(*) FROM musicbrainz_raw_data")
         db_rows = cursor.fetchone()[0]
 
         # Count total rows in CSV
         csv_row_count = 0
         try:
-            with open(input_file, 'r', encoding='utf-8', errors='replace') as f:
+            with open(input_file, "r", encoding="utf-8", errors="replace") as f:
                 csv_row_count = sum(1 for _ in f)
         except Exception as e:
             print(f"Error counting CSV rows: {e}")
@@ -841,7 +857,7 @@ def verify_database(db_name: str = "dbtemplate.db", input_file: str = "mbartist.
         # Count error log entries (each represents one invalid row)
         error_log_count = 0
         try:
-            with open('mbartist_errors.log', 'r', encoding='utf-8') as f:
+            with open("mbartist_errors.log", "r", encoding="utf-8") as f:
                 # Count lines that contain validation errors
                 error_log_count = sum(1 for line in f if "rowid:" in line)
         except FileNotFoundError:
@@ -853,7 +869,11 @@ def verify_database(db_name: str = "dbtemplate.db", input_file: str = "mbartist.
         # Calculate reconciliation
         if isinstance(db_rows, int) and isinstance(error_log_count, int):
             reconciliation = db_rows + error_log_count + skipped_mbid_null_count
-            status = "reconciliation OK" if reconciliation == csv_row_count else "reconciliation failed"
+            status = (
+                "reconciliation OK"
+                if reconciliation == csv_row_count
+                else "reconciliation failed"
+            )
         else:
             reconciliation = "cannot calculate"
             status = "UNKNOWN"
@@ -867,8 +887,12 @@ def verify_database(db_name: str = "dbtemplate.db", input_file: str = "mbartist.
         print(f"Status: {status}")
 
         # Show detailed mismatch if any
-        if (isinstance(db_rows, int) and isinstance(error_log_count, int) and
-            isinstance(csv_row_count, int) and reconciliation != csv_row_count):
+        if (
+            isinstance(db_rows, int)
+            and isinstance(error_log_count, int)
+            and isinstance(csv_row_count, int)
+            and reconciliation != csv_row_count
+        ):
             print(f"Mismatch details:")
             print(f"  Expected total: {csv_row_count}")
             print(f"  Actual total: {reconciliation}")
@@ -879,6 +903,7 @@ def verify_database(db_name: str = "dbtemplate.db", input_file: str = "mbartist.
     except Exception as e:
         print(f"Error verifying database: {e}")
 
+
 if __name__ == "__main__":
     input_file = "mbartist.csv"
     db_name = "dbtemplate.db"
@@ -887,14 +912,20 @@ if __name__ == "__main__":
     print(f"Input file: {input_file}")
     print("Format: Tab-delimited CSV (no headers)")
     print("Extracting columns: 1, 2, 12, 13 (0-based indexing)")
-    print("Mapping: column_2->mbid, column_3->contributor, column_13->gender, column_14->disambiguation")
-    print("All columns will be stored as UTF-8 TEXT - ZERO type inference will be applied")
+    print(
+        "Mapping: column_2->mbid, column_3->contributor, column_13->gender, column_14->disambiguation"
+    )
+    print(
+        "All columns will be stored as UTF-8 TEXT - ZERO type inference will be applied"
+    )
     print("Null characters (hex 00) will be automatically stripped from all values")
     print("Using CSV row numbers as primary keys for traceability")
     print("Using VECTORIZED validation for improved performance")
     print("Only inserting rows where mbid is not null/empty")
     print("MBID format validation: UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)")
-    print("Apostrophe normalization: Replacing problematic apostrophes with standard ones in contributor column")
+    print(
+        "Apostrophe normalization: Replacing problematic apostrophes with standard ones in contributor column"
+    )
 
     # For moderate-sized files:
     skipped_count = process_mbartist_to_sqlite(input_file, db_name)
