@@ -371,91 +371,45 @@ def optimized_string_grouper_matching(
 # --- OPTIMIZED: single-pass tag collection using SQL aggregation ---
 def collect_all_tags_optimized(conn: sqlite3.Connection) -> List[str]:
     """
-    Collect all unique tags using SQL to minimize data transfer and processing.
-    This is much faster than processing in Python.
+    Collect all unique tags using vectorized Polars operations (replacing the buggy SQL).
+    This robustly handles all delimiters and ensures a complete tag list.
     """
+    query = f"SELECT genre, style FROM {ALIB_TABLE} WHERE genre IS NOT NULL OR style IS NOT NULL"
 
-    # Use SQL to do the heavy lifting - much faster than Python processing
-    query = f"""
-    WITH RECURSIVE split_tags AS (
-        -- Split genres
-        SELECT DISTINCT
-            TRIM(
-                CASE
-                    WHEN genre LIKE '%{DELIMITER}%' THEN
-                        SUBSTR(genre, 1, INSTR(genre, '{DELIMITER}') - 1)
-                    ELSE genre
-                END
-            ) as tag
-        FROM {ALIB_TABLE}
-        WHERE genre IS NOT NULL AND genre != ''
-
-        UNION ALL
-
-        SELECT DISTINCT
-            TRIM(
-                CASE
-                    WHEN SUBSTR(genre, INSTR(genre, '{DELIMITER}') + {len(DELIMITER)}) LIKE '%{DELIMITER}%' THEN
-                        SUBSTR(SUBSTR(genre, INSTR(genre, '{DELIMITER}') + {len(DELIMITER)}), 1,
-                               INSTR(SUBSTR(genre, INSTR(genre, '{DELIMITER}') + {len(DELIMITER)}), '{DELIMITER}') - 1)
-                    ELSE SUBSTR(genre, INSTR(genre, '{DELIMITER}') + {len(DELIMITER)})
-                END
-            ) as tag
-        FROM {ALIB_TABLE}
-        WHERE genre IS NOT NULL
-        AND genre LIKE '%{DELIMITER}%'
-        AND INSTR(genre, '{DELIMITER}') > 0
-        AND SUBSTR(genre, INSTR(genre, '{DELIMITER}') + {len(DELIMITER)}) != ''
-
-        -- Split styles
-        UNION ALL
-
-        SELECT DISTINCT
-            TRIM(
-                CASE
-                    WHEN style LIKE '%{DELIMITER}%' THEN
-                        SUBSTR(style, 1, INSTR(style, '{DELIMITER}') - 1)
-                    ELSE style
-                END
-            ) as tag
-        FROM {ALIB_TABLE}
-        WHERE style IS NOT NULL AND style != ''
-
-        UNION ALL
-
-        SELECT DISTINCT
-            TRIM(
-                CASE
-                    WHEN SUBSTR(style, INSTR(style, '{DELIMITER}') + {len(DELIMITER)}) LIKE '%{DELIMITER}%' THEN
-                        SUBSTR(SUBSTR(style, INSTR(style, '{DELIMITER}') + {len(DELIMITER)}), 1,
-                               INSTR(SUBSTR(style, INSTR(style, '{DELIMITER}') + {len(DELIMITER)}), '{DELIMITER}') - 1)
-                    ELSE SUBSTR(style, INSTR(style, '{DELIMITER}') + {len(DELIMITER)})
-                END
-            ) as tag
-        FROM {ALIB_TABLE}
-        WHERE style IS NOT NULL
-        AND style LIKE '%{DELIMITER}%'
-        AND INSTR(style, '{DELIMITER}') > 0
-        AND SUBSTR(style, INSTR(style, '{DELIMITER}') + {len(DELIMITER)}) != ''
+    # Use schema overrides for safety
+    df = pl.read_database(
+        query, conn, schema_overrides={"genre": pl.Utf8, "style": pl.Utf8}
     )
-    SELECT DISTINCT tag
-    FROM split_tags
-    WHERE tag IS NOT NULL
-    AND TRIM(tag) != ''
-    ORDER BY tag
-    """
 
-    try:
-        cursor = conn.execute(query)
-        tags = [row[0] for row in cursor.fetchall()]
-        logging.info(f"SQL-based tag collection found {len(tags)} unique tags")
-        return tags
-    except Exception as e:
-        logging.warning(
-            f"SQL tag collection failed, falling back to Python method: {e}"
-        )
-        # Fallback to Python-based collection
-        return collect_tags_python_fallback(conn)
+    all_tags = set()
+
+    for col_name in ["genre", "style"]:
+        if col_name in df.columns:
+            tags = (
+                df.lazy()
+                .select(pl.col(col_name).fill_null(""))
+                .filter(pl.col(col_name) != "")
+                # CRITICAL FIX: Replace secondary delimiters (e.g., comma, pipe)
+                # with the primary delimiter (\\\\) BEFORE splitting.
+                .select(
+                    pl.col(col_name).str.replace_all(
+                        DELIMITER_PATTERN.pattern, DELIMITER, literal=False
+                    )
+                )
+                # Split, explode, strip, and find unique tags
+                .select(pl.col(col_name).str.split(DELIMITER))
+                .select(pl.col(col_name).list.explode())
+                .select(pl.col(col_name).str.strip_chars())
+                .filter(pl.col(col_name) != "")
+                .collect()
+                .get_column(col_name)
+                .unique()
+                .to_list()
+            )
+            all_tags.update(tags)
+
+    logging.info(f"Vectorized Polars tag collection found {len(all_tags)} unique tags")
+    return list(all_tags)
 
 
 def collect_tags_python_fallback(conn: sqlite3.Connection) -> List[str]:
@@ -856,7 +810,7 @@ def main():
                             "old_value": row["genre"],  # Original value (may be None)
                             "new_value": row["new_genre"],  # New value (may be None)
                             "timestamp": timestamp,
-                            "script": "optimized-string-grouper-polars",
+                            "script": "09-fix-genres-polars-optimised-handles-nulls.py",
                         }
                     )
 
@@ -868,7 +822,7 @@ def main():
                             "old_value": row["style"],  # Original value (may be None)
                             "new_value": row["new_style"],  # New value (may be None)
                             "timestamp": timestamp,
-                            "script": "optimized-string-grouper-polars",
+                            "script": "09-fix-genres-polars-optimised-handles-nulls.py",
                         }
                     )
 
