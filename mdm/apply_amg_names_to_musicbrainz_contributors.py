@@ -43,13 +43,14 @@ def update__REF_mb_disambiguated(
         print("Reading specific columns from tables...")
 
         # Build query with optional similarity filter
+        # FIX: Use CAST to handle both '1' and '1.0' values
         if require_similarity_1:
             allmusic_query = """
                 SELECT allmusic_artist, name_similarity, genre, styles
                 FROM allmusic_reference_data
-                WHERE name_similarity = '1'
+                WHERE CAST(name_similarity AS REAL) = 1.0
             """
-            print("Filtering to records with name_similarity = 1")
+            print("Filtering to records with name_similarity = 1.0")
         else:
             allmusic_query = """
                 SELECT allmusic_artist, name_similarity, genre, styles
@@ -99,54 +100,56 @@ def update__REF_mb_disambiguated(
             print("No matching rows found in allmusic_reference_data. Exiting.")
             return 0
 
-        # Create a mapping of lowercase allmusic_artist to (original name, genre, styles)
-        artist_mapping = {}
-        for row in allmusic_df.iter_rows(named=True):
-            allmusic_artist = row["allmusic_artist"]
-            if allmusic_artist and str(allmusic_artist).strip():
-                lowercase_key = str(allmusic_artist).lower().strip()
-                artist_mapping[lowercase_key] = {
-                    "name": str(allmusic_artist),
-                    "genre": row.get("genre"),
-                    "styles": row.get("styles"),
-                }
-
-        print(f"Created mapping for {len(artist_mapping)} unique artists")
-
-        # Find rows that need updating using vectorized operations
-        # Add columns for matched data
-        musicbrainz_df = musicbrainz_df.with_columns(
-            [
-                # Check if lentity exists in our artist mapping
-                pl.col("lentity")
-                .map_elements(
-                    lambda x: x in artist_mapping if x else False,
-                    return_dtype=pl.Boolean,
-                )
-                .alias("has_match"),
-                # Get the canonical artist name for matched entries
-                pl.col("lentity")
-                .map_elements(
-                    lambda x: artist_mapping.get(x, {}).get("name") if x else None,
-                    return_dtype=pl.String,
-                )
-                .alias("canonical_name"),
-                # Get genre for matched entries
-                pl.col("lentity")
-                .map_elements(
-                    lambda x: artist_mapping.get(x, {}).get("genre") if x else None,
-                    return_dtype=pl.String,
-                )
-                .alias("allmusic_genre"),
-                # Get styles for matched entries
-                pl.col("lentity")
-                .map_elements(
-                    lambda x: artist_mapping.get(x, {}).get("styles") if x else None,
-                    return_dtype=pl.String,
-                )
-                .alias("allmusic_styles"),
-            ]
+        # DEBUG: Check if "Idles" exists in the AllMusic data
+        print("\n=== DEBUG: Searching for 'Idles' in AllMusic data ===")
+        idles_in_allmusic = allmusic_df.filter(
+            pl.col("allmusic_artist").str.to_lowercase() == "idles"
         )
+        print(f"Found {len(idles_in_allmusic)} records with 'idles' (case-insensitive) in AllMusic:")
+        if len(idles_in_allmusic) > 0:
+            for row in idles_in_allmusic.iter_rows(named=True):
+                print(f"  allmusic_artist: '{row['allmusic_artist']}', name_similarity: '{row['name_similarity']}'")
+
+        # Prepare the allmusic data with lowercase key and remove duplicates
+        allmusic_prepared = allmusic_df.with_columns([
+            pl.col("allmusic_artist").str.to_lowercase().alias("lartist")
+        ]).unique(subset=["lartist"])  # Remove duplicates
+
+        print(f"AllMusic prepared: {allmusic_prepared.shape}")
+
+        # DEBUG: Check if "idles" exists in the prepared data
+        idles_in_prepared = allmusic_prepared.filter(pl.col("lartist") == "idles")
+        print(f"Found {len(idles_in_prepared)} records with lartist='idles' in prepared data:")
+        if len(idles_in_prepared) > 0:
+            for row in idles_in_prepared.iter_rows(named=True):
+                print(f"  lartist: '{row['lartist']}', allmusic_artist: '{row['allmusic_artist']}'")
+
+        # Join instead of manual mapping - rename columns before join to avoid conflicts
+        allmusic_prepared = allmusic_prepared.rename({
+            "genre": "amg_genre",
+            "styles": "amg_styles"
+        })
+
+        musicbrainz_df = musicbrainz_df.join(
+            allmusic_prepared, 
+            left_on="lentity", 
+            right_on="lartist", 
+            how="left"
+        )
+
+        # Add the has_match column
+        musicbrainz_df = musicbrainz_df.with_columns([
+            pl.col("allmusic_artist").is_not_null().alias("has_match")
+        ])
+
+        print(f"After join - MusicBrainz DataFrame: {musicbrainz_df.shape}")
+
+        # DEBUG: Check the joined data for 'idles'
+        print("\n=== DEBUG: Joined data for 'idles' ===")
+        idles_joined = musicbrainz_df.filter(pl.col("lentity") == "idles")
+        if len(idles_joined) > 0:
+            for row in idles_joined.select(["rowid", "entity", "lentity", "allmusic_artist", "has_match"]).iter_rows(named=True):
+                print(f"  rowid: {row['rowid']}, entity: '{row['entity']}', allmusic_artist: '{row['allmusic_artist']}', has_match: {row['has_match']}")
 
         # Filter to rows that have matches AND need updating
         # A row needs updating if: name differs OR genre differs OR styles differ
@@ -155,22 +158,22 @@ def update__REF_mb_disambiguated(
             pl.col("has_match")
             & (
                 # Name is different
-                (pl.col("entity") != pl.col("canonical_name"))
+                (pl.col("entity") != pl.col("allmusic_artist"))
                 # Genre is NULL in target but has value in source
-                | (pl.col("genre").is_null() & pl.col("allmusic_genre").is_not_null())
+                | (pl.col("genre").is_null() & pl.col("amg_genre").is_not_null())
                 # Genre has value in both but they differ
                 | (
                     (pl.col("genre").is_not_null())
-                    & (pl.col("allmusic_genre").is_not_null())
-                    & (pl.col("genre") != pl.col("allmusic_genre"))
+                    & (pl.col("amg_genre").is_not_null())
+                    & (pl.col("genre") != pl.col("amg_genre"))
                 )
                 # Styles is NULL in target but has value in source
-                | (pl.col("styles").is_null() & pl.col("allmusic_styles").is_not_null())
+                | (pl.col("styles").is_null() & pl.col("amg_styles").is_not_null())
                 # Styles has value in both but they differ
                 | (
                     (pl.col("styles").is_not_null())
-                    & (pl.col("allmusic_styles").is_not_null())
-                    & (pl.col("styles") != pl.col("allmusic_styles"))
+                    & (pl.col("amg_styles").is_not_null())
+                    & (pl.col("styles") != pl.col("amg_styles"))
                 )
             )
         )
@@ -188,22 +191,22 @@ def update__REF_mb_disambiguated(
             [
                 "rowid",
                 "entity",
-                "canonical_name",
+                "allmusic_artist",
                 "genre",
-                "allmusic_genre",
+                "amg_genre",
                 "styles",
-                "allmusic_styles",
+                "amg_styles",
             ]
         ).head(5)
         for row in sample_changes.iter_rows(named=True):
             changes = []
-            if row["entity"] != row["canonical_name"]:
-                changes.append(f"name: '{row['entity']}' -> '{row['canonical_name']}'")
-            if row["genre"] != row["allmusic_genre"]:
-                changes.append(f"genre: '{row['genre']}' -> '{row['allmusic_genre']}'")
-            if row["styles"] != row["allmusic_styles"]:
+            if row["entity"] != row["allmusic_artist"]:
+                changes.append(f"name: '{row['entity']}' -> '{row['allmusic_artist']}'")
+            if row["genre"] != row["amg_genre"]:
+                changes.append(f"genre: '{row['genre']}' -> '{row['amg_genre']}'")
+            if row["styles"] != row["amg_styles"]:
                 changes.append(
-                    f"styles: '{row['styles']}' -> '{row['allmusic_styles']}'"
+                    f"styles: '{row['styles']}' -> '{row['amg_styles']}'"
                 )
             print(f"  Row {row['rowid']}: {', '.join(changes)}")
         if changes_count > 5:
@@ -224,9 +227,9 @@ def update__REF_mb_disambiguated(
             cursor.execute(
                 update_sql,
                 (
-                    row["canonical_name"],
-                    row["allmusic_genre"],
-                    row["allmusic_styles"],
+                    row["allmusic_artist"],
+                    row["amg_genre"],
+                    row["amg_styles"],
                     row["rowid"],
                 ),
             )
@@ -268,7 +271,7 @@ if __name__ == "__main__":
     print("Starting contributor update process...")
     print(f"Database: {args.db}")
     print(
-        f"Similarity filter: {'DISABLED (processing all records)' if args.ignore_similarity else 'ENABLED (only name_similarity=1)'}"
+        f"Similarity filter: {'DISABLED (processing all records)' if args.ignore_similarity else 'ENABLED (only name_similarity=1.0)'}"
     )
     print("Reading allmusic_artist, genre, styles from allmusic_reference_data")
     print(
