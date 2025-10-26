@@ -47,7 +47,7 @@ def get_system_columns(columns: List[str]) -> List[str]:
     Returns:
         List of system column names
     """
-    return [col for col in columns if col.startswith("__")]
+    return [col for col in columns if col.startswith('__')]
 
 
 def read_tags_from_file(filepath: str) -> List[str]:
@@ -64,12 +64,8 @@ def read_tags_from_file(filepath: str) -> List[str]:
         IOError: If file can't be read
     """
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            tags = [
-                line.strip()
-                for line in f
-                if line.strip() and not line.strip().startswith("#")
-            ]
+        with open(filepath, 'r', encoding='utf-8') as f:
+            tags = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
         return tags
     except FileNotFoundError:
         raise FileNotFoundError(f"Tags file not found: {filepath}")
@@ -77,9 +73,7 @@ def read_tags_from_file(filepath: str) -> List[str]:
         raise IOError(f"Error reading tags file {filepath}: {e}")
 
 
-def get_changelog_columns(
-    conn: sqlite3.Connection, changelog_table: str = "changelog"
-) -> List[str]:
+def get_changelog_columns(conn: sqlite3.Connection, changelog_table: str = 'changelog') -> List[str]:
     """Get distinct column names from changelog table if it exists and has data.
 
     Args:
@@ -93,16 +87,14 @@ def get_changelog_columns(
         # Check if changelog table exists
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (changelog_table,),
+            (changelog_table,)
         )
         if not cursor.fetchone():
             return []
 
         # Check if table has data and get distinct column names
         cursor = conn.execute(f"SELECT DISTINCT column FROM {changelog_table}")
-        columns = [
-            row[0] for row in cursor.fetchall() if row[0]
-        ]  # Filter out None/empty values
+        columns = [row[0] for row in cursor.fetchall() if row[0]]  # Filter out None/empty values
 
         return columns
     except sqlite3.Error:
@@ -110,9 +102,7 @@ def get_changelog_columns(
         return []
 
 
-def validate_tags(
-    conn: sqlite3.Connection, tags_to_keep: List[str], table_name: str
-) -> tuple[List[str], List[str]]:
+def validate_tags(conn: sqlite3.Connection, tags_to_keep: List[str], table_name: str) -> tuple[List[str], List[str]]:
     """Validate that specified tags exist in the table.
 
     Args:
@@ -140,9 +130,9 @@ def validate_tags(
 def optimise_table_columns(
     dbpath: str,
     tags_to_keep: List[str],
-    table_name: str = "alib",
+    table_name: str = 'alib',
     dry_run: bool = False,
-    vacuum: bool = False,
+    vacuum: bool = False
 ) -> None:
     """optimise table by keeping only system columns and specified tag columns.
 
@@ -171,9 +161,7 @@ def optimise_table_columns(
 
         # Connect to database
         conn = sqlite3.connect(dbpath)
-        conn.execute(
-            "PRAGMA foreign_keys = OFF"
-        )  # Disable foreign keys for table operations
+        conn.execute("PRAGMA foreign_keys = OFF")  # Disable foreign keys for table operations
 
         # Get current columns
         current_columns = get_table_columns(conn, table_name)
@@ -184,9 +172,7 @@ def optimise_table_columns(
         valid_tags, invalid_tags = validate_tags(conn, tags_to_keep, table_name)
 
         if invalid_tags:
-            logging.warning(
-                f"Invalid tag names (will be ignored): {', '.join(invalid_tags)}"
-            )
+            logging.warning(f"Invalid tag names (will be ignored): {', '.join(invalid_tags)}")
 
         if not valid_tags:
             raise ValueError("None of the specified tags exist in the table")
@@ -207,16 +193,10 @@ def optimise_table_columns(
         # Log what we're doing
         logging.info(f"Current table has {len(current_columns)} columns")
         logging.info(f"System columns (keeping): {len(system_columns)}")
-        # logging.info(
-        #     f"Tag columns to keep (i.e. columns with updated metadata): {len(valid_tags)}"
-        # )
-        # for tag in valid_tags:
-        #     logging.info(f"  - {tag}")
-        logging.info(
-            f"Columns to drop (i.e no changes to be made to file metadata): {len(columns_to_drop)}"
-        )
+        logging.info(f"Tag columns to keep: {len(valid_tags)} - {', '.join(valid_tags)}")
+        logging.info(f"Columns to drop: {len(columns_to_drop)}")
         logging.info(f"Estimated space reduction: {estimated_reduction:.1f}%")
-        logging.info(f"Initial database size: {initial_size / (1024 * 1024):.1f} MB")
+        logging.info(f"Initial database size: {initial_size / (1024*1024):.1f} MB")
 
         if dry_run:
             logging.info("DRY RUN - Would drop these columns:")
@@ -237,9 +217,7 @@ def optimise_table_columns(
                 final_size = Path(dbpath).stat().st_size
                 size_change = ((initial_size - final_size) / initial_size) * 100
                 logging.info(f"Vacuum completed in {vacuum_time:.1f} seconds")
-                logging.info(
-                    f"Database size change: {size_change:+.1f}% ({final_size / (1024 * 1024):.1f} MB)"
-                )
+                logging.info(f"Database size change: {size_change:+.1f}% ({final_size / (1024*1024):.1f} MB)")
             return
 
         # Create optimised table using transaction
@@ -257,9 +235,7 @@ def optimise_table_columns(
                 else:
                     columns_sql.append(f'"{col}" TEXT')
 
-            create_sql = (
-                f"CREATE TABLE {table_name}_optimised ({', '.join(columns_sql)})"
-            )
+            create_sql = f"CREATE TABLE {table_name}_optimised ({', '.join(columns_sql)})"
             conn.execute(create_sql)
 
             # Only create index if changelog exists
@@ -268,12 +244,10 @@ def optimise_table_columns(
             )
             changelog_exists = cursor.fetchone() is not None
             if changelog_exists:
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_changelog_alib_rowid ON changelog(alib_rowid)"
-                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_changelog_alib_rowid ON changelog(alib_rowid)")
 
             # Build the copy query based on whether we should copy all records or just changed ones
-            columns_list = ", ".join(f'"{col}"' for col in columns_to_keep)
+            columns_list = ', '.join(f'"{col}"' for col in columns_to_keep)
 
             if changelog_exists:
                 # Copy only changed rows if changelog exists
@@ -297,9 +271,7 @@ def optimise_table_columns(
             conn.execute(f"ALTER TABLE {table_name}_optimised RENAME TO {table_name}")
 
             # Create index on __path for better performance
-            conn.execute(
-                f'CREATE INDEX IF NOT EXISTS idx_{table_name}_path ON {table_name}("__path")'
-            )
+            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{table_name}_path ON {table_name}("__path")')
 
             conn.execute("COMMIT")
 
@@ -310,9 +282,7 @@ def optimise_table_columns(
 
             # Vacuum database if requested
             if vacuum:
-                logging.info(
-                    "Vacuuming database to reclaim space (this may take a while)..."
-                )
+                logging.info("Vacuuming database to reclaim space (this may take a while)...")
                 vacuum_start = time.time()
 
                 # Set pragmas for faster vacuum
@@ -333,21 +303,15 @@ def optimise_table_columns(
                 space_saved = (initial_size - final_size) / (1024 * 1024)
 
                 logging.info(f"Vacuum completed in {vacuum_time:.1f} seconds")
-                logging.info(
-                    f"Space reclaimed: {space_saved:.1f} MB ({size_reduction:.1f}% reduction)"
-                )
-                logging.info(
-                    f"Final database size: {final_size / (1024 * 1024):.1f} MB"
-                )
+                logging.info(f"Space reclaimed: {space_saved:.1f} MB ({size_reduction:.1f}% reduction)")
+                logging.info(f"Final database size: {final_size / (1024*1024):.1f} MB")
 
                 total_time = optimise_time + vacuum_time
                 logging.info(f"Total optimization time: {total_time:.1f} seconds")
             else:
                 # Show potential space savings without vacuum
                 logging.info("Note: Run with --vacuum to reclaim disk space")
-                logging.info(
-                    f"Estimated space savings with vacuum: ~{estimated_reduction:.1f}%"
-                )
+                logging.info(f"Estimated space savings with vacuum: ~{estimated_reduction:.1f}%")
 
         except Exception as e:
             conn.execute("ROLLBACK")
@@ -360,7 +324,7 @@ def optimise_table_columns(
         logging.error(f"Unexpected error: {e}")
         raise
     finally:
-        if "conn" in locals():
+        if 'conn' in locals():
             conn.close()
 
 
@@ -370,7 +334,7 @@ def setup_logging(level: str) -> None:
     Args:
         level: Logging level
     """
-    log_format = "%(asctime)s - %(levelname)s - %(message)s"
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
     try:
         log_level = getattr(logging, level.upper(), logging.INFO)
     except AttributeError:
@@ -378,86 +342,89 @@ def setup_logging(level: str) -> None:
         print(f"Invalid log level: {level}, defaulting to INFO", file=sys.stderr)
 
     logging.basicConfig(
-        level=log_level, format=log_format, handlers=[logging.StreamHandler()]
+        level=log_level,
+        format=log_format,
+        handlers=[logging.StreamHandler()]
     )
 
 
 def main() -> None:
+
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        prog="optimise_alib_columns.py",
-        description="Optimize alib SQLite table by dropping unused tag columns. "
-        "Retains all system columns (__prefixed) and specified tag columns "
-        "to reduce memory usage and improve export performance.",
-        epilog="Examples:\n"
-        "  %(prog)s --db music.sqlite --keep title artist album\n"
-        "  %(prog)s --db music.sqlite --keep-file tags.txt --vacuum\n"
-        "  %(prog)s --db music.sqlite --dry-run  # auto-detect from changelog\n"
-        "  %(prog)s --db music.sqlite --keep title artist --dry-run",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        prog='optimise_alib_columns.py',
+        description='Optimize alib SQLite table by dropping unused tag columns. '
+                   'Retains all system columns (__prefixed) and specified tag columns '
+                   'to reduce memory usage and improve export performance.',
+        epilog='Examples:\n'
+               '  %(prog)s --db music.sqlite --keep title artist album\n'
+               '  %(prog)s --db music.sqlite --keep-file tags.txt --vacuum\n'
+               '  %(prog)s --db music.sqlite --dry-run  # auto-detect from changelog\n'
+               '  %(prog)s --db music.sqlite --keep title artist --dry-run',
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     parser.add_argument(
-        "--db",
+        '--db',
         required=True,
-        metavar="PATH",
-        help="Path to SQLite database containing alib table",
+        metavar='PATH',
+        help='Path to SQLite database containing alib table'
     )
 
     # Mutually exclusive group for specifying tags
     tag_group = parser.add_mutually_exclusive_group(required=False)
     tag_group.add_argument(
-        "--keep",
-        nargs="+",
-        metavar="TAG",
-        help="Tag column names to keep (space-separated). "
-        "System columns (__prefixed) are always kept.",
+        '--keep',
+        nargs='+',
+        metavar='TAG',
+        help='Tag column names to keep (space-separated). '
+             'System columns (__prefixed) are always kept.'
     )
     tag_group.add_argument(
-        "--keep-file",
-        metavar="PATH",
-        help="Text file with tag names to keep (one per line, # for comments)",
+        '--keep-file',
+        metavar='PATH',
+        help='Text file with tag names to keep (one per line, # for comments)'
     )
 
     parser.add_argument(
-        "--table",
-        default="alib",
-        metavar="NAME",
-        help="Table name to optimize (default: %(default)s)",
+        '--table',
+        default='alib',
+        metavar='NAME',
+        help='Table name to optimize (default: %(default)s)'
     )
 
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be done without making changes",
+        '--dry-run',
+        action='store_true',
+        help='Show what would be done without making changes'
     )
 
     parser.add_argument(
-        "--vacuum",
-        action="store_true",
-        help="Vacuum database after optimization to reclaim disk space "
-        "(slower but saves space)",
+        '--vacuum',
+        action='store_true',
+        help='Vacuum database after optimization to reclaim disk space '
+             '(slower but saves space)'
     )
 
     parser.add_argument(
-        "--log",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Logging level (default: %(default)s)",
+        '--log',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help='Logging level (default: %(default)s)'
     )
 
     # Auto-detection note
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 1.0 - Created by audiomuze"
+        '--version',
+        action='version',
+        version='%(prog)s 1.0 - Created by audiomuze'
     )
 
     # Add a note about auto-detection
     if len(sys.argv) == 1:
         parser.print_help()
-        print(
-            "\nNote: If no --keep or --keep-file is specified, columns will be "
-            "auto-detected from the changelog table."
-        )
+        print("\nNote: If no --keep or --keep-file is specified, columns will be "
+              "auto-detected from the changelog table.")
         sys.exit(0)
 
     try:
@@ -484,13 +451,9 @@ def main() -> None:
             try:
                 tags_to_keep = get_changelog_columns(conn)
                 if not tags_to_keep:
-                    logging.error(
-                        "No changelog table found or no data in changelog, and no tags specified"
-                    )
+                    logging.error("No changelog table found or no data in changelog, and no tags specified")
                     sys.exit(1)
-                logging.info(
-                    f"Auto-detected {len(tags_to_keep)} columns from changelog table"
-                )
+                logging.info(f"Auto-detected {len(tags_to_keep)} columns from changelog table")
             finally:
                 conn.close()
 
@@ -502,11 +465,7 @@ def main() -> None:
         tags_to_keep = list(dict.fromkeys(tags_to_keep))
 
         logging.info(f"Optimizing table '{args.table}' in {args.db}")
-        logging.info(
-            f"Tags to keep (i.e. tags with changed metadata): {len(tags_to_keep)}"
-        )
-        for tag in tags_to_keep:
-            logging.info(f"  - {tag}")
+        logging.info(f"Tags to keep: {', '.join(tags_to_keep)}")
 
         if args.dry_run:
             logging.info("Running in DRY RUN mode - no changes will be made")
@@ -519,12 +478,12 @@ def main() -> None:
         # )
 
         optimise_table_columns(
-            dbpath=args.db,
-            tags_to_keep=tags_to_keep,
-            table_name=args.table,
-            dry_run=args.dry_run,
-            vacuum=args.vacuum,
-        )
+                    dbpath=args.db,
+                    tags_to_keep=tags_to_keep,
+                    table_name=args.table,
+                    dry_run=args.dry_run,
+                    vacuum=args.vacuum
+                )
 
         if not args.dry_run:
             logging.info("Optimization completed successfully")
@@ -537,5 +496,5 @@ def main() -> None:
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

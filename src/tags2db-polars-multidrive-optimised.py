@@ -48,10 +48,12 @@ except ImportError:
 # Required dependencies
 try:
     # import puddlestuff
-    from puddlestuff import audioinfo  # Reverted: Import audioinfo module
+    # from puddlestuff import audioinfo  # Reverted: Import audioinfo module
+    import audioinfo
 except ImportError:
     print(
-        "Error: puddlestuff module or audioinfo submodule not found. Please ensure puddlestuff is installed correctly.",
+        # "Error: puddlestuff module or audioinfo submodule not found. Please ensure puddlestuff is installed correctly.",
+        "Error: audioinfo module not found. Please ensure audioinfo is installed correctly.",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -66,7 +68,7 @@ except ImportError:
     sys.exit(1)
 
 # --- Constants ---
-AUDIO_EXTENSIONS = {".flac", ".wv", ".m4a", ".aiff", ".ape.mp3", ".ogg"}
+AUDIO_EXTENSIONS = {".flac", ".wv", ".m4a", ".aiff", ".ape", ".mp3", ".ogg"}
 DATABASE_PATH = "alib.db"  # Default database name
 TABLE_NAME = "alib"
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"

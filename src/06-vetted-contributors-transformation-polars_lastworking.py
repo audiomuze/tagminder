@@ -46,24 +46,22 @@ import re
 
 # ---------- Configuration ----------
 SCRIPT_NAME = "06-vetted-contributors-transformation-polars.py"
-DB_PATH = "/tmp/amg/dbtemplate.db"
+DB_PATH = '/tmp/amg/dbtemplate.db'
 
 # ---------- Logging Setup ----------
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
 # ---------- Global Constants ----------
 # Main delimiter for joining multiple contributors
-DELIMITER = "\\\\"  # Double backslash for splitting and joining
+DELIMITER = '\\\\'  # Double backslash for splitting and joining
 
 # Regex pattern for splitting on various delimiters, but not commas followed by suffixes
-SPLIT_PATTERN = re.compile(
-    r"(?:\\\\|;|/|,(?!\s*(?:[Jj][Rr]|[Ss][Rr]|[Ii][Ii][Ii]|[Ii][Vv]|[Vv])\b))"
-)
+SPLIT_PATTERN = re.compile(r'(?:\\\\|;|/|,(?!\s*(?:[Jj][Rr]|[Ss][Rr]|[Ii][Ii][Ii]|[Ii][Vv]|[Vv])\b))')
 
 # ---------- Database Helper Functions ----------
-
 
 def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     """
@@ -77,19 +75,13 @@ def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
         Boolean indicating if the table exists
     """
     cursor = conn.cursor()
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT name FROM sqlite_master
         WHERE type='table' AND name=?
-    """,
-        (table_name,),
-    )
+    """, (table_name,))
     return cursor.fetchone() is not None
 
-
-def sqlite_to_polars(
-    conn: sqlite3.Connection, query: str, id_column: Union[str, Tuple[str, ...]] = None
-) -> pl.DataFrame:
+def sqlite_to_polars(conn: sqlite3.Connection, query: str, id_column: Union[str, Tuple[str, ...]] = None) -> pl.DataFrame:
     """
     Convert SQLite query results to a Polars DataFrame with proper type handling.
 
@@ -117,18 +109,19 @@ def sqlite_to_polars(
         if col_name in ("rowid", "sqlmodded", "alib_rowid"):
             # Ensure integer columns are properly typed
             data[col_name] = pl.Series(
-                name=col_name, values=[int(x or 0) for x in col_data], dtype=pl.Int64
+                name=col_name,
+                values=[int(x or 0) for x in col_data],
+                dtype=pl.Int64
             )
         else:
             # String columns with null handling
             data[col_name] = pl.Series(
                 name=col_name,
                 values=[str(x) if x is not None else None for x in col_data],
-                dtype=pl.Utf8,
+                dtype=pl.Utf8
             )
 
     return pl.DataFrame(data)
-
 
 # ---------- Text Processing Functions ----------
 
@@ -199,10 +192,7 @@ def sqlite_to_polars(
 #         # No DELIMITER found and whole-field replacement didn't match
 #         return stripped_x
 
-
-def transform_contributor_entry_all(
-    x: Union[str, None], transform_dict: Dict[str, Tuple[str, str]]
-) -> Union[str, None]:
+def transform_contributor_entry_all(x: Union[str, None], transform_dict: Dict[str, Tuple[str, str]]) -> Union[str, None]:
     """
     Transform a contributor entry by:
     1. First attempting whole-field replacement
@@ -271,13 +261,9 @@ def transform_contributor_entry_all(
         # Step 3: No DELIMITER found, return the current value (which may have been whole-field transformed)
         return current_value
 
-
 # ---------- Surgical Filtering Functions ----------
 
-
-def create_transformation_masks(
-    df: pl.DataFrame, columns: List[str], transform_dict: Dict[str, str]
-) -> pl.DataFrame:
+def create_transformation_masks(df: pl.DataFrame, columns: List[str], transform_dict: Dict[str, str]) -> pl.DataFrame:
     """
     Create boolean masks for each contributor column indicating which entries
     need transformation based on the transform dictionary.
@@ -302,15 +288,16 @@ def create_transformation_masks(
     for column in columns:
         # Create mask: True if the contributor contains any value that needs transformation
         # For simplicity, we'll check if the whole field or any part (when split) needs transformation
-        mask_expr = pl.col(column).is_not_null().alias(f"{column}_needs_transform")
+        mask_expr = (
+            pl.col(column)
+            .is_not_null()
+            .alias(f"{column}_needs_transform")
+        )
         mask_expressions.append(mask_expr)
 
     return df.with_columns(mask_expressions)
 
-
-def filter_transformable_tracks(
-    df: pl.DataFrame, columns: List[str], transform_dict: Dict[str, str]
-) -> pl.DataFrame:
+def filter_transformable_tracks(df: pl.DataFrame, columns: List[str], transform_dict: Dict[str, str]) -> pl.DataFrame:
     """
     Filter to only tracks that have at least one contributor field that needs transformation
     based on the transformation dictionary.
@@ -344,10 +331,7 @@ def filter_transformable_tracks(
 
     return df.filter(needs_processing_expr)
 
-
-def selective_transform_contributors(
-    df: pl.DataFrame, columns: List[str], transform_dict: Dict[str, Tuple[str, str]]
-) -> pl.DataFrame:
+def selective_transform_contributors(df: pl.DataFrame, columns: List[str], transform_dict: Dict[str, Tuple[str, str]]) -> pl.DataFrame:
     """
     Selectively transform contributor columns, applying dictionary-based transformations
     to convert current values to replacement values.
@@ -366,10 +350,9 @@ def selective_transform_contributors(
     for column in columns:
         # Apply transformation using the helper function
         expr = (
-            pl.col(column)
-            .map_elements(
+            pl.col(column).map_elements(
                 lambda x: transform_contributor_entry_all(x, transform_dict),
-                return_dtype=pl.Utf8,
+                return_dtype=pl.Utf8
             )
             .alias(column)
         )
@@ -377,10 +360,7 @@ def selective_transform_contributors(
 
     return df.with_columns(expressions)
 
-
-def detect_transformation_changes(
-    original_df: pl.DataFrame, updated_df: pl.DataFrame, columns: List[str]
-) -> List[int]:
+def detect_transformation_changes(original_df: pl.DataFrame, updated_df: pl.DataFrame, columns: List[str]) -> List[int]:
     """
     Detect changes between original and updated DataFrames after transformation.
 
@@ -400,8 +380,8 @@ def detect_transformation_changes(
         # 1. The original value was not null
         # 2. The values actually differ after transformation
         change_expr = (
-            original_df[col].is_not_null()  # Original value exists
-            & (original_df[col] != updated_df[col])  # Values differ
+            original_df[col].is_not_null() &  # Original value exists
+            (original_df[col] != updated_df[col])  # Values differ
         )
         change_expressions.append(change_expr)
 
@@ -410,16 +390,14 @@ def detect_transformation_changes(
 
     return updated_df.filter(any_change_expr)["rowid"].to_list()
 
-
 # ---------- Database Update Functions ----------
-
 
 def write_updates_to_db(
     conn: sqlite3.Connection,
     updated_df: pl.DataFrame,
     original_df: pl.DataFrame,
     changed_rowids: List[int],
-    columns_to_update: List[str],
+    columns_to_update: List[str]
 ) -> int:
     """
     Write transformed contributor updates to the database with full changelog tracking.
@@ -472,8 +450,7 @@ def write_updates_to_db(
 
         # Identify which columns actually changed and have new values
         changed_cols = [
-            col
-            for col in columns_to_update
+            col for col in columns_to_update
             if record[col] != original_row[col] and record[col] is not None
         ]
 
@@ -492,7 +469,7 @@ def write_updates_to_db(
         for col in changed_cols:
             cursor.execute(
                 "INSERT INTO changelog VALUES (?, ?, ?, ?, ?, ?)",
-                (rowid, col, original_row[col], record[col], timestamp, SCRIPT_NAME),
+                (rowid, col, original_row[col], record[col], timestamp, SCRIPT_NAME)
             )
 
         updated_count += 1
@@ -500,7 +477,6 @@ def write_updates_to_db(
     conn.commit()
     logging.info(f"Updated {updated_count} rows and logged all changes.")
     return updated_count
-
 
 def mark_transformations_as_processed(conn: sqlite3.Connection) -> None:
     """
@@ -510,15 +486,11 @@ def mark_transformations_as_processed(conn: sqlite3.Connection) -> None:
         conn: SQLite database connection
     """
     cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE _REF_vetted_contributors SET status = TRUE WHERE status = FALSE"
-    )
+    cursor.execute("UPDATE _REF_vetted_contributors SET status = TRUE WHERE status = FALSE")
     conn.commit()
     logging.info("Marked transformation records as processed in reference table")
 
-
 # ---------- Main Execution Function ----------
-
 
 def main():
     """
@@ -550,22 +522,19 @@ def main():
 
     try:
         # Check if transformation reference table exists
-        if not table_exists(conn, "_REF_vetted_contributors"):
-            logging.info(
-                "No contributor transformation data present, nothing to transform"
-            )
+        if not table_exists(conn, '_REF_vetted_contributors'):
+            logging.info('No contributor transformation data present, nothing to transform')
             return
 
         # Load transformation dictionary with case handling
         logging.info("Fetching transformation dictionary...")
         transformations = sqlite_to_polars(
-            conn, "SELECT current_val, replacement_val FROM _REF_vetted_contributors"
-        ).with_columns(
-            [
-                pl.col("current_val").str.strip_chars(),
-                pl.col("replacement_val").str.strip_chars(),
-            ]
-        )
+            conn,
+            "SELECT current_val, replacement_val FROM _REF_vetted_contributors"
+        ).with_columns([
+            pl.col("current_val").str.strip_chars(),
+            pl.col("replacement_val").str.strip_chars()
+        ])
 
         if transformations.height == 0:
             logging.info("No transformation records found in reference table")
@@ -573,7 +542,7 @@ def main():
 
         # Create mapping dictionary: lowercase current_val -> (original current_val, replacement_val)
         transform_dict = {
-            row["current_val"].lower(): (row["current_val"], row["replacement_val"])
+            row['current_val'].lower(): (row['current_val'], row['replacement_val'])
             for row in transformations.iter_rows(named=True)
         }
         logging.info(f"Loaded {len(transform_dict)} transformation mappings")
@@ -590,37 +559,25 @@ def main():
             FROM alib
             ORDER BY rowid
             """,
-            id_column=("rowid", "sqlmodded"),
+            id_column=("rowid", "sqlmodded")
         )
 
         # Define columns to transform
         columns_to_transform = [
-            "artist",
-            "albumartist",
-            "composer",
-            "writer",
-            "lyricist",
-            "engineer",
-            "producer",
+            "artist", "albumartist", "composer", "writer",
+            "lyricist", "engineer", "producer"
         ]
 
         # Filter to tracks needing transformation (case-insensitive)
         logging.info("Filtering tracks for transformation...")
         transform_keys = set(transform_dict.keys())
         tracks_filtered = tracks.filter(
-            pl.any_horizontal(
-                [
-                    pl.col(col)
-                    .str.strip_chars()
-                    .str.to_lowercase()
-                    .is_in(transform_keys)
-                    for col in columns_to_transform
-                ]
-            )
+            pl.any_horizontal([
+                pl.col(col).str.strip_chars().str.to_lowercase().is_in(transform_keys)
+                for col in columns_to_transform
+            ])
         )
-        logging.info(
-            f"Processing {tracks_filtered.height} tracks for transformation..."
-        )
+        logging.info(f"Processing {tracks_filtered.height} tracks for transformation...")
 
         if tracks_filtered.height == 0:
             logging.info("No tracks need transformation")
@@ -632,13 +589,13 @@ def main():
         # Apply transformations (both whole-field and per-item)
         logging.info("Applying contributor transformations...")
         updated_tracks = selective_transform_contributors(
-            tracks_filtered, columns_to_transform, transform_dict
+            tracks_filtered,
+            columns_to_transform,
+            transform_dict
         )
 
         # Detect changes
-        changed_rowids = detect_transformation_changes(
-            original_tracks, updated_tracks, columns_to_transform
-        )
+        changed_rowids = detect_transformation_changes(original_tracks, updated_tracks, columns_to_transform)
         logging.info(f"Found {len(changed_rowids)} tracks with changes")
 
         if changed_rowids:
@@ -647,13 +604,12 @@ def main():
                 updated_df=updated_tracks,
                 original_df=original_tracks,
                 changed_rowids=changed_rowids,
-                columns_to_update=columns_to_transform,
+                columns_to_update=columns_to_transform
             )
             logging.info(f"Successfully updated {num_updated} tracks in the database")
 
             # Mark transformations as processed
-            # mark_transformations_as_processed(conn)
-            # removed because null = not yet reviewed, 0 = reviewed and rejected, 1 = reviewed and accepted
+            mark_transformations_as_processed(conn)
         else:
             logging.info("No changes detected, database not updated")
 
@@ -663,7 +619,6 @@ def main():
     finally:
         conn.close()
         logging.info("Database connection closed")
-
 
 if __name__ == "__main__":
     main()
