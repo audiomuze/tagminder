@@ -77,6 +77,8 @@ SURNAME_DICT = {
     "mcguirk": "McGuirk",
     "mcilrath": "McIlrath",
     "mckinna": "McKinna",
+    "mclaughlin": "McLaughlin",
+    "mclean": "McLean",
     "mcleod": "McLeod",
     "mcmahon": "McMahon",
     "mcnamara": "McNamara",
@@ -160,10 +162,274 @@ def sqlite_to_polars(
 # ---------- Text Processing Functions ----------
 
 
+# def smart_title(text):
+#     """
+#     Apply intelligent title casing that preserves certain patterns and handles special cases.
+#     Includes surname dictionary lookup and preserves uppercase initials.
+#     """
+#     if not text:
+#         return text
+
+#     # First check if the entire text matches a surname pattern
+#     lowered = text.lower()
+#     if lowered in SURNAME_DICT:
+#         return SURNAME_DICT[lowered]
+
+#     def fix_caps_word(word, is_first_word=False, follows_bracket=False):
+#         """Apply capitalization rules to a single word."""
+#         # Check if this word matches a surname pattern
+#         lowered_word = word.lower()
+#         if lowered_word in SURNAME_DICT:
+#             return SURNAME_DICT[lowered_word]
+
+#         # Check if this is an initial with a period (like "A." or "J.R.")
+#         if re.match(r"^[A-Z]\.$", word) or re.match(r"^[A-Z]\.[A-Z]\.$", word):
+#             return word  # Preserve as-is if it's already an uppercase initial
+
+#         lower_words = [
+#             "of",
+#             "a",
+#             "an",
+#             "the",
+#             "and",
+#             "but",
+#             "or",
+#             "for",
+#             "nor",
+#             "on",
+#             "at",
+#             "to",
+#             "from",
+#             "by",
+#         ]
+
+#         if is_first_word:
+#             # First word is always capitalized unless already has uppercase
+#             if any(c.isupper() for c in word):
+#                 return word
+#             else:
+#                 return word.capitalize()
+#         elif follows_bracket:
+#             return word.capitalize()
+#         elif any(c.isupper() for c in word):
+#             # Preserve existing capitalization
+#             return word
+#         elif re.match(r"^[IVXLCDM]+$", word.upper()):
+#             # Roman numerals
+#             return word.upper()
+#         elif "." in word:
+#             # Handle initials like "J.R.R." - ensure they're uppercase
+#             parts = word.split(".")
+#             processed_parts = []
+#             for part in parts:
+#                 if part and len(part) == 1:  # Single character initial
+#                     processed_parts.append(part.upper())
+#                 else:
+#                     processed_parts.append(part.capitalize())
+#             return ".".join(processed_parts)
+#         elif "'" in word or "'" in word:
+#             # Handle possessives and contractions
+#             apos_pos = max(word.find("'"), word.find("'"))
+#             if 0 < apos_pos < len(word) - 1:
+#                 return word[:apos_pos].capitalize() + word[apos_pos:]
+#             else:
+#                 return word.capitalize()
+#         elif "-" in word:
+#             # Handle hyphenated words
+#             parts = word.split("-")
+#             return "-".join(part.capitalize() for part in parts)
+#         elif word.lower() in lower_words:
+#             # Keep articles and prepositions lowercase
+#             return word
+#         else:
+#             return word.capitalize()
+
+#     # Regex to capture words (including McNames, O'Names, possessives)
+#     word_pattern = r"\b(?:Mc\w+|O'\w+|\w+(?:['']\w+)?)\b"
+#     # Regex to capture non-word parts (spaces, punctuation)
+#     non_word_pattern = r"[^\w\s]+"
+
+#     # Combine the patterns to capture words and non-word parts
+#     combined_pattern = rf"({word_pattern})|({non_word_pattern})|\s+"
+
+#     parts = re.findall(combined_pattern, text)
+#     result = []
+#     capitalize_next = True
+
+#     for part_tuple in parts:
+#         word = part_tuple[0] or part_tuple[1]
+#         if word:
+#             if re.match(word_pattern, word):  # It's a word
+#                 processed_word = fix_caps_word(
+#                     word, is_first_word=capitalize_next, follows_bracket=False
+#                 )
+#                 # Handle possessive 's
+#                 if processed_word.lower().endswith("'s"):
+#                     processed_word = processed_word[:-2] + "'s"
+#                 elif processed_word.lower().endswith("'s"):
+#                     processed_word = processed_word[:-2] + "'s"
+#                 # Special rule for "O'"
+#                 elif (
+#                     word.lower().startswith("o'")
+#                     and len(word) > 2
+#                     and word[2].lower() != "s"
+#                     and word[2] != " "
+#                 ):
+#                     processed_word = "O'" + fix_caps_word(
+#                         word[2:], is_first_word=False, follows_bracket=False
+#                     )
+#                 result.append(processed_word)
+#                 capitalize_next = False
+#             else:  # It's a non-word part
+#                 result.append(word)
+#                 capitalize_next = word in "({[<"
+#         else:
+#             result.append(" ")  # It's whitespace
+
+#     processed_text = "".join(result)
+#     # Final pass to ensure possessive 's is lowercase
+#     processed_text = re.sub(r"(\w)['']S\b", r"\1's", processed_text)
+
+#     return processed_text
+
+
+# def smart_title(text):
+#     """
+#     Apply intelligent title casing that preserves certain patterns and handles special cases.
+#     Includes surname dictionary lookup. Normalizes all-caps and mixed-case to proper title case.
+#     """
+#     if not text:
+#         return text
+
+#     # First check if the entire text matches a surname pattern
+#     lowered = text.lower()
+#     if lowered in SURNAME_DICT:
+#         return SURNAME_DICT[lowered]
+
+#     def fix_caps_word(word, is_first_word=False, follows_bracket=False):
+#         """Apply capitalization rules to a single word."""
+#         # Check if this word matches a surname pattern
+#         lowered_word = word.lower()
+#         if lowered_word in SURNAME_DICT:
+#             return SURNAME_DICT[lowered_word]
+
+#         # Check if this is initials with periods (like "A." or "J.R." or "A.D.")
+#         # Pattern: one or more single letters followed by periods
+#         if re.match(r"^([A-Za-z]\.)+$", word, re.IGNORECASE):
+#             return word.upper()
+
+#         lower_words = [
+#             "of",
+#             "a",
+#             "an",
+#             "the",
+#             "and",
+#             "but",
+#             "or",
+#             "for",
+#             "nor",
+#             "on",
+#             "at",
+#             "to",
+#             "from",
+#             "by",
+#         ]
+
+#         if is_first_word:
+#             # First word is always capitalized
+#             return word.capitalize()
+#         elif follows_bracket:
+#             return word.capitalize()
+#         elif re.match(r"^[IVXLCDM]+$", word.upper()):
+#             # Roman numerals - check if it's likely a roman numeral
+#             return word.upper()
+#         elif "." in word:
+#             # Handle initials like "J.R.R." - normalize to uppercase
+#             parts = word.split(".")
+#             processed_parts = []
+#             for part in parts:
+#                 if part and len(part) == 1:  # Single character initial
+#                     processed_parts.append(part.upper())
+#                 else:
+#                     processed_parts.append(part.capitalize())
+#             return ".".join(processed_parts)
+#         elif "'" in word or "'" in word:
+#             # Handle possessives and contractions
+#             apos_pos = max(word.find("'"), word.find("'"))
+#             if 0 < apos_pos < len(word) - 1:
+#                 return word[:apos_pos].capitalize() + word[apos_pos:]
+#             else:
+#                 return word.capitalize()
+#         elif "-" in word:
+#             # Handle hyphenated words
+#             parts = word.split("-")
+#             return "-".join(part.capitalize() for part in parts)
+#         elif word.lower() in lower_words:
+#             # Keep articles and prepositions lowercase
+#             return word.lower()
+#         else:
+#             return word.capitalize()
+
+#     # Regex to capture words including initials with periods (A.D., J.R.R., etc.)
+#     # Put initials pattern first so it matches greedily
+#     word_pattern = r"(?:[A-Za-z]\.){2,}|[A-Za-z]\.|Mc\w+|O'\w+|\w+(?:['']\w+)?"
+#     # Regex to capture non-word parts (spaces, punctuation)
+#     non_word_pattern = r"[^\w\s]+"
+
+#     # Combine the patterns to capture words and non-word parts
+#     combined_pattern = rf"({word_pattern})|({non_word_pattern})|\s+"
+
+#     parts = re.findall(combined_pattern, text)
+#     result = []
+#     capitalize_next = True
+
+#     for part_tuple in parts:
+#         word = part_tuple[0] or part_tuple[1]
+#         if word:
+#             if re.match(word_pattern, word):  # It's a word
+#                 # DEBUG
+#                 if "fairfield" in text.lower():
+#                     print(f"  Processing word: '{word}'")
+#                 processed_word = fix_caps_word(
+#                     word, is_first_word=capitalize_next, follows_bracket=False
+#                 )
+#                 # DEBUG
+#                 if "fairfield" in text.lower():
+#                     print(f"  Result: '{processed_word}'")
+#                 # Handle possessive 's
+#                 if processed_word.lower().endswith("'s"):
+#                     processed_word = processed_word[:-2] + "'s"
+#                 elif processed_word.lower().endswith("'s"):
+#                     processed_word = processed_word[:-2] + "'s"
+#                 # Special rule for "O'"
+#                 elif (
+#                     word.lower().startswith("o'")
+#                     and len(word) > 2
+#                     and word[2].lower() != "s"
+#                     and word[2] != " "
+#                 ):
+#                     processed_word = "O'" + fix_caps_word(
+#                         word[2:], is_first_word=False, follows_bracket=False
+#                     )
+#                 result.append(processed_word)
+#                 capitalize_next = False
+#             else:  # It's a non-word part
+#                 result.append(word)
+#                 capitalize_next = word in "({[<"
+#         else:
+#             result.append(" ")  # It's whitespace
+
+#     processed_text = "".join(result)
+#     # Final pass to ensure possessive 's is lowercase
+#     processed_text = re.sub(r"(\w)['']S\b", r"\1's", processed_text)
+
+#     return processed_text
+
+
 def smart_title(text):
     """
     Apply intelligent title casing that preserves certain patterns and handles special cases.
-    Includes surname dictionary lookup and preserves uppercase initials.
+    Includes surname dictionary lookup. Normalizes all-caps and mixed-case to proper title case.
     """
     if not text:
         return text
@@ -180,9 +446,10 @@ def smart_title(text):
         if lowered_word in SURNAME_DICT:
             return SURNAME_DICT[lowered_word]
 
-        # Check if this is an initial with a period (like "A." or "J.R.")
-        if re.match(r"^[A-Z]\.$", word) or re.match(r"^[A-Z]\.[A-Z]\.$", word):
-            return word  # Preserve as-is if it's already an uppercase initial
+        # Check if this is initials with periods (like "A." or "J.R." or "A.D.")
+        # Pattern: one or more single letters followed by periods
+        if re.match(r"^([A-Za-z]\.)+$", word, re.IGNORECASE):
+            return word.upper()
 
         lower_words = [
             "of",
@@ -202,21 +469,15 @@ def smart_title(text):
         ]
 
         if is_first_word:
-            # First word is always capitalized unless already has uppercase
-            if any(c.isupper() for c in word):
-                return word
-            else:
-                return word.capitalize()
+            # First word is always capitalized
+            return word.capitalize()
         elif follows_bracket:
             return word.capitalize()
-        elif any(c.isupper() for c in word):
-            # Preserve existing capitalization
-            return word
         elif re.match(r"^[IVXLCDM]+$", word.upper()):
-            # Roman numerals
+            # Roman numerals - check if it's likely a roman numeral
             return word.upper()
         elif "." in word:
-            # Handle initials like "J.R.R." - ensure they're uppercase
+            # Handle initials like "J.R.R." - normalize to uppercase
             parts = word.split(".")
             processed_parts = []
             for part in parts:
@@ -238,12 +499,13 @@ def smart_title(text):
             return "-".join(part.capitalize() for part in parts)
         elif word.lower() in lower_words:
             # Keep articles and prepositions lowercase
-            return word
+            return word.lower()
         else:
             return word.capitalize()
 
-    # Regex to capture words (including McNames, O'Names, possessives)
-    word_pattern = r"\b(?:Mc\w+|O'\w+|\w+(?:['']\w+)?)\b"
+    # Regex to capture words including initials with periods (A.D., J.R.R., etc.)
+    # Put initials pattern first so it matches greedily
+    word_pattern = r"(?:[A-Za-z]\.){2,}|[A-Za-z]\.|Mc\w+|O'\w+|\w+(?:['']\w+)?"
     # Regex to capture non-word parts (spaces, punctuation)
     non_word_pattern = r"[^\w\s]+"
 
@@ -289,6 +551,106 @@ def smart_title(text):
     processed_text = re.sub(r"(\w)['']S\b", r"\1's", processed_text)
 
     return processed_text
+
+
+# def _vectorized_process_part(part: str, contributors_dict: Dict[str, str]) -> str:
+#     """
+#     Process a single part with full normalization logic.
+#     Returns None for empty results to be filtered out.
+#     """
+#     if not part or not part.strip():
+#         return None
+
+#     part = part.strip()
+
+#     # Check direct dictionary lookup first
+#     lowered = part.lower()
+#     if lowered in contributors_dict:
+#         return contributors_dict[lowered]
+
+#     # Handle comma-containing entries that might be in dictionary
+#     if "," in part and lowered in contributors_dict:
+#         return contributors_dict[lowered]
+
+#     # Split on secondary delimiters
+#     sub_parts = SPLIT_PATTERN.split(part)
+#     processed_items = []
+#     seen = set()
+
+#     for sub_part in sub_parts:
+#         stripped = sub_part.strip()
+#         if not stripped:
+#             continue
+
+#         sub_lowered = stripped.lower()
+#         if sub_lowered in contributors_dict:
+#             normalized = contributors_dict[sub_lowered]
+#         else:
+#             normalized = smart_title(stripped)
+
+#         if normalized and normalized not in seen:
+#             processed_items.append(normalized)
+#             seen.add(normalized)
+
+#     return DELIMITER.join(processed_items) if processed_items else None
+
+
+# def optimized_vectorized_normalize_contributors(
+#     df: pl.DataFrame, columns: List[str], contributors_dict: Dict[str, str]
+# ) -> pl.DataFrame:
+#     """
+#     Optimized vectorized contributor normalization using efficient Polars operations.
+#     Fixed to handle null dtype issues with list.join operations.
+#     """
+#     expressions = []
+
+#     for column in columns:
+#         current_col = pl.col(column)
+
+#         # Create the normalization pipeline with proper null and dtype handling
+#         processed_list = (
+#             current_col.str.split(DELIMITER)
+#             .list.eval(
+#                 pl.element().map_elements(
+#                     lambda x: _vectorized_process_part(x, contributors_dict),
+#                     return_dtype=pl.Utf8,
+#                 )
+#             )
+#             .list.drop_nulls()
+#             .list.unique()
+#         )
+
+#         # Handle the join operation with explicit dtype casting and null safety
+#         normalized_expr = (
+#             pl.when(current_col.is_null())
+#             .then(None)
+#             .otherwise(
+#                 pl.when(processed_list.is_null() | (processed_list.list.len() == 0))
+#                 .then(None)
+#                 .otherwise(
+#                     # Ensure we have a string list before joining
+#                     # Cast to string explicitly to avoid dtype null issues
+#                     processed_list.list.eval(
+#                         pl.when(pl.element().is_null())
+#                         .then(pl.lit(""))  # Convert nulls to empty strings
+#                         .otherwise(pl.element().cast(pl.Utf8))
+#                     )
+#                     .list.filter(pl.element() != "")  # Remove empty strings
+#                     .list.join(DELIMITER)
+#                 )
+#             )
+#         )
+
+#         # Handle case where result is empty string and ensure final null handling
+#         final_expr = (
+#             pl.when((normalized_expr == "") | normalized_expr.is_null())
+#             .then(None)
+#             .otherwise(normalized_expr)
+#         )
+
+#         expressions.append(final_expr.alias(column))
+
+#     return df.with_columns(expressions)
 
 
 def _vectorized_process_part(part: str, contributors_dict: Dict[str, str]) -> str:
