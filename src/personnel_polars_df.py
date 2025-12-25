@@ -990,7 +990,7 @@ def create_alib_updates_table(conn: sqlite3.Connection, df: pl.DataFrame, change
     # Insert changelog entries
     if changelog_entries:
         conn.executemany(
-            "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO changelog (alib_rowid, alib_column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
             [(entry['alib_rowid'], entry['column'], entry['old_value'], 
               entry['new_value'], entry['timestamp'], entry['script']) for entry in changelog_entries]
         )
@@ -1024,7 +1024,7 @@ def create_parsed_roles_table(conn: sqlite3.Connection, df: pl.DataFrame, role_c
     conn.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
             alib_rowid INTEGER,
-            column TEXT,
+            alib_column TEXT,
             old_value TEXT,
             new_value TEXT,
             timestamp TEXT,
@@ -1066,7 +1066,7 @@ def create_parsed_roles_table(conn: sqlite3.Connection, df: pl.DataFrame, role_c
     # Log changes to changelog
     if changelog_data:
         conn.executemany(
-            "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO changelog (alib_rowid, alib_column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
             changelog_data
         )
 

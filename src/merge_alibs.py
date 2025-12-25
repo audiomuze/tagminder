@@ -62,7 +62,7 @@ def setup_changelog_table(conn: sqlite3.Connection) -> None:
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
             alib_rowid TEXT,
-            column TEXT,
+            alib_column TEXT,
             old_value TEXT,
             new_value TEXT,
             timestamp TEXT,
@@ -185,7 +185,7 @@ def log_merge_changes(conn: sqlite3.Connection, df1: pl.DataFrame, df2: pl.DataF
     all_changes = pl.concat(changelog_entries)
     cursor = conn.cursor()
     cursor.executemany(
-        "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO changelog (alib_rowid, alib_column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
         [(row["alib_rowid"], row["column"], row["old_value"],
           row["new_value"], row["timestamp"], row["script"])
          for row in all_changes.to_dicts()]

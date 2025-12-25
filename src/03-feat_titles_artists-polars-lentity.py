@@ -261,7 +261,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
     cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS changelog (
             alib_rowid INTEGER,
-            column TEXT,
+            alib_column TEXT,
             old_value TEXT,
             new_value TEXT,
             timestamp TEXT,
@@ -279,7 +279,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
             if record[col] != original_row[col]:
                 changed_cols.append(col)
                 cursor.execute(
-                    "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO changelog (alib_rowid, alib_column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
                     (rowid, col, original_row[col], record[col], timestamp, SCRIPT_NAME)
                 )
 

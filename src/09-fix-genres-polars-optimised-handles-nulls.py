@@ -663,7 +663,7 @@ def batch_database_updates(
         # Batch insert changelog with prepared statement
         if changelog_entries:
             cursor.executemany(
-                "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO changelog (alib_rowid, alib_column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
                 [
                     (
                         c["alib_rowid"],
@@ -714,7 +714,7 @@ def main():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS changelog (
                 alib_rowid INTEGER,
-                column TEXT,
+                alib_column TEXT,
                 old_value TEXT,
                 new_value TEXT,
                 timestamp TEXT,

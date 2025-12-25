@@ -19,13 +19,14 @@ Created: 2025-04-13
 Updated: 2025-4-21
 """
 
-import polars as pl
-import sqlite3
 import logging
-import sys
 import os
-from typing import List, Dict, Tuple
+import sqlite3
+import sys
 from datetime import datetime, timezone
+from typing import Dict, List, Tuple
+
+import polars as pl
 
 # Set up logging
 logging.basicConfig(
@@ -78,10 +79,41 @@ def merge_columns_before_cleanup(
 ) -> Tuple[pl.DataFrame, List[Tuple[int, str, str, str]]]:
     """
     Merge involvedpeople with personnel and author with composer before cleanup.
+    Also copy itunesadvisory to explicit if itunesadvisory = '1'
     Returns updated dataframe and list of merge changes for logging.
     """
     merge_changes: List[Tuple[int, str, str, str]] = []
     df_updated = df.clone()
+
+    # Handle iTunes advisory -> explicit mapping
+    if "itunesadvisory" in df.columns:
+        # Ensure explicit column exists
+        if "explicit" not in df.columns:
+            df_updated = df_updated.with_columns(pl.lit(None).alias("explicit"))
+
+        for i in range(df.height):
+            rowid = int(df_updated["rowid"][i])
+            itunesadvisory_val = df_updated["itunesadvisory"][i]
+            explicit_val = df_updated["explicit"][i]
+
+            # Convert iTunes advisory to explicit flag
+            if (
+                itunesadvisory_val is not None
+                and str(itunesadvisory_val).strip() == "1"
+            ):
+                new_explicit = "1"  # Set to '1' to match iTunes convention
+
+                # Only update if the value is different
+                if str(explicit_val or "").lower() != new_explicit:
+                    df_updated = df_updated.with_columns(
+                        pl.when(pl.col("rowid") == rowid)
+                        .then(pl.lit(new_explicit))
+                        .otherwise(pl.col("explicit"))
+                        .alias("explicit")
+                    )
+                    merge_changes.append(
+                        (rowid, "explicit", str(explicit_val or ""), new_explicit)
+                    )
 
     # Handle involvedpeople -> personnel merge
     if "involvedpeople" in df.columns:
@@ -147,6 +179,49 @@ def merge_columns_before_cleanup(
                     )
                     merge_changes.append(
                         (rowid, "composer", str(composer_val or ""), new_composer)
+                    )
+
+    # Handle "musicbrainz album type" -> releasetype merge
+    if "musicbrainz album type" in df.columns:
+        # Ensure releasetype column exists
+        if "releasetype" not in df.columns:
+            df_updated = df_updated.with_columns(pl.lit(None).alias("releasetype"))
+
+        for i in range(df.height):
+            rowid = int(df_updated["rowid"][i])
+            musicbrainz_album_type_val = df_updated["musicbrainz album type"][i]
+            releasetype_val = df_updated["releasetype"][i]
+
+            if (
+                musicbrainz_album_type_val is not None
+                and str(musicbrainz_album_type_val).strip() != ""
+            ):
+                if releasetype_val is None or str(releasetype_val).strip() == "":
+                    new_releasetype = str(musicbrainz_album_type_val).strip()
+                else:
+                    releasetype_str = str(releasetype_val).strip()
+                    musicbrainz_album_type_str = str(musicbrainz_album_type_val).strip()
+                    if musicbrainz_album_type_str not in releasetype_str:
+                        new_releasetype = (
+                            f"{releasetype_str}\\\\{musicbrainz_album_type_str}"
+                        )
+                    else:
+                        new_releasetype = releasetype_str
+
+                if new_releasetype != str(releasetype_val or ""):
+                    df_updated = df_updated.with_columns(
+                        pl.when(pl.col("rowid") == rowid)
+                        .then(pl.lit(new_releasetype))
+                        .otherwise(pl.col("releasetype"))
+                        .alias("releasetype")
+                    )
+                    merge_changes.append(
+                        (
+                            rowid,
+                            "releasetype",
+                            str(releasetype_val or ""),
+                            new_releasetype,
+                        )
                     )
 
     # Handle description -> review merge
@@ -238,7 +313,7 @@ def write_updates_to_db(
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
             alib_rowid INTEGER,
-            column TEXT,
+            alib_column TEXT,
             old_value TEXT,
             new_value TEXT,
             timestamp TEXT,
@@ -299,7 +374,7 @@ def write_updates_to_db(
 
         if all_changes:
             cursor.executemany(
-                "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO changelog (alib_rowid, alib_column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
                 all_changes,
             )
 
@@ -357,6 +432,7 @@ def main():
         "__version",
         "__vendorstring",
         "__md5sig",
+        "songkongid",
         "tagminder_uuid",
         "sqlmodded",
         "reflac",
@@ -365,6 +441,7 @@ def main():
         "track",
         "title",
         "subtitle",
+        "explicit",
         "artist",
         "composer",
         "arranger",
@@ -383,6 +460,7 @@ def main():
         "performer",
         "personnel",
         "conductor",
+        "orchestra",
         "engineer",
         "producer",
         "mixer",

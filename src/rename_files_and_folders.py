@@ -232,7 +232,7 @@ def update_database_and_changelog(
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
             alib_rowid INTEGER,
-            column TEXT,
+            alib_column TEXT,
             old_value TEXT,
             new_value TEXT,
             timestamp TEXT,

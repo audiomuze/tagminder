@@ -134,7 +134,7 @@ def setup_changelog_table(conn: sqlite3.Connection):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
             alib_rowid INTEGER,
-            column TEXT,
+            alib_column TEXT,
             old_value TEXT,
             new_value TEXT,
             timestamp TEXT,
@@ -166,183 +166,9 @@ def log_change_to_changelog(
         script_name: Name of script making change
     """
     cursor.execute(
-        "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO changelog (alib_rowid, alib_column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
         (rowid, column, old_value, new_value, timestamp, script_name),
     )
-
-
-# def process_chunk(
-#     conn: sqlite3.Connection,
-#     contributors_dict: Dict[str, str],
-#     offset: int,
-#     chunk_size: int,
-# ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, int]]]:
-#     """
-#     Process a chunk of records with vectorized MBID matching
-
-#     Args:
-#         conn: Database connection
-#         contributors_dict: Normalized {entity: mbid} mapping
-#         offset: Chunk starting position
-#         chunk_size: Number of rows to process
-
-#     Returns:
-#         Tuple of (updates, statistics)
-#     """
-#     logging.info(
-#         f"Processing chunk {offset}-{offset + chunk_size} with vectorized operations"
-#     )
-
-#     # 1. Define field mappings and schema
-#     fields = {
-#         "artist": "musicbrainz_artistid",
-#         "albumartist": "musicbrainz_albumartistid",
-#         "composer": "musicbrainz_composerid",
-#         "engineer": "musicbrainz_engineerid",
-#         "producer": "musicbrainz_producerid",
-#     }
-
-#     schema = {
-#         "rowid": pl.Int64,
-#         "artist": pl.Utf8,
-#         "albumartist": pl.Utf8,
-#         "composer": pl.Utf8,
-#         "engineer": pl.Utf8,
-#         "producer": pl.Utf8,
-#         "musicbrainz_artistid": pl.Utf8,
-#         "musicbrainz_albumartistid": pl.Utf8,
-#         "musicbrainz_composerid": pl.Utf8,
-#         "musicbrainz_engineerid": pl.Utf8,
-#         "musicbrainz_producerid": pl.Utf8,
-#         "sqlmodded": pl.Int64,
-#     }
-
-#     # 2. Load chunk with consistent vectorized normalization
-#     query = f"""
-#         SELECT rowid, artist, albumartist, composer, engineer, producer,
-#                musicbrainz_artistid, musicbrainz_albumartistid,
-#                musicbrainz_composerid, musicbrainz_engineerid, musicbrainz_producerid,
-#                COALESCE(sqlmodded, 0) AS sqlmodded
-#         FROM alib
-#         WHERE (artist IS NOT NULL OR albumartist IS NOT NULL OR
-#               composer IS NOT NULL OR engineer IS NOT NULL OR
-#               producer IS NOT NULL)
-#         ORDER BY rowid
-#         LIMIT {chunk_size} OFFSET {offset}
-#     """
-
-#     df = pl.read_database(query, conn, schema_overrides=schema).with_columns(
-#         *[
-#             normalize_entity_series(pl.col(field)).alias(f"norm_{field}")
-#             for field in fields.keys()
-#         ]
-#     )
-
-#     # 3. Vectorized MBID matching
-#     updates = []
-#     stats = {"additions": defaultdict(int), "corrections": defaultdict(int)}
-
-#     for field, mbid_field in fields.items():
-#         norm_col = f"norm_{field}"
-#         current_col = mbid_field
-
-#         # Split, lookup, and join MBIDs
-#         # df = df.with_columns(
-#         #             pl.col(norm_col)
-#         #             .str.split("\\\\")
-#         #             .list.eval(
-#         #                 pl.element()
-#         #                 .map_elements(
-#         #                     lambda x: contributors_dict.get(
-#         #                         unicodedata.normalize('NFKD', x.lower().strip().replace('"', '')),
-#         #                         ""  # Default if not found
-#         #                     ),
-#         #                     return_dtype=pl.Utf8
-#         #                 )
-#         #             )
-#         #             .list.join("\\\\")
-#         #             .alias(f"new_{mbid_field}")
-#         #         )
-#         df = df.with_columns(
-#             pl.col(norm_col)
-#             .str.split("\\\\")
-#             .list.eval(
-#                 pl.element().map_elements(
-#                     lambda x: contributors_dict.get(
-#                         unicodedata.normalize(
-#                             "NFKD", x.lower().strip().replace('"', "")
-#                         ),
-#                         "",  # Default if not found
-#                     ),
-#                     return_dtype=pl.Utf8,
-#                 )
-#             )
-#             .list.join("\\\\")
-#             .map_elements(
-#                 lambda x: None
-#                 if x.replace("\\\\", "") == ""
-#                 else x,  # Set to None if all empty
-#                 return_dtype=pl.Utf8,
-#             )
-#             .alias(f"new_{mbid_field}")
-#         )
-#         # Enhanced change detection to handle empty/quote cases
-#         df = df.with_columns(
-#             (pl.col(f"new_{mbid_field}") != pl.col(current_col))
-#             & (pl.col(f"new_{mbid_field}").is_not_null())
-#             & ~(  # Not the case where current is just quotes
-#                 pl.col(current_col).str.replace('"', "").is_null()
-#                 & pl.col(f"new_{mbid_field}").eq("")
-#             ).alias(f"change_{mbid_field}")
-#         )
-
-#         # Update stats - handle both NULL and "" cases as additions
-#         change_counts = (
-#             df.filter(pl.col(f"change_{mbid_field}"))
-#             .group_by(
-#                 (
-#                     pl.col(current_col).is_null()
-#                     | (pl.col(current_col).str.replace('"', "").is_null())
-#                 ).alias("was_empty")
-#             )
-#             .agg(pl.count().alias("count"))
-#             .to_dicts()
-#         )
-
-#         for count in change_counts:
-#             if count["was_empty"]:
-#                 stats["additions"][field] += count["count"]
-#             else:
-#                 stats["corrections"][field] += count["count"]
-
-#     # 4. Prepare updates for changed rows
-#     changed_rows = df.filter(
-#         sum(
-#             pl.col(f"change_{mbid_field}").cast(pl.Int8)
-#             for mbid_field in fields.values()
-#         )
-#         > 0
-#     )
-
-#     if changed_rows.height > 0:
-#         updates = changed_rows.select(
-#             [
-#                 "rowid",
-#                 *[f"new_{mbid_field}" for mbid_field in fields.values()],
-#                 (
-#                     pl.col("sqlmodded")
-#                     + pl.sum_horizontal(
-#                         [
-#                             pl.col(f"change_{mbid_field}").cast(pl.Int8)
-#                             for mbid_field in fields.values()
-#                         ]
-#                     )
-#                 ).alias("sqlmodded"),
-#             ]
-#         ).to_dicts()
-
-#     logging.info(f"Chunk complete: {len(updates)} updates, {stats}")
-#     return updates, stats
 
 
 def process_chunk(
@@ -438,7 +264,10 @@ def process_chunk(
                 )
             )
             .map_elements(
-                lambda mbids: "\\\\".join(mbids) if mbids else None,
+                # Set to None if list is empty or all MBIDs are empty strings
+                lambda mbids: None
+                if not mbids or (joined := "\\\\".join(mbids)).replace("\\", "") == ""
+                else joined,
                 return_dtype=pl.Utf8,
             )
             .alias(f"new_{mbid_field}")
@@ -796,31 +625,19 @@ def process_full_database(conn: sqlite3.Connection):
                 # Split the value and match entities
                 entities = [normalize_string(e) for e in str(value).split("\\\\")]
 
-                # matched_mbids = []
-                # for entity in entities:
-                #     if entity in contributors_dict:
-                #         matched_mbids.append(contributors_dict[entity])
-                #     else:
-                #         matched_mbids.append("")  # Explicit empty string
-
-                # new_value = "\\\\".join(matched_mbids)
-                # # Set to None if all MBIDs are empty strings
-                # if new_value.replace("\\\\", "") == "":
-                #     new_value = None
-
                 matched_mbids = []
                 for entity in entities:
                     if entity in contributors_dict:
                         matched_mbids.append(contributors_dict[entity])
                     else:
-                        matched_mbids.append("")  # Explicit empty string
+                        matched_mbids.append("")
 
-                # Always join with single backslash, never set to None for partial matches
-                new_value = "\\\\".join(matched_mbids)
-
-                # Only set to None if there are NO contributors (empty array)
+                # Set to None if no contributors OR all MBIDs are empty strings
                 if not matched_mbids:
                     new_value = None
+                else:
+                    joined = "\\\\".join(matched_mbids)
+                    new_value = None if joined.replace("\\", "") == "" else joined
 
                 # Check current value
                 current_mbid = row[mbid_field]

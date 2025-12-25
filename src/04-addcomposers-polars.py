@@ -243,7 +243,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS changelog (
             alib_rowid INTEGER,
-            column TEXT,
+            alib_column TEXT,
             old_value TEXT,
             new_value TEXT,
             timestamp TEXT,
@@ -262,7 +262,7 @@ def write_updates(conn: sqlite3.Connection, original: pl.DataFrame, updated: pl.
             (row["new_composer"], row["new_sqlmodded"], row["rowid"])
         )
         cursor.execute(
-            "INSERT INTO changelog (alib_rowid, column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO changelog (alib_rowid, alib_column, old_value, new_value, timestamp, script) VALUES (?, ?, ?, ?, ?, ?)",
             (row["rowid"], "composer", row["composer"], row["new_composer"], timestamp, script_name)
         )
         updates += 1

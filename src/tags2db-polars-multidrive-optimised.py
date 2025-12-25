@@ -3,42 +3,82 @@ Script Name: tags2db-polars-multidrive-optimised.py
 
 Purpose:
     This script imports/exports all metadata tags from specified folder trees and writes them to a SQLite database table 'alib'.
-    It is designed for multi-drive setups, optimizing tag reading by assigning dedicated worker pools per physical drive
+    It is designed for single or multi-drive setups, optimizing tag reading by assigning dedicated worker pools per physical drive
     to maximize concurrent I/O operations and reduce disk contention.
+
+    Import modes (mutually exclusive):
+    - Full import: Process all files (default, no flags)
+    - New files only: --new-files (only files not in database)
+    - Modified files only: --modified-files (only files changed since last import)
+    - Prune only: --prunedb (only remove orphaned database entries)
 
     It is part of tagminder.
 
 Usage (Import):
-    python tags2db-polars-multidrive-optimised.py import /path/to/db.sqlite /qnap/qnap1 /qnap/qnap2 /qnap/qnap3 --workers 8 --chunk-size 4000
+    python tags2db-polars-multidrive-optimised.py import /path/to/db.sqlite /qnap/qnap1 /qnap/qnap2 /qnap/qnap3 [OPTIONS]
+
+    Required arguments:
     - 'import': Specifies the action to import tags.
     - '/path/to/db.sqlite': Path to the SQLite database file.
     - '/qnap/qnap1 /qnap/qnap2 /qnap/qnap3': Space-separated paths to music directories (mount points of different drives).
-    - '--workers N': (Optional) Number of worker processes for tag processing *per drive*. Defaults to CPU count // number of active drives.
-    - '--chunk-size N': (Optional) Number of files to process per chunk during tag reading. Default is 4000.
+
+    Optional arguments:
+    - '--workers N': Number of worker processes for tag processing *per drive*. Defaults to CPU count // number of active drives.
+    - '--chunk-size N': Number of files to process per chunk during tag reading. Default is 4000.
+    - '--new-files': Only import files not already in the database.
+    - '--modified-files': Only import files that have been modified since last import.
+    - '--prunedb': Remove database entries for files no longer found on disk (orphan cleanup).
+
+    Note: --new-files, --modified-files and --prunedb are mutually exclusive. If none are specified, all files are imported.
 
 Usage (Export):
-    python tags2db-polars-multidrive-optimised.py export /path/to/db.sqlite /path/to/music_directory
+    python tags2db-polars-multidrive-optimised.py export /path/to/db.sqlite /path/to/music_directory [OPTIONS]
+
+    Required arguments:
     - 'export': Specifies the action to export tags.
     - '/path/to/db.sqlite': Path to the SQLite database file.
     - '/path/to/music_directory': A single directory path to filter exported tags by (e.g., to export tags only from files under this path).
 
+    Optional arguments:
+    - '--ignore-lastmodded': Don't preserve last modification timestamps when writing tags to file.
+
+Common arguments (for both import and export):
+    --log {DEBUG,INFO,WARNING,ERROR,CRITICAL}: Set logging level. Default is INFO.
+
+Examples:
+    # Full import (process all files)
+    python tags2db-polars-multidrive-optimised.py import music.db /music/drive1 /music/drive2
+    python ~/tagminder/tags2db-polars-multidrive-optimised.py import /tmp/alib.db /qnap/qnap1/ /qnap/qnap2/ /qnap/qnap3/ --workers 7 --chunk-size 5000
+
+    # Import only new files (not in database)
+    python tags2db-polars-multidrive-optimised.py import --new-files music.db /music/new_albums/
+
+    # Import only modified files (changed since last import)
+    python tags2db-polars-multidrive-optimised.py import --modified-files music.db /music/library/
+
+    # Prune database only (no tag import)
+    python tags2db-polars-multidrive-optimised.py import --prunedb music.db /music/library/
+    python ~/tagminder/tags2db-polars-multidrive-optimised.py import /tmp/alib.db /qnap/qnap1/ /qnap/qnap2/ /qnap/qnap3/ --prunedb --workers 7 --chunk-size 5000
+    # Export tags to files under specific directory
+    python tags2db-polars-multidrive-optimised.py export music.db /music/library/
+
 Author: audiomuze
 Created: 2025-03-17
-Optimized: 2025-06-22
+Optimised: 2025-06-22
 """
 
 #!/usr/bin/env python3
 
 import argparse
+import concurrent.futures
+import logging
+import multiprocessing
 import os
 import sqlite3
 import sys
-import logging
-from typing import Dict, List, Optional, Any, Tuple, Iterator
-import multiprocessing
-import concurrent.futures
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 try:
     from os import scandir
@@ -47,12 +87,9 @@ except ImportError:
 
 # Required dependencies
 try:
-    # import puddlestuff
-    # from puddlestuff import audioinfo  # Reverted: Import audioinfo module
     import audioinfo
 except ImportError:
     print(
-        # "Error: puddlestuff module or audioinfo submodule not found. Please ensure puddlestuff is installed correctly.",
         "Error: audioinfo module not found. Please ensure audioinfo is installed correctly.",
         file=sys.stderr,
     )
@@ -125,6 +162,7 @@ ALBUM_INFO_SCHEMA = {
     "__vendorstring": pl.Utf8,
     "__md5sig": pl.Utf8,
     "bliss_analysis": pl.Utf8,
+    "songkongid": pl.Utf8,
     "tagminder_uuid": pl.Utf8,
     "sqlmodded": pl.Int64,
     "reflac": pl.Utf8,
@@ -133,6 +171,7 @@ ALBUM_INFO_SCHEMA = {
     "track": pl.Utf8,
     "title": pl.Utf8,
     "subtitle": pl.Utf8,
+    "explicit": pl.Utf8,
     "artist": pl.Utf8,
     "composer": pl.Utf8,
     "arranger": pl.Utf8,
@@ -150,6 +189,7 @@ ALBUM_INFO_SCHEMA = {
     "performer": pl.Utf8,
     "personnel": pl.Utf8,
     "conductor": pl.Utf8,
+    "orchestra": pl.Utf8,
     "engineer": pl.Utf8,
     "producer": pl.Utf8,
     "mixer": pl.Utf8,
@@ -177,6 +217,7 @@ ALBUM_INFO_SCHEMA = {
     "musicbrainz_composerid": pl.Utf8,
     "musicbrainz_discid": pl.Utf8,
     "musicbrainz_engineerid": pl.Utf8,
+    "musicbrainz_originalalbumid": pl.Utf8,
     "musicbrainz_producerid": pl.Utf8,
     "musicbrainz_releasegroupid": pl.Utf8,
     "musicbrainz_releasetrackid": pl.Utf8,
@@ -198,9 +239,12 @@ ALBUM_INFO_SCHEMA = {
     "country": pl.Utf8,
     "discogs_artist_url": pl.Utf8,
     "discogs_release_url": pl.Utf8,
+    "url_wikipedia_artist_site": pl.Utf8,
+    "url_wikipedia_release_site": pl.Utf8,
     "fingerprint": pl.Utf8,
     "recordinglocation": pl.Utf8,
     "recordingstartdate": pl.Utf8,
+    "recordingenddate": pl.Utf8,
     "replaygain_album_gain": pl.Utf8,
     "replaygain_album_peak": pl.Utf8,
     "replaygain_track_gain": pl.Utf8,
@@ -225,55 +269,6 @@ def sanitize_value(value: Any) -> str:
     if isinstance(value, list):
         return "; ".join(map(str, value))
     return str(value)
-
-
-# def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
-#     """
-#     Convert a puddlestuff Tag object to a dictionary,
-#     keeping raw values and extracting direct audio properties.
-#     """
-#     tag_dict = dict(tag) # Gets textual tags from the Tag object
-
-#     # Add direct audio properties from the Tag object using getattr for safety
-#     tag_dict['__path'] = tag.filepath # Use 'filename' to match schema
-#     tag_dict['length'] = getattr(tag, 'length', None)
-#     tag_dict['bitrate'] = getattr(tag, 'bitrate', None)
-#     tag_dict['samplerate'] = getattr(tag, 'samplerate', None)
-#     tag_dict['channels'] = getattr(tag, 'channels', None)
-#     tag_dict['bitdepth'] = getattr(tag, 'bitdepth', None)
-#     tag_dict['replaygain_track_gain'] = getattr(tag, 'replaygain_track_gain', None)
-#     tag_dict['replaygain_album_gain'] = getattr(tag, 'replaygain_album_gain', None)
-
-#     cleaned_dict = {}
-#     for k, v in tag_dict.items():
-#         # Remove quotes from tag names (they're illegal in SQLite column names)
-#         safe_k = k.replace('"', '') if isinstance(k, str) and '"' in k else k
-#         cleaned_dict[safe_k] = v
-#     return cleaned_dict
-
-# def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
-#     """
-#     Convert a puddlestuff Tag object to a dictionary,
-#     keeping raw values and extracting direct audio properties.
-#     """
-#     tag_dict = dict(tag)  # Gets textual tags from the Tag object
-
-#     # Add direct audio properties from the Tag object using getattr for safety
-#     tag_dict['__path'] = tag.filepath  # Use 'filename' to match schema
-#     tag_dict['length'] = getattr(tag, 'length', None)
-#     tag_dict['bitrate'] = getattr(tag, 'bitrate', None)
-#     tag_dict['samplerate'] = getattr(tag, 'samplerate', None)
-#     tag_dict['channels'] = getattr(tag, 'channels', None)
-#     tag_dict['bitdepth'] = getattr(tag, 'bitdepth', None)
-#     tag_dict['replaygain_track_gain'] = getattr(tag, 'replaygain_track_gain', None)
-#     tag_dict['replaygain_album_gain'] = getattr(tag, 'replaygain_album_gain', None)
-
-#     cleaned_dict = {}
-#     for k, v in tag_dict.items():
-#         # Remove quotes from tag names and convert to lowercase
-#         safe_k = k.replace('"', '').lower() if isinstance(k, str) else str(k).lower()
-#         cleaned_dict[safe_k] = v
-#     return cleaned_dict
 
 
 def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
@@ -369,7 +364,7 @@ def parallel_scantree(dirpaths: List[str], workers: int) -> Dict[str, List[str]]
     return drive_files
 
 
-def process_chunk_optimized(
+def process_chunk_Optimised(
     filepaths: List[str],
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """
@@ -510,54 +505,6 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
     return df
 
 
-# def create_and_migrate_db(dbpath: str, conn: sqlite3.Connection, df_columns: List[str] = None):
-#     cursor = conn.cursor()
-
-#     # Start with the predefined schema columns in their original order
-#     ordered_columns = list(ALBUM_INFO_SCHEMA.keys())
-
-#     # Add any new columns from the DataFrame that aren't in the schema
-#     if df_columns:
-#         new_columns = [col for col in df_columns if col not in ordered_columns]
-#         for column in new_columns:
-#             print(f"Adding column '{column}'")
-#         print(f"Adding {len(new_columns)} additional columns to alib")
-#         ordered_columns.extend(new_columns)
-
-#     # Build the schema mapping
-#     schema_to_use = {}
-#     for col in ordered_columns:
-#         if col in ALBUM_INFO_SCHEMA:
-#             schema_to_use[col] = ALBUM_INFO_SCHEMA[col]
-#         else:
-#             schema_to_use[col] = pl.Utf8
-
-#     # Define table creation SQL with consistent quoting
-#     columns_sql = []
-#     for col in ordered_columns:
-#         dtype = schema_to_use[col]
-#         sql_type = "TEXT"
-#         if dtype == pl.Int64:
-#             sql_type = "INTEGER"
-#         elif dtype == pl.Float64:
-#             sql_type = "REAL"
-
-#         # Quote all column names consistently
-#         quoted_col = f'"{col}"'
-#         if col == "__path":
-#             columns_sql.append(f"{quoted_col} {sql_type} PRIMARY KEY")
-#         else:
-#             columns_sql.append(f"{quoted_col} {sql_type}")
-
-#     cursor.execute(f'''
-#         CREATE TABLE IF NOT EXISTS "{TABLE_NAME}" (
-#             {", ".join(columns_sql)}
-#         )
-#     ''')
-#     conn.commit()
-#     logging.info(f"Database table '{TABLE_NAME}' ensured to exist with {len(ordered_columns)} columns.")
-
-
 def create_and_migrate_db(
     dbpath: str, conn: sqlite3.Connection, df_columns: List[str] = None
 ) -> None:
@@ -604,6 +551,194 @@ def create_and_migrate_db(
     conn.commit()
 
 
+def filter_files_by_mode(
+    dbpath: str,
+    drive_files: Dict[str, List[str]],
+    mode: str,  # "new" or "modified"
+) -> Dict[str, List[str]]:
+    """
+    Filter files based on import mode.
+
+    Args:
+        dbpath: Path to SQLite database
+        drive_files: Dictionary mapping drive paths to file lists
+        mode: Either "new" (files not in DB) or "modified" (files in DB with newer mtime)
+
+    Returns:
+        Filtered dictionary with same structure
+    """
+    # Collect all files from all drives
+    all_files = []
+    for drive_path, files in drive_files.items():
+        all_files.extend(files)
+
+    if not all_files:
+        return drive_files
+
+    try:
+        with sqlite3.connect(dbpath) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            if mode == "new":
+                # Filter for files NOT in database
+                filtered_files = filter_new_files(cursor, all_files)
+            else:  # mode == "modified"
+                # Filter for files IN database with newer modification time
+                filtered_files = filter_modified_files(cursor, all_files)
+
+            # Rebuild the drive_files dictionary with only filtered files
+            filtered_drive_files = {}
+            for drive_path, files in drive_files.items():
+                filtered = [f for f in files if f in filtered_files]
+                if filtered:
+                    filtered_drive_files[drive_path] = filtered
+
+                if files:  # Log filtering results per drive
+                    original_count = len(files)
+                    filtered_count = len(filtered)
+                    removed_count = original_count - filtered_count
+                    logging.info(
+                        f"Drive {drive_path}: {filtered_count}/{original_count} files "
+                        f"after filtering ({removed_count} removed)"
+                    )
+
+            return filtered_drive_files
+
+    except sqlite3.Error as e:
+        logging.error(f"Database error during filtering: {e}")
+        # Fall back to processing all files
+        logging.warning("Continuing with full import due to filtering error")
+        return drive_files
+
+
+def filter_new_files(cursor: sqlite3.Cursor, all_files: List[str]) -> Set[str]:
+    """Return set of files that are NOT in the database."""
+    # Start with all files as candidates
+    candidates = set(all_files)
+
+    # Remove files that exist in database
+    batch_size = 500
+    for i in range(0, len(all_files), batch_size):
+        batch = all_files[i : i + batch_size]
+        placeholders = ",".join(["?"] * len(batch))
+
+        cursor.execute(
+            f'''
+            SELECT "__path" FROM "{TABLE_NAME}"
+            WHERE "__path" IN ({placeholders})
+        ''',
+            batch,
+        )
+
+        existing_in_batch = {row[0] for row in cursor.fetchall()}
+        candidates -= existing_in_batch
+
+    return candidates
+
+
+def filter_modified_files(cursor: sqlite3.Cursor, all_files: List[str]) -> Set[str]:
+    """Return set of files that are in database AND have been modified since last import."""
+    modified_files = set()
+
+    # First, get current modification times for all files
+    file_mtimes = {}
+    for filepath in all_files:
+        try:
+            file_mtimes[filepath] = os.path.getmtime(filepath)
+        except OSError:
+            continue  # Skip files we can't access
+
+    # Query database in batches
+    batch_size = 500
+    for i in range(0, len(all_files), batch_size):
+        batch = all_files[i : i + batch_size]
+        placeholders = ",".join(["?"] * len(batch))
+
+        cursor.execute(
+            f'''
+            SELECT "__path", "__file_mod_datetime_raw"
+            FROM "{TABLE_NAME}"
+            WHERE "__path" IN ({placeholders})
+        ''',
+            batch,
+        )
+
+        for db_path, db_mtime_str in cursor.fetchall():
+            if db_path in file_mtimes:
+                current_mtime = file_mtimes[db_path]
+                try:
+                    # Compare with stored timestamp
+                    db_mtime = float(db_mtime_str) if db_mtime_str else 0
+                    if current_mtime > db_mtime:
+                        modified_files.add(db_path)
+                except (ValueError, TypeError):
+                    # If database timestamp is invalid, treat as modified
+                    modified_files.add(db_path)
+
+    return modified_files
+
+
+def prune_database_orphans(dbpath: str, existing_files: Set[str]) -> int:
+    """
+    Remove database entries for files that no longer exist on disk.
+
+    Args:
+        dbpath: Path to SQLite database
+        existing_files: Set of file paths that currently exist on disk
+
+    Returns:
+        Number of orphaned records removed
+    """
+    try:
+        with sqlite3.connect(dbpath) as conn:
+            cursor = conn.cursor()
+
+            # Get all file paths from database
+            cursor.execute(f'SELECT "__path" FROM "{TABLE_NAME}"')
+            db_paths = {row[0] for row in cursor.fetchall()}
+
+            # Find orphaned paths (in database but not on disk)
+            orphaned_paths = db_paths - existing_files
+
+            if not orphaned_paths:
+                logging.info("No orphaned database entries found")
+                return 0
+
+            # Delete orphaned records in batches
+            orphaned_list = list(orphaned_paths)
+            batch_size = 500
+            total_deleted = 0
+
+            for i in range(0, len(orphaned_list), batch_size):
+                batch = orphaned_list[i : i + batch_size]
+                placeholders = ",".join(["?"] * len(batch))
+
+                cursor.execute(
+                    f'DELETE FROM "{TABLE_NAME}" WHERE "__path" IN ({placeholders})',
+                    batch,
+                )
+                total_deleted += cursor.rowcount
+
+            conn.commit()
+
+            if total_deleted > 0:
+                logging.info(
+                    f"Database pruning: removed {total_deleted} orphaned entries"
+                )
+            else:
+                logging.info("No orphaned database entries removed")
+
+            return total_deleted
+
+    except sqlite3.Error as e:
+        logging.error(f"Database error during pruning: {e}")
+        return 0
+    except Exception as e:
+        logging.error(f"Unexpected error during database pruning: {e}")
+        return 0
+
+
 def process_single_drive(
     drive_path: str, files: List[str], chunk_size: int, workers_per_drive: int
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -646,7 +781,7 @@ def process_single_drive(
         # Submit chunks of files from this drive to its dedicated pool
         for i in range(0, len(files), chunk_size):
             chunk = files[i : i + chunk_size]
-            futures.append(executor.submit(process_chunk_optimized, chunk))
+            futures.append(executor.submit(process_chunk_Optimised, chunk))
 
         # Collect results from this drive's chunks as they complete
         for future in concurrent.futures.as_completed(futures):
@@ -680,14 +815,17 @@ def process_single_drive(
     return drive_all_tags, drive_total_stats
 
 
-def import_dir_optimized(
+def import_dir_optimised(
     dbpath: str,
     dirpaths: List[str],
-    workers: Optional[int] = None,  # Renamed to 'workers' to indicate workers PER DRIVE
+    workers: Optional[int] = None,  # Named 'workers' to indicate workers PER DRIVE
     chunk_size: int = 4000,
+    new_files: bool = False,  # Add new files only that do not already appear in the alib table
+    modified_files: bool = False,  # Update database from modified files only (assumes external taggers are not preserving mod-time)
+    prunedb: bool = False,  # Remove database entries for files no longer on disk
 ) -> None:
     """
-    Optimized function to import audio metadata tags from multiple directories into a SQLite database.
+    Optimised function to import audio metadata tags from multiple directories into a SQLite database.
     This version uses dedicated worker pools for each drive to enhance concurrent disk I/O.
 
     Args:
@@ -696,8 +834,14 @@ def import_dir_optimized(
         workers (Optional[int]): Number of worker processes to dedicate to each drive's processing pool.
                                  If None, it calculates workers as (total CPU cores) // (number of active drives).
         chunk_size (int): Number of files to process per chunk.
+        new_files (bool): If True, only import files not already in the database.
+        modified_files (bool): If True, only import files that exist in database and have been modified
+                              (file modification time > stored __file_mod_datetime_raw).
+        prunedb (bool): If True, remove database entries for files no longer found on disk (orphan cleanup).
+
+    Note: --new-files, --modified-files and --prunedb are mutually exclusive. If all are False, all files are processed.
     """
-    logging.info("Starting optimized import process...")
+    logging.info("Starting Optimised import process...")
     start_time = time.time()
 
     # Phase 1: Parallel Scan all directories to identify audio files on each drive.
@@ -707,6 +851,39 @@ def import_dir_optimized(
     scan_threads = min(len(dirpaths), multiprocessing.cpu_count(), 16)
     drive_files = parallel_scantree(dirpaths, scan_threads)  # Pass scan_threads
     logging.info("Phase 1 Complete.")
+
+    if new_files or modified_files:
+        logging.info(
+            f"Filtering files: {'new-files' if new_files else 'modified-files'} mode"
+        )
+        drive_files = filter_files_by_mode(
+            dbpath=dbpath,
+            drive_files=drive_files,
+            mode="new" if new_files else "modified",
+        )
+
+    # If --prunedb is specified (mutually exclusive with import modes)
+    if prunedb:
+        logging.info("Prune-only mode: Only pruning database, no tag import...")
+
+        # Collect all files that currently exist on disk
+        all_existing_files = set()
+        for files in drive_files.values():
+            all_existing_files.update(files)
+
+        # Prune database entries for files not found
+        removed_count = prune_database_orphans(dbpath, all_existing_files)
+
+        if removed_count > 0:
+            logging.info(f"Pruning complete: removed {removed_count} orphaned entries")
+        else:
+            logging.info("Pruning complete: no orphaned entries found")
+
+        end_time = time.time()
+        logging.info(
+            f"Prune-only operation finished in {end_time - start_time:.2f} seconds."
+        )
+        return  # Exit early, no tag processing
 
     total_files_to_process = sum(len(files) for files in drive_files.values())
     if total_files_to_process == 0:
@@ -913,7 +1090,7 @@ def process_files(df: pl.DataFrame, preserve_mtime: bool) -> dict:
 
 
 def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
-    """Export database to audio files using optimized DataFrame operations with improved path handling."""
+    """Export database to audio files using Optimised DataFrame operations with improved path handling."""
     try:
         # Connect to database
         logging.info(f"Reading database from {dbpath}...")
@@ -1012,8 +1189,8 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
         logging.info("Applying vectorized data cleaning...")
         df_cleaned = clean_values_vectorized(df)
 
-        # Memory layout optimization with columnar processing
-        logging.info("Processing files with optimized path handling...")
+        # Memory layout optimisation with columnar processing
+        logging.info("Processing files with Optimised path handling...")
         stats = process_files_with_directory_grouping(df_cleaned, batch_size=1000)
 
         logging.info(
@@ -1026,136 +1203,6 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
         if "conn" in locals():
             conn.close()
         raise
-
-
-# def process_files_with_directory_grouping(
-#     df: pl.DataFrame, batch_size: int = 1000
-# ) -> Dict[str, int]:
-#     """Alternative approach: Group by directory for even better locality.
-
-#     This version processes files directory by directory, which can be even more
-#     efficient for disk I/O patterns.
-#     """
-#     stats = {"processed": 0, "errors": 0, "skipped": 0}
-
-#     # Get exportable columns
-#     exportable_columns = [col for col in df.columns if not col.startswith("__")]
-#     logging.info(
-#         f"Will export {len(exportable_columns)} tag fields (excluding __ fields)"
-#     )
-
-#     # Group by __dirpath if available, otherwise extract from __path
-#     if "__dirpath" in df.columns:
-#         # Use the existing __dirpath column for grouping
-#         grouped = df.group_by("__dirpath", maintain_order=True)
-#     else:
-#         # Fallback: extract directory from __path
-#         df = df.with_columns(
-#             pl.col("__path")
-#             .map_elements(lambda x: os.path.dirname(x), return_dtype=pl.Utf8)
-#             .alias("__dirpath")
-#         )
-#         grouped = df.group_by("__dirpath", maintain_order=True)
-
-#     # Get the groups as a dictionary
-#     dir_groups = dict(grouped)
-
-#     total_directories = len(dir_groups)
-#     processed_directories = 0
-
-#     logging.info(f"Processing {len(df)} files across {total_directories} directories")
-
-#     # Process each directory group
-#     for dirpath, dir_df in dir_groups.items():
-#         try:
-#             # Check if directory is accessible before processing
-#             if not os.path.exists(dirpath):
-#                 logging.warning(f"Directory no longer exists: {dirpath}")
-#                 stats["skipped"] += len(dir_df)
-#                 continue
-
-#             if not os.access(dirpath, os.R_OK | os.W_OK):
-#                 logging.warning(f"Insufficient permissions for directory: {dirpath}")
-#                 stats["skipped"] += len(dir_df)
-#                 continue
-
-#             # Process files in this directory
-#             filepaths = dir_df.get_column("__path").to_list()
-
-#             # Pre-extract tag data for this directory
-#             tag_columns = {}
-#             for col in exportable_columns:
-#                 tag_columns[col] = dir_df.get_column(col).to_list()
-
-#             # Process each file in the directory
-#             for i, filepath in enumerate(filepaths):
-#                 try:
-#                     if not os.path.exists(filepath):
-#                         stats["skipped"] += 1
-#                         logging.warning(f"File not found, skipping: {filepath}")
-#                         continue
-
-#                     # Check file permissions
-#                     if not os.access(filepath, os.R_OK | os.W_OK):
-#                         logging.warning(
-#                             f"Insufficient permissions for file: {filepath}"
-#                         )
-#                         stats["errors"] += 1
-#                         continue
-
-#                     # Build tag dictionary
-#                     tag_values = {
-#                         col: tag_columns[col][i] for col in exportable_columns
-#                     }
-
-#                     # Process the file using full path
-#                     tag = audioinfo.Tag(filepath)
-
-#                     # Update tags
-#                     for key, value in tag_values.items():
-#                         if value is None or (
-#                             isinstance(value, str) and value.strip() == ""
-#                         ):
-#                             if key in tag:
-#                                 del tag[key]
-#                         elif isinstance(value, str) and "\\\\" in value:
-#                             tag[key] = value.split("\\\\")
-#                         elif (
-#                             isinstance(value, str)
-#                             and "\\" in value
-#                             and not key.endswith("path")
-#                         ):
-#                             tag[key] = value.split("\\")
-#                         else:
-#                             tag[key] = value
-
-#                     tag.save()
-#                     stats["processed"] += 1
-
-#                 except Exception as e:
-#                     stats["errors"] += 1
-#                     logging.error(f"Could not update {filepath}: {str(e)}")
-
-#             processed_directories += 1
-
-#             # Progress logging
-#             if (
-#                 processed_directories % 100 == 0
-#                 or processed_directories == total_directories
-#             ):
-#                 logging.info(
-#                     f"Processed {processed_directories}/{total_directories} directories "
-#                     f"({stats['processed']} files so far)..."
-#                 )
-#         except PermissionError:
-#             logging.error(f"Permission denied accessing directory: {dirpath}")
-#             stats["skipped"] += len(dir_df)
-#             continue
-#         except Exception as e:
-#             logging.error(f"Error processing directory {dirpath}: {str(e)}")
-#             continue
-
-#     return stats
 
 
 def process_files_with_directory_grouping(
@@ -1308,22 +1355,63 @@ def setup_logging(level: str) -> None:
 def main() -> None:
     """Main entry point with support for parallel processing and multiple directories."""
     parser = argparse.ArgumentParser(
-        description="Import/Export audio file tags to/from SQLite database.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="""
+        Import/Export audio file tags to/from SQLite database.
+
+        Import modes:
+        - Full import: Process all files (default)
+        - New files only: Process only files not in database (--new-files)
+        - Modified files only: Process only files changed since last import (--modified-files)
+
+        Optimised for multi-drive setups with parallel processing per drive.
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+        Examples:
+          # Full import of all files
+          %(prog)s import music.db /music/drive1 /music/drive2
+
+          # Import only new files
+          %(prog)s import --new-files music.db /music/new_albums/
+
+          # Import only modified files
+          %(prog)s import --modified-files music.db /music/library/
+
+          # Export tags to files
+          %(prog)s export music.db /music/library/
+
+        For detailed help on specific commands:
+            %(prog)s import -h
+            %(prog)s export -h
+        """,
     )
     subparsers = parser.add_subparsers(dest="action", help="Action to perform")
     subparsers.required = True
 
     # Import subcommand
     import_parser = subparsers.add_parser(
-        "import", help="Import audio files to database"
+        "import",
+        help="Import audio files to database",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="""
+                Import audio metadata tags from directories into SQLite database.
+
+                Use --new-files to import only files not already in database,
+                or
+                --modified-files to import only files already in database but
+                changed on disk since last import.
+
+                If neither is specified, all files are imported.
+                """,
     )
     import_parser.add_argument("dbpath", help="Path to SQLite database")
+
     import_parser.add_argument(
         "musicdirs",
         nargs="+",
         help="Paths to music directories to import (can specify multiple)",
     )
+
     import_parser.add_argument(
         "--workers",
         type=int,
@@ -1331,6 +1419,7 @@ def main() -> None:
         help="Number of worker processes for tag processing PER DRIVE. "
         "If not specified, defaults to CPU count // number of active drives.",
     )
+
     import_parser.add_argument(
         "--chunk-size",
         type=int,
@@ -1338,9 +1427,36 @@ def main() -> None:
         help="Number of files to process per chunk (for tag reading). Default is 4000.",
     )
 
+    import_mode_group = import_parser.add_mutually_exclusive_group()
+
+    import_mode_group.add_argument(
+        "--new-files",
+        action="store_true",
+        help="Only import files not already in database",
+    )
+
+    import_mode_group.add_argument(
+        "--modified-files",
+        action="store_true",
+        help="Only import files that have been modified since last import "
+        "(compares file modification time with stored __file_mod_datetime_raw)",
+    )
+
+    import_mode_group.add_argument(
+        "--prunedb",
+        action="store_true",
+        help="Remove database entries for files no longer found on disk (orphan cleanup)",
+    )
+
     # Export subcommand
     export_parser = subparsers.add_parser(
-        "export", help="Export database to audio files"
+        "export",
+        help="Export database to audio files",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="""
+        Export metadata tags from database to audio files.
+        Only files under the specified music directory are processed.
+        """,
     )
     export_parser.add_argument(
         "--ignore-lastmodded",
@@ -1385,11 +1501,14 @@ def main() -> None:
                 )
                 args.workers = None  # Reset to None to trigger default calculation
 
-            import_dir_optimized(
+            import_dir_optimised(
                 dbpath=dbpath,
                 dirpaths=musicdirs,
                 workers=args.workers,
                 chunk_size=args.chunk_size,
+                new_files=args.new_files,
+                modified_files=args.modified_files,
+                prunedb=args.prunedb,
             )
 
         else:  # export
