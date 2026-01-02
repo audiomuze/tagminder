@@ -40,7 +40,10 @@ Usage (Export):
     - '/path/to/music_directory': A single directory path to filter exported tags by (e.g., to export tags only from files under this path).
 
     Optional arguments:
-    - '--ignore-lastmodded': Don't preserve last modification timestamps when writing tags to file.
+    - '--touch-mtime {preserve,plus1,none}': Control what happens to file modification time after writing tags.
+        - preserve (default): restore mtime from __file_mod_datetime_raw
+        - plus1: restore mtime to (__file_mod_datetime_raw + 1) to "touch" files while keeping chronology
+        - none: don't change mtime after writing tags
 
 Common arguments (for both import and export):
     --log {DEBUG,INFO,WARNING,ERROR,CRITICAL}: Set logging level. Default is INFO.
@@ -106,6 +109,19 @@ except ImportError:
 
 # --- Constants ---
 AUDIO_EXTENSIONS = {".flac", ".wv", ".m4a", ".aiff", ".ape", ".mp3", ".ogg"}
+
+# Multi-value tag encoding
+#
+# We deliberately store multi-value tags in SQLite as a single TEXT field delimited
+# by TWO backslashes so the values stay easy to read/edit in table editors.
+#
+# Example:  Artist = "A\\B\\C"  (three values)
+#
+# Notes:
+# - In Python strings, two literal backslashes are written as r"\\" or "\\\\".
+# - In regex contexts, matching two literal backslashes requires r"\\\\".
+MULTIVALUE_DELIM = r"\\"  # two literal backslashes
+MULTIVALUE_DELIM_REGEX = r"\\\\"  # regex that matches two literal backslashes
 DATABASE_PATH = "alib.db"  # Default database name
 TABLE_NAME = "alib"
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
@@ -297,7 +313,7 @@ def tag_to_dict_raw(tag: Any) -> Dict[str, Any]:
 
         # Convert list values to delimited strings
         if isinstance(v, list):
-            cleaned_dict[safe_k] = "\\\\".join(map(str, v))
+            cleaned_dict[safe_k] = MULTIVALUE_DELIM.join(map(str, v))
         else:
             cleaned_dict[safe_k] = v
 
@@ -421,7 +437,7 @@ def clean_and_normalize_tags_vectorized(df: pl.DataFrame) -> pl.DataFrame:
                 .otherwise(
                     pl.col(col)
                     .list.eval(pl.element().cast(pl.Utf8))
-                    .list.join("\\\\")  # Use double backslash as a deliberate separator
+                    .list.join(MULTIVALUE_DELIM)  # Use double backslash as a deliberate separator
                 )
                 .alias(col)
             )
@@ -484,7 +500,7 @@ def build_dataframe_with_schema(all_tags: List[Dict[str, Any]]) -> pl.DataFrame:
                 value = tag_dict[key]
                 if isinstance(value, list):
                     # Convert list to a delimited string.
-                    processed_dict[key] = "\\\\".join(map(str, value))
+                    processed_dict[key] = MULTIVALUE_DELIM.join(map(str, value))
                 else:
                     processed_dict[key] = value
             else:
@@ -1007,7 +1023,12 @@ def import_dir_optimised(
 
 
 def clean_values_vectorized(df: pl.DataFrame) -> pl.DataFrame:
-    """Clean all values in DataFrame using vectorized operations."""
+    """Clean all values in DataFrame using vectorized operations.
+
+    Important: this function must NOT rewrite the multi-value delimiter.
+    The database encodes multi-value tags as strings delimited by ``\\`` (two
+    backslashes) so the table stays human-editable in SQLite table editors.
+    """
     string_cols = [col for col in df.columns if df[col].dtype == pl.Utf8]
 
     # Process each column individually
@@ -1016,19 +1037,6 @@ def clean_values_vectorized(df: pl.DataFrame) -> pl.DataFrame:
         df = df.with_columns(
             pl.when(pl.col(col).is_null() | (pl.col(col).str.strip_chars() == ""))
             .then(None)
-            .otherwise(pl.col(col))
-            .alias(col)
-        )
-
-        # Then handle multi-value tags - but keep as String type
-        # Split by double backslash and rejoin with single backslash or other delimiter
-        df = df.with_columns(
-            pl.when(pl.col(col).str.contains(r"\\\\"))
-            .then(
-                pl.col(col)
-                .str.split(r"\\\\")
-                .list.join("\\")  # Join with single backslash
-            )
             .otherwise(pl.col(col))
             .alias(col)
         )
@@ -1067,10 +1075,16 @@ def process_files(df: pl.DataFrame, preserve_mtime: bool) -> dict:
             tag = audioinfo.Tag(row["__path"])
             for col in tag_cols:
                 if (val := row[col]) is not None:
-                    tag[col] = val.split("\\\\") if "\\\\" in str(val) else val
+                    tag[col] = (
+                        str(val).split(MULTIVALUE_DELIM)
+                        if MULTIVALUE_DELIM in str(val)
+                        else val
+                    )
 
             tag.save()
 
+            # Legacy helper retained for compatibility; export uses
+            # process_files_with_directory_grouping which supports touch-mtime modes.
             if preserve_mtime:
                 try:
                     mtime = float(row["__file_mod_datetime_raw"])
@@ -1089,7 +1103,7 @@ def process_files(df: pl.DataFrame, preserve_mtime: bool) -> dict:
     return stats
 
 
-def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
+def export_db(dbpath: str, dirpath: str, touch_mtime: str = "preserve") -> None:
     """Export database to audio files using Optimised DataFrame operations with improved path handling."""
     try:
         # Connect to database
@@ -1191,7 +1205,11 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
 
         # Memory layout optimisation with columnar processing
         logging.info("Processing files with Optimised path handling...")
-        stats = process_files_with_directory_grouping(df_cleaned, batch_size=1000)
+        stats = process_files_with_directory_grouping(
+            df_cleaned,
+            batch_size=1000,
+            touch_mtime=touch_mtime,
+        )
 
         logging.info(
             f"Export complete. Processed: {stats['processed']}, "
@@ -1206,7 +1224,7 @@ def export_db(dbpath: str, dirpath: str, preserve_mtime: bool = True) -> None:
 
 
 def process_files_with_directory_grouping(
-    df: pl.DataFrame, batch_size: int = 1000
+    df: pl.DataFrame, batch_size: int = 1000, touch_mtime: str = "preserve"
 ) -> Dict[str, int]:
     """Alternative approach: Group by directory for even better locality.
 
@@ -1214,6 +1232,20 @@ def process_files_with_directory_grouping(
     efficient for disk I/O patterns.
     """
     stats = {"processed": 0, "errors": 0, "skipped": 0}
+
+    valid_touch_modes = {"preserve", "plus1", "none"}
+    if touch_mtime not in valid_touch_modes:
+        raise ValueError(
+            f"Invalid touch_mtime mode: {touch_mtime!r}. Expected one of: {sorted(valid_touch_modes)}"
+        )
+
+    mtime_col = "__file_mod_datetime_raw"
+    have_mtime_col = mtime_col in df.columns
+    need_db_mtime = touch_mtime in {"preserve", "plus1"}
+    if need_db_mtime and not have_mtime_col:
+        logging.warning(
+            f"touch-mtime={touch_mtime} but column {mtime_col} is missing; mtimes will not be set"
+        )
 
     # Get exportable columns
     exportable_columns = [col for col in df.columns if not col.startswith("__")]
@@ -1263,6 +1295,10 @@ def process_files_with_directory_grouping(
             for col in exportable_columns:
                 tag_columns[col] = dir_df.get_column(col).to_list()
 
+            mtimes = None
+            if need_db_mtime and have_mtime_col:
+                mtimes = dir_df.get_column(mtime_col).to_list()
+
             # Process each file in the directory
             for i, filepath in enumerate(filepaths):
                 try:
@@ -1294,18 +1330,45 @@ def process_files_with_directory_grouping(
                         ):
                             if key in tag:
                                 del tag[key]
-                        elif isinstance(value, str) and "\\\\" in value:
-                            tag[key] = value.split("\\\\")
-                        elif (
-                            isinstance(value, str)
-                            and "\\" in value
-                            and not key.endswith("path")
-                        ):
-                            tag[key] = value.split("\\")
+                        elif isinstance(value, str) and MULTIVALUE_DELIM in value:
+                            tag[key] = value.split(MULTIVALUE_DELIM)
+                        # NOTE: Disabled on purpose.
+                        #
+                        # We store multi-value tags in SQLite as a single TEXT value delimited by
+                        # TWO backslashes (MULTIVALUE_DELIM). Splitting on a *single* backslash can
+                        # silently corrupt values that legitimately contain backslashes, and it also
+                        # makes the storage format ambiguous for manual editing in table editors.
+                        #
+                        # If you ever need to support a legacy DB that used single-backslash as a
+                        # delimiter, re-enable this block (ideally behind an explicit CLI flag).
+                        # elif (
+                        #     isinstance(value, str)
+                        #     and "\\" in value
+                        #     and not key.endswith("path")
+                        # ):
+                        #     tag[key] = value.split("\\")
                         else:
                             tag[key] = value
 
                     tag.save()
+
+                    # Apply requested mtime behavior after writing tags.
+                    if touch_mtime in {"preserve", "plus1"}:
+                        if mtimes is not None:
+                            try:
+                                base_mtime = float(mtimes[i])
+                                target_mtime = (
+                                    base_mtime + 1.0 if touch_mtime == "plus1" else base_mtime
+                                )
+                                os.utime(filepath, times=(target_mtime, target_mtime))
+                            except Exception as e:
+                                logging.warning(
+                                    f"Could not set mtime ({touch_mtime}) for {filepath}: {str(e)}"
+                                )
+                    else:
+                        # touch_mtime == "none": leave filesystem mtime unchanged after tag.save().
+                        pass
+
                     stats["processed"] += 1
 
                 except Exception as e:
@@ -1459,9 +1522,11 @@ def main() -> None:
         """,
     )
     export_parser.add_argument(
-        "--ignore-lastmodded",
-        action="store_true",
-        help="Don't preserve last modification timestamps when writing tags to file",
+        "--touch-mtime",
+        choices=["preserve", "plus1", "none"],
+        default="preserve",
+        help="What to do with file modification time after writing tags. "
+        "Default is preserve (restore from __file_mod_datetime_raw).",
     )
     export_parser.add_argument("dbpath", help="Path to SQLite database")
     export_parser.add_argument("musicdir", help="Path to music directory to export to")
@@ -1526,9 +1591,7 @@ def main() -> None:
             logging.info(
                 f"Starting export operation filtered by music directory: {musicdir_resolved}"
             )
-            export_db(
-                dbpath, musicdir_resolved, preserve_mtime=not args.ignore_lastmodded
-            )
+            export_db(dbpath, musicdir_resolved, touch_mtime=args.touch_mtime)
 
     except Exception as e:
         logging.error(
