@@ -17,29 +17,30 @@ from .constants import *
 try:
     from .. import version_string
 
-    app_name = 'puddletag v%s' % version_string
+    app_name = "puddletag v%s" % version_string
 except ImportError:
-    app_name = 'puddletag'
+    app_name = "puddletag"
 
 from stat import ST_SIZE, ST_MTIME, ST_CTIME, ST_ATIME
 
 FS_ENC = sys.getfilesystemencoding()
 
 fn_hash = {
-    PATH: 'filepath',
-    FILENAME: 'filename',
-    EXTENSION: 'ext',
-    DIRPATH: 'dirpath',
-    DIRNAME: 'dirname',
-    FILENAME_NO_EXT: 'filename_no_ext',
-    PARENT_DIR: 'parent_dir'}
+    PATH: "filepath",
+    FILENAME: "filename",
+    EXTENSION: "ext",
+    DIRPATH: "dirpath",
+    DIRNAME: "dirname",
+    FILENAME_NO_EXT: "filename_no_ext",
+    PARENT_DIR: "parent_dir",
+}
 
 splitext = lambda x: path.splitext(x)[1][1:].lower()
 
 
 def b64_to_img(img):
     ret = img.copy()
-    ret['data'] = base64.b64decode(img['data'].encode('ascii'))
+    ret["data"] = base64.b64decode(img["data"].encode("ascii"))
     return ret
 
 
@@ -73,7 +74,7 @@ def commontags(audios):
         combined - A dictionary containing all the fields found
         in audios as keys and the first value corresponding
         to that key found.
-        
+
         Another dictionary with the same keys as combined.
         For each key, the value is the number of items
         found in audios that have exactly the same value
@@ -88,14 +89,14 @@ def commontags(audios):
     imagetags = set()
 
     for audio in audios:
-        if getattr(audio, 'IMAGETAGS', []):
+        if getattr(audio, "IMAGETAGS", []):
             image = audio[IMAGE_FIELD] if audio[IMAGE_FIELD] else []
             imagetags = imagetags.union(audio.IMAGETAGS)
         else:
             image = []
         images.append(image)
 
-        if hasattr(audio, 'usertags'):
+        if hasattr(audio, "usertags"):
             audio = audio.usertags
         else:
             audio = usertags(audio)
@@ -111,14 +112,16 @@ def commontags(audios):
             else:
                 combined[field] = value
                 tags[field] = 1
-    combined['__image'] = commonimages(images)
+    combined["__image"] = commonimages(images)
     return combined, tags, imagetags
 
 
 def converttag(tag):
     """Converts each value in tag to a list if the key doesn't begin with __."""
-    return dict((k, unicode_list(v)) if not k.startswith('__') else (k, v)
-                for k, v in tag.items())
+    return dict(
+        (k, unicode_list(v)) if not k.startswith("__") else (k, v)
+        for k, v in tag.items()
+    )
 
 
 def cover_info(images, d=None):
@@ -134,8 +137,8 @@ def cover_info(images, d=None):
     """
     info = {}
     if not images:
-        info[NUM_IMAGES] = '0'
-        info[IMAGE_MIMETYPE] = ''
+        info[NUM_IMAGES] = "0"
+        info[IMAGE_MIMETYPE] = ""
     else:
         info[NUM_IMAGES] = str(len(images))
         image = images[0]
@@ -152,16 +155,16 @@ def cover_info(images, d=None):
 
     if d:
         if not info[IMAGE_MIMETYPE]:
-            del (info[IMAGE_MIMETYPE])
+            del info[IMAGE_MIMETYPE]
             try:
-                del (d[IMAGE_MIMETYPE])
+                del d[IMAGE_MIMETYPE]
             except KeyError:
                 pass
         d.update(info)
     return info
 
 
-def decode_fn(filename, errors='replace'):
+def decode_fn(filename, errors="replace"):
     """Decodes a filename from the filesystem encoding."""
     if isinstance(filename, str):
         return filename
@@ -227,38 +230,30 @@ def getinfo(filename):
     accessed = fileinfo[ST_ATIME]
     modified = fileinfo[ST_MTIME]
     created = fileinfo[ST_CTIME]
-    return ({
+    return {
         "__size": str(size),
-        '__file_size': str_filesize(size),
-        '__file_size_bytes': str(size),
-        '__file_size_kb': '%d KB' % int(size / 1024),
-        '__file_size_mb': '%.2f MB' % (size / 1024.0 ** 2),
-
+        "__file_size": str_filesize(size),
+        "__file_size_bytes": str(size),
+        "__file_size_kb": "%d KB" % int(size / 1024),
+        "__file_size_mb": "%.2f MB" % (size / 1024.0**2),
         "__created": strtime(created),
-        '__file_create_date': get_time('%Y-%m-%d', created),
-        '__file_create_datetime':
-            get_time('%Y-%m-%d %H:%M:%S', created),
-        '__file_create_datetime_raw': str(created),
-
+        "__file_create_date": get_time("%Y-%m-%d", created),
+        "__file_create_datetime": get_time("%Y-%m-%d %H:%M:%S", created),
+        "__file_create_datetime_raw": str(created),
         "__modified": strtime(modified),
-        '__file_mod_date': get_time('%Y-%m-%d', modified),
-        '__file_mod_datetime':
-            get_time('%Y-%m-%d %H:%M:%S', modified),
-        '__file_mod_datetime_raw': str(modified),
-
-        '__accessed': strtime(accessed),
-        '__file_access_date': get_time('%Y-%m-%d', accessed),
-        '__file_access_datetime':
-            get_time('%Y-%m-%d %H:%M:%S', accessed),
-        '__file_access_datetime_raw': str(accessed),
-
-        '__app': app_name,
-
-    })
+        "__file_mod_date": get_time("%Y-%m-%d", modified),
+        "__file_mod_datetime": get_time("%Y-%m-%d %H:%M:%S", modified),
+        "__file_mod_datetime_raw": str(modified),
+        "__accessed": strtime(accessed),
+        "__file_access_date": get_time("%Y-%m-%d", accessed),
+        "__file_access_datetime": get_time("%Y-%m-%d %H:%M:%S", accessed),
+        "__file_access_datetime_raw": str(accessed),
+        "__app": app_name,
+    }
 
 
 def get_filename_tags(filepath: str) -> dict:
-    filepath = to_string(filepath, 'replace')
+    filepath = to_string(filepath, "replace")
     ret = {
         PATH: filepath,
         DIRPATH: path.dirname(filepath),
@@ -278,21 +273,21 @@ def get_mime(data):
     mime = QMimeDatabase().mimeTypeForData(data)
     if not mime.isDefault():
         return mime.name()
-    return ''
+    return ""
 
 
 def get_total(tag):
     """If tag['track'] is of format x/y returns, y."""
-    value = to_string(tag['track'])
+    value = to_string(tag["track"])
     try:
-        return value.split('/')[1].strip()
+        return value.split("/")[1].strip()
     except IndexError:
-        raise KeyError('__total')
+        raise KeyError("__total")
 
 
 def img_to_b64(img):
     ret = img.copy()
-    ret['data'] = base64.b64encode(img['data']).decode('ascii')
+    ret["data"] = base64.b64encode(img["data"]).decode("ascii")
     return ret
 
 
@@ -325,56 +320,80 @@ def info_to_dict(info):
         tags["__bitrate"] = strbitrate(info.bitrate)
         tags["__bitrate_num"] = str(int(info.bitrate / 1000))
     except AttributeError:
-        tags["__bitrate"] = '0 kb/s'
+        tags["__bitrate"] = "0 kb/s"
         tags["__bitrate_num"] = 0
 
     try:
-        tags['__bitspersample'] = str(info.bits_per_sample)
+        tags["__bitspersample"] = str(info.bits_per_sample)
     except AttributeError:
         pass
 
     try:
-        tags['__channels'] = str(info.channels)
+        tags["__channels"] = str(info.channels)
     except AttributeError:
         pass
 
     try:
-        tags['__layer'] = str(info.layer)
+        tags["__layer"] = str(info.layer)
     except AttributeError:
         pass
 
     if isinstance(info, mutagen.mp3.MPEGInfo):
         try:
-            tags['__mode'] = MODES[info.mode]
+            tags["__mode"] = MODES[info.mode]
         except AttributeError:
             pass
     else:
         try:
-            tags['__mode'] = MONO if info.channels == 1 else STEREO
+            tags["__mode"] = MONO if info.channels == 1 else STEREO
         except AttributeError:
             pass
 
     try:
-        tags['__titlegain'] = str(info.title_gain)
+        tags["__titlegain"] = str(info.title_gain)
     except AttributeError:
         pass
 
     try:
-        tags['__albumgain'] = str(info.album_gain)
+        tags["__albumgain"] = str(info.album_gain)
     except AttributeError:
         pass
 
     try:
-        tags['__version'] = str(info.version)
+        tags["__version"] = str(info.version)
     except AttributeError:
         pass
 
     try:
-        tags['__md5sig'] = str(info.md5_signature)
+        tags["__md5sig"] = str(info.md5_signature)
     except AttributeError:
         pass
 
     return tags
+
+
+# def isempty(value):
+#     """Check if value is empty.
+
+#     Empty means:
+#         The value evaluates to False and as not a number.
+#         All of value's members are False. eg
+
+#     >>>isempty('')
+#     True
+#     >>>isempty(['', None])
+#     True
+#     >>>isempty([0])
+#     False
+#     """
+#     if isinstance(value, int):
+#         return False
+#     if not value:
+#         return True
+#     try:
+#         return not [z for z in value if z or isinstance(z, int)]
+#     except TypeError:
+#         return False
 
 
 def isempty(value):
@@ -385,14 +404,20 @@ def isempty(value):
         All of value's members are False. eg
 
     >>>isempty('')
-    True
+    False  # CHANGED: Empty strings are NOT considered empty
     >>>isempty(['', None])
     True
     >>>isempty([0])
     False
+    >>>isempty(None)
+    True
     """
     if isinstance(value, int):
         return False
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return False  # CHANGED: Empty strings are NOT empty
     if not value:
         return True
     try:
@@ -414,8 +439,11 @@ def keys_deco(func):
         else:
             mapping = self.mapping
             revmapping = self.revmapping
-            return [mapping.get(k, k) for k in func(self)
-                    if not (k in revmapping and k not in mapping)]
+            return [
+                mapping.get(k, k)
+                for k in func(self)
+                if not (k in revmapping and k not in mapping)
+            ]
 
     return f
 
@@ -429,25 +457,25 @@ def lnglength(value):
     """Converts a string representation of length to seconds.
 
     length can be in HH:MM:SS or MM:SS format."""
-    if len(value.split(':')) == 3:
-        (hours, minutes, seconds) = list(map(float, value.split(':')))
+    if len(value.split(":")) == 3:
+        (hours, minutes, seconds) = list(map(float, value.split(":")))
         (hours, minutes, seconds) = (int(hours), int(minutes), int(seconds))
         return (hours * 3600) + (minutes * 60) + seconds
     else:
-        (minutes, seconds) = list(map(float, value.split(':')))
+        (minutes, seconds) = list(map(float, value.split(":")))
         (minutes, seconds) = (int(minutes), int(seconds))
         return (minutes * 60) + seconds
 
 
 def lngtime(value):
-    '''Converts time in %Y-%m-%d %H:%M:%S format to seconds.'''
-    return calendar.timegm(time.strptime(value, '%Y-%m-%d %H:%M:%S'))
+    """Converts time in %Y-%m-%d %H:%M:%S format to seconds."""
+    return calendar.timegm(time.strptime(value, "%Y-%m-%d %H:%M:%S"))
 
 
 def path_to_string(value):
     """Convert the path to a bytestring."""
     if not value:
-        return ''
+        return ""
     elif isinstance(value, str):
         return encode_fn(value)
     else:
@@ -455,10 +483,11 @@ def path_to_string(value):
 
 
 _image_defaults = {
-    DESCRIPTION: lambda i: i.get(DESCRIPTION, ''),
+    DESCRIPTION: lambda i: i.get(DESCRIPTION, ""),
     MIMETYPE: lambda i: i.get(MIMETYPE, None) or get_mime(i[DATA]),
     IMAGETYPE: lambda i: i.get(IMAGETYPE, DEFAULT_COVER),
-    DATA: lambda i: i[DATA]}
+    DATA: lambda i: i[DATA],
+}
 
 
 def parse_image(image, keys=None):
@@ -491,9 +520,9 @@ def setdeco(func):
 
 
 def setmodtime(fn, atime, mtime):
-    '''Sets the access and modification times of fn.
+    """Sets the access and modification times of fn.
 
-    atime and mtime should both be in "%Y-%m-%d %H:%M:%S" format.'''
+    atime and mtime should both be in "%Y-%m-%d %H:%M:%S" format."""
     mtime = lngtime(mtime)
     atime = lngtime(atime)
     os.utime(fn, (atime, mtime))
@@ -501,25 +530,25 @@ def setmodtime(fn, atime, mtime):
 
 def set_total(tag, value):
     """If tag['track'] is of format x/y set's y to value."""
-    track = to_string(tag['track']).split('/', 1)
+    track = to_string(tag["track"]).split("/", 1)
 
     if isempty(value) and track:
-        tag['track'] = track[0]
+        tag["track"] = track[0]
         return
 
     value = to_string(value)
     if not (value and track):
         return False
-    tag['track'] = track[0] + '/' + value
+    tag["track"] = track[0] + "/" + value
     return True
 
 
 def strbitrate(bitrate):
     """Converts the bitrate in bits/s to a string in kb/s."""
-    return str(bitrate / 1000) + ' kb/s'
+    return str(bitrate / 1000) + " kb/s"
 
 
-_sizes = {0: 'B', 1: 'KB', 2: 'MB', 3: 'GB'}
+_sizes = {0: "B", 1: "KB", 2: "MB", 3: "GB"}
 
 
 def str_filesize(size):
@@ -532,12 +561,12 @@ def str_filesize(size):
     >>>str_filesize(1024**3)
     '1.00 GB'
     """
-    valid = [z for z in _sizes if size / (1024.0 ** z) > 1]
+    valid = [z for z in _sizes if size / (1024.0**z) > 1]
     val = max(valid)
     if val < 2:
-        return '%d %s' % (size / (1024 ** val), _sizes[val])
+        return "%d %s" % (size / (1024**val), _sizes[val])
     else:
-        return '%.2f %s' % (size / (1024.0 ** val), _sizes[val])
+        return "%.2f %s" % (size / (1024.0**val), _sizes[val])
 
 
 def strfrequency(value):
@@ -555,7 +584,7 @@ def stringtags(tag, leaveNone=False):
     leaveNone = False will remove any values
     considered empty from being part of the returned dictionary.
     eg. '', [''], None.
-    Otherwise, they're returned as ''    
+    Otherwise, they're returned as ''
     """
 
     newtag = {}
@@ -564,13 +593,13 @@ def stringtags(tag, leaveNone=False):
         if i in INFOTAGS:
             newtag[i] = v
             continue
-        if isinstance(i, (int, float)) or hasattr(v, 'items'):
+        if isinstance(i, (int, float)) or hasattr(v, "items"):
             continue
 
         if leaveNone and isempty(v):
-            newtag[i] = ''
+            newtag[i] = ""
             continue
-        elif (not v) or (hasattr(v, '__iter__') and len(v) == 1 and not v[0]):
+        elif (not v) or (hasattr(v, "__iter__") and len(v) == 1 and not v[0]):
             continue
 
         if isinstance(v, str):
@@ -578,7 +607,7 @@ def stringtags(tag, leaveNone=False):
         elif isinstance(v, (int, float)):
             newtag[i] = str(v)
         elif isinstance(v, list) and isinstance(v[0], str):
-            newtag[i] = r'\\'.join(v)
+            newtag[i] = r"\\".join(v)
         elif isinstance(i, str) and not isinstance(v, str):
             newtag[i] = v[0]
         else:
@@ -594,9 +623,9 @@ def strlength(value):
     minutes = (value % 3600) // 60
     hours = value // 3600
     if hours > 0:
-        return '%02d:%02d:%02d' % (hours, minutes, seconds)
+        return "%02d:%02d:%02d" % (hours, minutes, seconds)
     else:
-        return '%02d:%02d' % (minutes, seconds)
+        return "%02d:%02d" % (minutes, seconds)
 
 
 def strtime(seconds):
@@ -606,6 +635,7 @@ def strtime(seconds):
 
 def tag_to_json(audio, fields=None):
     from .. import audioinfo
+
     if isinstance(audio, str):
         try:
             audio = audioinfo.Tag(audio)
@@ -625,25 +655,25 @@ def tag_to_json(audio, fields=None):
         tags = audio.copy()
 
     try:
-        if not fields or '__image' in fields:
+        if not fields or "__image" in fields:
             if audio.images:
-                tags['__image'] = list(map(img_to_b64, audio.images))
-            elif '__image' in tags:
-                tags['__image'] = list(map(img_to_b64, tags['__image']))
+                tags["__image"] = list(map(img_to_b64, audio.images))
+            elif "__image" in tags:
+                tags["__image"] = list(map(img_to_b64, tags["__image"]))
     except AttributeError:
-        if not fields or '__image' in fields:
-            if '__image' in tags:
-                tags['__image'] = list(map(img_to_b64, tags['__image']))
+        if not fields or "__image" in fields:
+            if "__image" in tags:
+                tags["__image"] = list(map(img_to_b64, tags["__image"]))
 
     return tags
 
 
-def to_string(value, errors='strict'):
+def to_string(value, errors="strict"):
     """Convert the value to a unicode string.
 
     If it's a list, the first index is used."""
     if not value:
-        return ''
+        return ""
     elif isinstance(value, str):
         return value
     elif isinstance(value, int):
@@ -654,33 +684,52 @@ def to_string(value, errors='strict'):
 
 def usertags(tag):
     """Return dictionary of all editable key, value pairs found in tag."""
-    ret = dict((z, v) for z, v in tag.items() if isinstance(z, str)
-               and not z.startswith('__'))
+    ret = dict(
+        (z, v) for z, v in tag.items() if isinstance(z, str) and not z.startswith("__")
+    )
     return ret
+
+
+# def unicode_list(value):
+#     """Modifies the passed value to a unicode list.
+
+#     >>>unicode_list("value")
+#     ['value']
+#     >>>unicode_list(['value1', 'value2']
+#     ['value1', 'value2']
+#     """
+#     if not value:
+#         return []
+#     if isinstance(value, str):
+#         return [str(value)]
+#     elif isinstance(value, str):
+#         return [str(value, "utf8", "replace")]
+#     elif isinstance(value, int):
+#         return [str(value)]
+#     else:
+#         return [to_string(v, "replace") for v in value if v]
 
 
 def unicode_list(value):
     """Modifies the passed value to a unicode list.
 
-    >>>unicode_list("value")
-    ['value']
-    >>>unicode_list(['value1', 'value2']
-    ['value1', 'value2']
+    Preserves empty strings to maintain multi-value tag alignment.
     """
     if not value:
         return []
     if isinstance(value, str):
         return [str(value)]
     elif isinstance(value, str):
-        return [str(value, 'utf8', 'replace')]
+        return [str(value, "utf8", "replace")]
     elif isinstance(value, int):
         return [str(value)]
     else:
-        return [to_string(v, 'replace') for v in value if v]
+        # CHANGED: Remove 'if v' filter to preserve empty strings
+        return [to_string(v, "replace") for v in value]
 
 
 def writeable(tags):
-    return [z for z in tags if not z.starswith('__') or z.startswith('~')]
+    return [z for z in tags if not z.starswith("__") or z.startswith("~")]
 
 
 class CaselessDict(dict):
@@ -709,7 +758,7 @@ class CaselessDict(dict):
 
     def __delitem__(self, key):
         dict.__delitem__(self, self._keys[key.lower()])
-        del (self._keys[key.lower()])
+        del self._keys[key.lower()]
 
     def __getitem__(self, key):
         return dict.__getitem__(self, self._keys[key.lower()])
@@ -747,7 +796,7 @@ class MockTag(object):
     def __init__(self, filename=None):
         object.__init__(self)
         self._info = {}
-        self.__filepath = ''
+        self.__filepath = ""
         if filename:
             self.link(filename)
 
@@ -757,10 +806,10 @@ class MockTag(object):
     def set_filepath(self, val):
         self.__filepath = path_to_string(val)
 
-        if hasattr(self, 'mut_obj'):
+        if hasattr(self, "mut_obj"):
             self.mut_obj.filename = self.__filepath
 
-        return get_filename_tags(to_string(val, 'replace'))
+        return get_filename_tags(to_string(val, "replace"))
 
     filepath = property(get_filepath, set_filepath)
 
@@ -772,8 +821,11 @@ class MockTag(object):
     def ext(self, val):
         if val:
             val = path_to_string(val)
-            self.filepath = '%s%s%s' % (path.splitext(self.filepath)[0],
-                                        path.extsep, val)
+            self.filepath = "%s%s%s" % (
+                path.splitext(self.filepath)[0],
+                path.extsep,
+                val,
+            )
         else:
             self.filepath = path.splitext(self.filepath)[0]
 
@@ -810,7 +862,7 @@ class MockTag(object):
 
     @filename_no_ext.setter
     def filename_no_ext(self, value):
-        self.filename = value + '.' + self.ext
+        self.filename = value + "." + self.ext
 
     @property
     def parent_dir(self):
@@ -836,7 +888,7 @@ class MockTag(object):
 
     def clear(self):
         for key in self.usertags:
-            del (self[key])
+            del self[key]
 
     def get(self, key, default=None):
         return self[key] if key in self else default
@@ -869,8 +921,7 @@ class MockTag(object):
     def set_attrs(self, attrs, tags=None):
         if tags is None:
             tags = self
-        [setattr(self, z, tags['__%s' % z]) for z in attrs if
-         '__%s' % z in tags]
+        [setattr(self, z, tags["__%s" % z]) for z in attrs if "__%s" % z in tags]
 
     def stringtags(self):
         return stringtags(self)
@@ -878,7 +929,7 @@ class MockTag(object):
     def update(self, dictionary=None):
         if dictionary is None:
             return
-        if hasattr(dictionary, 'items'):
+        if hasattr(dictionary, "items"):
             for key, value in dictionary.items():
                 self[key] = value
         else:

@@ -15,17 +15,33 @@ try:
 except ImportError:
     DSF = None
 
-from mutagen.id3 import (APIC, PairedTextFrame, TextFrame, TimeStampTextFrame,
-                         UrlFrame)
+from mutagen.id3 import APIC, PairedTextFrame, TextFrame, TimeStampTextFrame, UrlFrame
 
 from . import util
 from ._compatid3 import CompatID3
 
 from .constants import MODES
-from .util import (CaselessDict, FILENAME, MockTag, PATH,
-                   cover_info, del_deco, fn_hash, get_mime, get_total,
-                   getdeco, info_to_dict, isempty, keys_deco, parse_image, set_total,
-                   setdeco, str_filesize, unicode_list, usertags)
+from .util import (
+    CaselessDict,
+    FILENAME,
+    MockTag,
+    PATH,
+    cover_info,
+    del_deco,
+    fn_hash,
+    get_mime,
+    get_total,
+    getdeco,
+    info_to_dict,
+    isempty,
+    keys_deco,
+    parse_image,
+    set_total,
+    setdeco,
+    str_filesize,
+    unicode_list,
+    usertags,
+)
 
 TagBase = MockTag
 
@@ -59,8 +75,9 @@ def handle(audio):
         for k, v in handler(frame).items():
             lower = k.lower()
             if lower in keys:
-                ret[keys[lower]].append(v) if isinstance(v, str) \
-                    else ret[keys[lower]].extend(v)
+                ret[keys[lower]].append(v) if isinstance(v, str) else ret[
+                    keys[lower]
+                ].extend(v)
             else:
                 keys[lower] = k
                 ret[k] = v
@@ -69,8 +86,16 @@ def handle(audio):
 
 from . import tag_versions
 
-ATTRIBUTES = ('frequency', 'length', 'bitrate', 'accessed', 'size', 'created',
-              'modified', 'filetype')
+ATTRIBUTES = (
+    "frequency",
+    "length",
+    "bitrate",
+    "accessed",
+    "size",
+    "created",
+    "modified",
+    "filetype",
+)
 
 WRITE_V1 = 1
 WRITE_V2 = 2
@@ -127,7 +152,7 @@ def create_genre(value):
     frame = id3.TCON(encoding, value)
     frame.get_value = lambda: get_genre(frame)
     frame.set_value = lambda value: set_genre(frame, value)
-    return {'genre': frame}
+    return {"genre": frame}
 
 
 def get_genre(frame):
@@ -144,13 +169,13 @@ def genre_handler(frames):
     frame = frames[0]
     frame.get_value = lambda: get_genre(frame)
     frame.set_value = lambda value: set_genre(frame, value)
-    return {'genre': frame}
+    return {"genre": frame}
 
 
 text_frames = {
-    id3.TALB: 'album',
-    id3.TBPM: 'bpm',
-    id3.TCOM: 'composer',
+    id3.TALB: "album",
+    id3.TBPM: "bpm",
+    id3.TCOM: "composer",
     id3.TCOP: "copyright",
     id3.TDAT: "date",
     id3.TDLY: "audiodelay",
@@ -191,20 +216,19 @@ text_frames = {
     id3.TSRC: "isrc",
     id3.TSSE: "encodingsettings",
     id3.TSST: "setsubtitle",
-    id3.TYER: 'year',
+    id3.TYER: "year",
 }
 
 try:
-    text_frames.update({
-        id3.TCMP: "itunescompilationflag",
-        id3.TSOC: "itunescomposersortorder"})
+    text_frames.update(
+        {id3.TCMP: "itunescompilationflag", id3.TSOC: "itunescomposersortorder"}
+    )
 except AttributeError:
     pass
 
 revtext_frames = dict((key, frame) for frame, key in text_frames.items())
-write_frames = dict((key, partial(create_text, key)) for
-                    key in text_frames.values())
-write_frames['genre'] = create_genre
+write_frames = dict((key, partial(create_text, key)) for key in text_frames.values())
+write_frames["genre"] = create_genre
 
 
 def create_time(title, value):
@@ -240,11 +264,11 @@ time_frames = {
     id3.TDOR: "originalreleasetime",
     id3.TDRC: "year",
     id3.TDRL: "releasetime",
-    id3.TDTG: "taggingtime"}
+    id3.TDTG: "taggingtime",
+}
 
 revtime_frames = dict([(key, frame) for frame, key in time_frames.items()])
-write_frames.update([(key, partial(create_time, key)) for
-                     key in revtime_frames])
+write_frames.update([(key, partial(create_time, key)) for key in revtime_frames])
 
 
 def create_usertext(title, value):
@@ -269,7 +293,8 @@ url_frames = {
     id3.WOAS: "wwwsource",
     id3.WORS: "wwwradio",
     id3.WPAY: "wwwpayment",
-    id3.WPUB: "wwwpublisher"}
+    id3.WPUB: "wwwpublisher",
+}
 
 
 def create_url(title, value):
@@ -304,9 +329,7 @@ def url_handler(title):
 revurl_frames = dict([(key, frame) for frame, key in url_frames.items()])
 write_frames.update([(key, partial(create_url, key)) for key in revurl_frames])
 
-uurl_frames = {
-    id3.WCOM: "wwwcommercialinfo",
-    id3.WOAR: "wwwartist"}
+uurl_frames = {id3.WCOM: "wwwcommercialinfo", id3.WOAR: "wwwartist"}
 
 
 def create_uurl(title, value):
@@ -336,13 +359,12 @@ def uurl_handler(title):
 
 
 revuurl_frames = dict([(key, frame) for frame, key in uurl_frames.items()])
-write_frames.update([(key, partial(create_uurl, key)) for
-                     key in revuurl_frames])
+write_frames.update([(key, partial(create_uurl, key)) for key in revuurl_frames])
 
 
 def create_userurl(title, value):
     value = to_string(value)
-    desc = title[len('www:'):]
+    desc = title[len("www:") :]
     frame = id3.WXXX(encoding, desc, value)
     frame.get_value = lambda: get_url(frame)
     frame.set_value = partial(set_url, frame)
@@ -354,14 +376,15 @@ def userurl_handler(frames):
     for frame in frames:
         frame.get_value = get_factory(get_url, frame)
         frame.set_value = set_factory(set_url, frame)
-        d['www:' + frame.desc] = frame
+        d["www:" + frame.desc] = frame
     return d
 
 
 paired_textframes = {
     id3.TIPL: "involvedpeople",
     id3.TMCL: "musiciancredits",
-    id3.IPLS: "involvedpeople"}
+    id3.IPLS: "involvedpeople",
+}
 
 
 def create_paired(key, value):
@@ -374,17 +397,17 @@ def create_paired(key, value):
 
 
 def get_paired(frame):
-    return [';'.join([':'.join(z) for z in frame.people])]
+    return [";".join([":".join(z) for z in frame.people])]
 
 
 def set_paired(frame, text):
     if not isinstance(text, str):
         text = text[0]
-    value = [people.split(':') for people in text.split(';')]
+    value = [people.split(":") for people in text.split(";")]
     temp = []
     for pair in value:
         if len(pair) == 1:
-            temp.append([pair[0], ''])
+            temp.append([pair[0], ""])
         else:
             temp.append(pair)
     value = temp
@@ -402,17 +425,15 @@ def paired_handler(title):
     return func
 
 
-revpaired_frames = dict([(key, frame) for frame,
-                                          key in paired_textframes.items()])
-write_frames.update([(key, partial(create_paired, key)) for
-                     key in revpaired_frames])
+revpaired_frames = dict([(key, frame) for frame, key in paired_textframes.items()])
+write_frames.update([(key, partial(create_paired, key)) for key in revpaired_frames])
 
 
 def create_comment(desc, value):
-    frame = id3.COMM(encoding, 'XXX', desc, value)
+    frame = id3.COMM(encoding, "XXX", desc, value)
     frame.get_value = lambda: get_text(frame)
     frame.set_value = partial(set_text, frame)
-    return {'comment:' + frame.desc: frame}
+    return {"comment:" + frame.desc: frame}
 
 
 def set_commentattrs(frame):
@@ -424,10 +445,10 @@ def comment_handler(frames):
     d = {}
     for frame in frames:
         set_commentattrs(frame)
-        if not frame.desc and 'comment' not in d:
-            d['comment'] = frame
+        if not frame.desc and "comment" not in d:
+            d["comment"] = frame
         else:
-            d['comment:' + frame.desc] = frame
+            d["comment:" + frame.desc] = frame
     return d
 
 
@@ -436,7 +457,7 @@ def create_playcount(value):
     if set_playcount(frame, value):
         frame.get_value = lambda: get_playcount(frame)
         frame.set_value = partial(set_playcount, frame)
-        return {'playcount': frame}
+        return {"playcount": frame}
     return {}
 
 
@@ -458,7 +479,7 @@ def playcount_handler(frame):
     frame = frame[0]
     frame.get_value = lambda: get_playcount(frame)
     frame.set_value = partial(set_playcount, frame)
-    return {'playcount': frame}
+    return {"playcount": frame}
 
 
 def create_popm(values):
@@ -471,15 +492,14 @@ def create_popm(values):
 
 
 def get_popm(frame):
-    if not hasattr(frame, 'count'):
+    if not hasattr(frame, "count"):
         frame.count = 0
-    return ':'.join([frame.email, str(frame.rating),
-                     str(frame.count)])
+    return ":".join([frame.email, str(frame.rating), str(frame.count)])
 
 
 def to_string(value):
     if isinstance(value, bytes):
-        return value.decode('utf8')
+        return value.decode("utf8")
     elif isinstance(value, str):
         return value
     else:
@@ -489,7 +509,7 @@ def to_string(value):
 def set_popm(frame, value):
     value = to_string(value)
     try:
-        email, rating, count = value.split(':', encoding)
+        email, rating, count = value.split(":", encoding)
         rating = int(rating)
         count = int(count)
     except ValueError:
@@ -518,7 +538,7 @@ def popm_handler(frames):
         frame.get_value = get_value
         frame.set_value = set_value
         frame.frames = frames
-    return {'popularimeter': frame}
+    return {"popularimeter": frame}
 
 
 def create_ufid(key, value):
@@ -528,12 +548,12 @@ def create_ufid(key, value):
         except IndexError:
             return {}
     if isinstance(value, str):
-        value = value.encode('utf8')
-    owner = key[len('ufid:'):]
+        value = value.encode("utf8")
+    owner = key[len("ufid:") :]
     frame = id3.UFID(owner, value)
     frame.get_value = partial(get_ufid, frame)
     frame.set_value = partial(set_ufid, frame)
-    return {'ufid:' + frame.owner: frame}
+    return {"ufid:" + frame.owner: frame}
 
 
 def set_ufid(frame, value):
@@ -543,24 +563,24 @@ def set_ufid(frame, value):
         except IndexError:
             return {}
     if isinstance(value, str):
-        value = value.encode('utf8')
+        value = value.encode("utf8")
     frame.data = value
 
 
 def get_ufid(frame):
-    return [frame.data.decode('utf8')]
+    return [frame.data.decode("utf8")]
 
 
 def ufid_handler(frames):
     d = {}
     for frame in frames:
         try:
-            frame.data.decode('utf8')
+            frame.data.decode("utf8")
         except UnicodeDecodeError:
             continue
         frame.get_value = get_factory(get_ufid, frame)
         frame.set_value = set_factory(set_ufid, frame)
-        d['ufid:' + frame.owner] = frame
+        d["ufid:" + frame.owner] = frame
     return d
 
 
@@ -571,7 +591,7 @@ def _parse_rgain(value):
         except IndexError:
             return
 
-    values = [z.strip() for z in value.split(':')]
+    values = [z.strip() for z in value.split(":")]
     channel, gain, peak = values
     channel = int(channel)
     gain = float(gain)
@@ -580,7 +600,7 @@ def _parse_rgain(value):
 
 
 def create_rgain(key, value):
-    desc = key[len('rgain:'):]
+    desc = key[len("rgain:") :]
     try:
         channel, gain, peak = _parse_rgain(value)
     except (TypeError, ValueError):
@@ -590,7 +610,7 @@ def create_rgain(key, value):
     frame.get_value = get_factory(get_rgain, frame)
     frame.set_value = set_factory(set_rgain, frame)
 
-    return {'rgain:' + desc: frame}
+    return {"rgain:" + desc: frame}
 
 
 def set_rgain(frame, value):
@@ -604,7 +624,7 @@ def set_rgain(frame, value):
 
 
 def get_rgain(frame):
-    return ':'.join(map(str, [frame.channel, frame.gain, frame.peak]))
+    return ":".join(map(str, [frame.channel, frame.gain, frame.peak]))
 
 
 def rgain_handler(frames):
@@ -612,7 +632,7 @@ def rgain_handler(frames):
     for f in frames:
         f.get_value = get_factory(get_rgain, f)
         f.set_value = set_factory(set_rgain, f)
-        d['rgain:' + f.desc] = f
+        d["rgain:" + f.desc] = f
     return d
 
 
@@ -621,7 +641,7 @@ def create_uslt(value):
     set_uslt(f, value)
     f.set_value = set_factory(set_uslt, f)
     if f.frames:
-        return {'unsyncedlyrics': f}
+        return {"unsyncedlyrics": f}
     return {}
 
 
@@ -633,30 +653,30 @@ def set_uslt(f, value):
 
     for lyrics in value:
         try:
-            lyrics = [z for z in lyrics.split('|', 3)]
+            lyrics = [z for z in lyrics.split("|", 3)]
         except (TypeError, ValueError):
             continue
         len_l = len(lyrics)
         if len_l == 1:
-            lang = ''
-            desc = ''
+            lang = ""
+            desc = ""
             text = lyrics[0]
         elif len_l == 2:
             lang = lyrics[0].strip()
-            desc = ''
+            desc = ""
             text = lyrics[1]
         elif len_l == 3:
             lang, desc, text = lyrics
             lang = lang.strip()
         elif len_l > 3:
-            text = ''.join(lyrics[2:])
+            text = "".join(lyrics[2:])
             lang = lyrics[0].strip()
             desc = lyrics[1]
         else:
             continue
 
         if not lang or len(lang) != 3:
-            lang = 'und'
+            lang = "und"
         frames.append(id3.USLT(encoding, lang, desc, text))
 
     if not frames:
@@ -670,12 +690,13 @@ def set_uslt(f, value):
 
 def get_uslt(frames):
     def text(f, attr):
-        ret = getattr(f, attr, '')
-        return ret if isinstance(ret, str) else \
-            str(ret, 'utf8', 'replace')
+        ret = getattr(f, attr, "")
+        return ret if isinstance(ret, str) else str(ret, "utf8", "replace")
 
-    ret = ['%s|%s|%s' % (text(frame, 'lang'), text(frame, 'desc'),
-                          text(frame, 'text')) for frame in frames]
+    ret = [
+        "%s|%s|%s" % (text(frame, "lang"), text(frame, "desc"), text(frame, "text"))
+        for frame in frames
+    ]
     return lambda: ret
 
 
@@ -685,57 +706,64 @@ def uslt_handler(frames):
     f.get_value = get_uslt(frames)
     f.set_value = set_factory(set_uslt, f)
     f.frames = frames
-    d['unsyncedlyrics'] = f
+    d["unsyncedlyrics"] = f
     return d
 
 
-write_frames.update({
-    'playcount': create_playcount,
-    'popularimeter': create_popm,
-    'genre': create_genre,
-    'unsyncedlyrics': create_uslt})
+write_frames.update(
+    {
+        "playcount": create_playcount,
+        "popularimeter": create_popm,
+        "genre": create_genre,
+        "unsyncedlyrics": create_uslt,
+    }
+)
 
 # Dictionary contaning classes from mutagen.id3 and it's associated
 # handler.
-frames = dict([(key, text_handler(title)) for key,
-                                              title in text_frames.items()])
+frames = dict([(key, text_handler(title)) for key, title in text_frames.items()])
 
-frames.update([(key, time_handler(title)) for key, title in
-               time_frames.items()])
+frames.update([(key, time_handler(title)) for key, title in time_frames.items()])
 
-frames.update([(key, url_handler(title)) for key, title in
-               url_frames.items()])
+frames.update([(key, url_handler(title)) for key, title in url_frames.items()])
 
-frames.update([(key, uurl_handler(title)) for key, title in
-               uurl_frames.items()])
+frames.update([(key, uurl_handler(title)) for key, title in uurl_frames.items()])
 
-frames.update([(key, paired_handler(title)) for key, title in
-               paired_textframes.items()])
+frames.update(
+    [(key, paired_handler(title)) for key, title in paired_textframes.items()]
+)
 
-frames.update({
-    id3.TCON: genre_handler,
-    id3.WXXX: userurl_handler,
-    id3.TXXX: usertext_handler,
-    id3.COMM: comment_handler,
-    id3.PCNT: playcount_handler,
-    id3.POPM: popm_handler,
-    id3.UFID: ufid_handler,
-    id3.RVA2: rgain_handler,
-    id3.USLT: uslt_handler, })
+frames.update(
+    {
+        id3.TCON: genre_handler,
+        id3.WXXX: userurl_handler,
+        id3.TXXX: usertext_handler,
+        id3.COMM: comment_handler,
+        id3.PCNT: playcount_handler,
+        id3.POPM: popm_handler,
+        id3.UFID: ufid_handler,
+        id3.RVA2: rgain_handler,
+        id3.USLT: uslt_handler,
+    }
+)
 
 revframes = dict((v, k) for k, v in frames.items())
 
 
 def bin_to_pic(image):
-    return {'data': image.data, 'description': image.desc,
-            'mime': image.mime, 'imagetype': image.type}
+    return {
+        "data": image.data,
+        "description": image.desc,
+        "mime": image.mime,
+        "imagetype": image.type,
+    }
 
 
 def pic_to_bin(image):
     data = image[util.DATA]
     description = image.get(util.DESCRIPTION)
     if not description:
-        description = ''
+        description = ""
     imagetype = image.get(util.IMAGETYPE, encoding)
     mime = image.get(util.MIMETYPE)
     if not mime:
@@ -746,6 +774,7 @@ def pic_to_bin(image):
 class ID3(CompatID3):
     """ID3 reader to replace mutagen's just to allow the reading of APIC
     tags with the same description, ala Mp3tag."""
+
     PEDANTIC = True
 
     def loaded_frame(self, tag):
@@ -773,6 +802,7 @@ class ID3FileType(mutagen.mp3.MP3):
 
 
 if AIFF is not None:
+
     class AIFFFileType(AIFF):
         """See ID3 class."""
 
@@ -782,7 +812,9 @@ if AIFF is not None:
         def load(self, filename, **kwargs):
             return AIFF.load(self, filename, **kwargs)
 
+
 if DSF is not None:
+
     class DSFFileType(DSF):
         """See ID3 class."""
 
@@ -795,8 +827,7 @@ if DSF is not None:
 
 def tag_factory(id3_filetype):
     class Tag(TagBase):
-        IMAGETAGS = (util.MIMETYPE, util.DESCRIPTION, util.DATA,
-                     util.IMAGETYPE)
+        IMAGETAGS = (util.MIMETYPE, util.DESCRIPTION, util.DATA, util.IMAGETYPE)
         mapping = {}
         revmapping = {}
 
@@ -840,53 +871,55 @@ def tag_factory(id3_filetype):
         @property
         def info(self):
             info = self.mut_obj.info
-            fileinfo = [('Path', self[PATH]),
-                        ('Size', str_filesize(int(self.size))),
-                        ('Filename', self[FILENAME]),
-                        ('Modified', self.modified)]
+            fileinfo = [
+                ("Path", self[PATH]),
+                ("Size", str_filesize(int(self.size))),
+                ("Filename", self[FILENAME]),
+                ("Modified", self.modified),
+            ]
             try:
                 version = self.mut_obj.tags.version
-                version = ('ID3 Version', self.filetype)
+                version = ("ID3 Version", self.filetype)
             except AttributeError:
-                version = ('ID3 Version', 'No tags in file.')
+                version = ("ID3 Version", "No tags in file.")
             fileinfo.append(version)
 
             if isinstance(self.mut_obj, DSFFileType):
-                mpginfo = [('Type', 'DSF')]
+                mpginfo = [("Type", "DSF")]
             elif isinstance(self.mut_obj, AIFFFileType):
-                mpginfo = [('Type', 'AIFF')]
+                mpginfo = [("Type", "AIFF")]
             elif isinstance(self.mut_obj, ID3FileType):
-                mpginfo = [('Version', 'MPEG %i Layer %i' % (info.version, info.layer))]
+                mpginfo = [("Version", "MPEG %i Layer %i" % (info.version, info.layer))]
             else:
                 mpginfo = []
 
             try:
-                mpginfo.append(('Bitrate', self.bitrate))
+                mpginfo.append(("Bitrate", self.bitrate))
             except AttributeError:
                 pass
 
             try:
-                mpginfo.append(('Frequency', self.frequency))
+                mpginfo.append(("Frequency", self.frequency))
             except AttributeError:
                 pass
 
             try:
-                mpginfo.append(('Mode', MODES[info.mode]))
+                mpginfo.append(("Mode", MODES[info.mode]))
             except AttributeError:
                 pass
 
             try:
-                mpginfo.append(('Length', self.length))
+                mpginfo.append(("Length", self.length))
             except Att:
                 pass
 
-            return [('File', fileinfo), (mpginfo[0][0], mpginfo)]
+            return [("File", fileinfo), (mpginfo[0][0], mpginfo)]
 
         def __contains__(self, key):
-            if key == '__image':
+            if key == "__image":
                 return bool(self.images)
 
-            elif key == '__total':
+            elif key == "__total":
                 try:
                     return bool(get_total(self))
                 except (KeyError, ValueError):
@@ -901,18 +934,26 @@ def tag_factory(id3_filetype):
             cls = Tag()
             tags = CaselessDict()
             frames = []
-            [frames.append(frame) if not hasattr(frame, 'frames') else
-             frames.extend(frame.frames) for key, frame in self.__tags.items()
-             if not key.startswith('__')]
+            [
+                frames.append(frame)
+                if not hasattr(frame, "frames")
+                else frames.extend(frame.frames)
+                for key, frame in self.__tags.items()
+                if not key.startswith("__")
+            ]
             funcs = []
             frames_copy = []
             for frame in frames:
-                funcs.append((getattr(frame, 'get_value', None),
-                              getattr(frame, 'set_value', None)))
-                if hasattr(frame, 'get_value'):
-                    delattr(frame, 'get_value')
-                if hasattr(frame, 'set_value'):
-                    delattr(frame, 'set_value')
+                funcs.append(
+                    (
+                        getattr(frame, "get_value", None),
+                        getattr(frame, "set_value", None),
+                    )
+                )
+                if hasattr(frame, "get_value"):
+                    delattr(frame, "get_value")
+                if hasattr(frame, "set_value"):
+                    delattr(frame, "set_value")
                 frames_copy.append(deepcopy(frame))
             tags = handle(dict([(frame.HashKey, frame) for frame in frames_copy]))
             for frame, (get_value, set_value) in zip(frames, funcs):
@@ -923,28 +964,27 @@ def tag_factory(id3_filetype):
             for key, value in self.__tags.items():
                 if key not in tags:
                     tags[key] = deepcopy(value)
-            cls.set_fundamentals(tags,
-                                 self.mut_obj, deepcopy(self.images))
+            cls.set_fundamentals(tags, self.mut_obj, deepcopy(self.images))
             cls.filepath = self.filepath
             return cls
 
         @del_deco
         def __delitem__(self, key):
-            if key == '__image':
+            if key == "__image":
                 self.images = []
-            elif key.startswith('__'):
+            elif key.startswith("__"):
                 return
             else:
-                del (self.__tags[key])
+                del self.__tags[key]
 
         @getdeco
         def __getitem__(self, key):
-            if key.startswith('__'):
-                if key == '__image':
+            if key.startswith("__"):
+                if key == "__image":
                     return self.images
-                elif key == '__filetype':
+                elif key == "__filetype":
                     return self.filetype
-                elif key == '__total':
+                elif key == "__total":
                     return get_total(self)
                 else:
                     return self.__tags[key]
@@ -958,20 +998,21 @@ def tag_factory(id3_filetype):
             if not isinstance(key, str):
                 self.__tags[key] = value
                 return
-            if key.startswith('__'):
-                if key == '__image':
+            if key.startswith("__"):
+                if key == "__image":
                     self.images = value
                 elif key in fn_hash:
                     setattr(self, fn_hash[key], value)
-                elif key == '__total':
+                elif key == "__total":
                     set_total(self, value)
                 return
 
             value = unicode_list(value)
 
-            if isempty(value):
+            # if isempty(value):
+            if value is None:  # CHANGED: Only delete if value is None
                 if key in self:
-                    del (self[key])
+                    del self[key]
                 return
 
             if key in self.__tags:
@@ -979,18 +1020,18 @@ def tag_factory(id3_filetype):
             else:
                 if key in write_frames:
                     self.__tags.update(write_frames[key](value))
-                elif key == 'comment':
-                    frame = {'comment': create_comment('', value)['comment:']}
+                elif key == "comment":
+                    frame = {"comment": create_comment("", value)["comment:"]}
                     self.__tags.update(frame)
-                elif key.startswith('comment:'):
-                    self.__tags.update(create_comment(key[len('comment:'):], value))
-                elif key.startswith('www:'):
+                elif key.startswith("comment:"):
+                    self.__tags.update(create_comment(key[len("comment:") :], value))
+                elif key.startswith("www:"):
                     self.__tags.update(create_userurl(key, value))
-                elif key.startswith('ufid:'):
+                elif key.startswith("ufid:"):
                     self.__tags.update(create_ufid(key, value))
-                elif key.startswith('rgain:'):
+                elif key.startswith("rgain:"):
                     self.__tags.update(create_rgain(key, value))
-                elif key.startswith('unsyncedlyrics:'):
+                elif key.startswith("unsyncedlyrics:"):
                     self.__tags.update(create_uslt(key, value))
                 else:
                     self.__tags.update(create_usertext(key, value))
@@ -998,7 +1039,7 @@ def tag_factory(id3_filetype):
         def delete(self):
             self.mut_obj.delete()
             for key in self.usertags:
-                del (self.__tags[self.revmapping.get(key, key)])
+                del self.__tags[self.revmapping.get(key, key)]
             self.images = []
 
         @keys_deco
@@ -1027,17 +1068,17 @@ def tag_factory(id3_filetype):
             self.__tags.update(tags)
             self.__tags.update(info_to_dict(audio.info))
 
-            if self.ext.lower() == 'mp3':
-                self.__tags['__filetype'] = 'MP3'
+            if self.ext.lower() == "mp3":
+                self.__tags["__filetype"] = "MP3"
             else:
-                self.__tags['__filetype'] = 'ID3'
+                self.__tags["__filetype"] = "ID3"
 
             self.set_attrs(ATTRIBUTES, self.__tags)
 
             try:
-                self.__tags['__tag_read'] = 'ID3v%s.%s' % audio.tags.version[:2]
+                self.__tags["__tag_read"] = "ID3v%s.%s" % audio.tags.version[:2]
             except AttributeError:
-                self.__tags['__tag_read'] = ''
+                self.__tags["__tag_read"] = ""
             self.mut_obj = audio
             self._originaltags = list(audio.keys())
             self.update_tag_list()
@@ -1058,15 +1099,22 @@ def tag_factory(id3_filetype):
 
             userkeys = list(usertags(self.__tags).keys())
             frames = []
-            [frames.append(frame) if not hasattr(frame, 'frames') else
-             frames.extend(frame.frames) for key, frame in self.__tags.items()
-             if key in userkeys]
+            [
+                frames.append(frame)
+                if not hasattr(frame, "frames")
+                else frames.extend(frame.frames)
+                for key, frame in self.__tags.items()
+                if key in userkeys
+            ]
             hashes = dict([(frame.HashKey, frame) for frame in frames])
-            toremove = [z for z in self._originaltags if z in audio
-                        and not (z in hashes or z.startswith('APIC'))]
+            toremove = [
+                z
+                for z in self._originaltags
+                if z in audio and not (z in hashes or z.startswith("APIC"))
+            ]
             audio.update(hashes)
 
-            old_apics = [z for z in audio if z.startswith('APIC')]
+            old_apics = [z for z in audio if z.startswith("APIC")]
             if self.__images:
                 newimages = []
                 for image in [_f for _f in map(pic_to_bin, self.__images) if _f]:
@@ -1074,7 +1122,7 @@ def tag_factory(id3_filetype):
                     while image.HashKey in newimages:
                         i += 1
                         # Pad with spaces so that each key is unique.
-                        image.desc += ' ' * i
+                        image.desc += " " * i
                     audio[image.HashKey] = image
                     newimages.append(image.HashKey)
                 [toremove.append(z) for z in old_apics if z not in newimages]
@@ -1083,7 +1131,7 @@ def tag_factory(id3_filetype):
 
             for z in set(toremove):
                 try:
-                    del (audio[z])
+                    del audio[z]
                 except KeyError:
                     continue
 
@@ -1113,7 +1161,7 @@ def tag_factory(id3_filetype):
                     c.update_to_v23()
                     c.save(v1=v1, v2_version=3)
 
-            self.__tags['__tag_read'] = 'ID3v2.4' if v2 == 4 else 'ID3v2.3'
+            self.__tags["__tag_read"] = "ID3v2.4" if v2 == 4 else "ID3v2.3"
             self.update_tag_list()
             self._originaltags = list(audio.keys())
 
@@ -1129,7 +1177,7 @@ def tag_factory(id3_filetype):
             frames = []
             saved = []
             for frame in self.__tags.values():
-                if hasattr(frame, 'encoding'):
+                if hasattr(frame, "encoding"):
                     frames.append((frame, frame.encoding))
                     frame.encoding = encoding
             try:
@@ -1140,15 +1188,15 @@ def tag_factory(id3_filetype):
                 raise
 
         def update_tag_list(self):
-            tag = self.__tags['__tag_read']
+            tag = self.__tags["__tag_read"]
             l = tag_versions.tags_in_file(self.filepath)
             if l:
                 if tag and tag in l:
                     l.remove(tag)
                     l.insert(0, tag)
-                self.__tags['__tag'] = ', '.join(l)
+                self.__tags["__tag"] = ", ".join(l)
             else:
-                self.__tags['__tag'] = tag
+                self.__tags["__tag"] = tag
 
     return Tag
 
@@ -1156,11 +1204,11 @@ def tag_factory(id3_filetype):
 Tag = tag_factory(ID3FileType)
 
 filetypes = [
-    (ID3FileType, tag_factory(ID3FileType), 'ID3', 'mp3'),
+    (ID3FileType, tag_factory(ID3FileType), "ID3", "mp3"),
 ]
 
 if AIFF is not None:
-    filetypes.append((AIFFFileType, tag_factory(AIFFFileType), 'AIFF', 'aiff'))
+    filetypes.append((AIFFFileType, tag_factory(AIFFFileType), "AIFF", "aiff"))
 
 if DSF is not None:
-    filetypes.append((DSFFileType, tag_factory(DSFFileType), 'DSF', ['dsf', 'dff']))
+    filetypes.append((DSFFileType, tag_factory(DSFFileType), "DSF", ["dsf", "dff"]))

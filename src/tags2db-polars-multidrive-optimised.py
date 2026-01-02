@@ -162,7 +162,7 @@ ALBUM_INFO_SCHEMA = {
     "__vendorstring": pl.Utf8,
     "__md5sig": pl.Utf8,
     "bliss_analysis": pl.Utf8,
-    "songkongid": pl.Utf8,
+    "songkong_id": pl.Utf8,
     "tagminder_uuid": pl.Utf8,
     "sqlmodded": pl.Int64,
     "reflac": pl.Utf8,

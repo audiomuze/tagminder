@@ -432,7 +432,7 @@ def main():
         "__version",
         "__vendorstring",
         "__md5sig",
-        "songkongid",
+        "songkong_id",
         "tagminder_uuid",
         "sqlmodded",
         "reflac",
