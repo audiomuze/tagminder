@@ -1,0 +1,6 @@
+mutagen==1.47.0
+polars==1.38.1
+PyQt6==6.10.2
+textual
+plotly>=5.0.0
+

@@ -1,0 +1,15 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+.deprecated/
+mbschema/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Tagminder runtime logs
+98-rename-files-and-folders.log

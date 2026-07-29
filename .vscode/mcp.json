@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "toktoken": {
+      "command": "toktoken",
+      "args": ["serve"]
+    }
+  }
+}

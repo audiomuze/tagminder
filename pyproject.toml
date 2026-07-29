@@ -1,0 +1,33 @@
+[project]
+name = "tm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "adbc-driver-sqlite>=1.11.0",
+    "mutagen==1.47.0",
+    "numpy<2.0.0",
+    "pipx>=1.11.1",
+    "plotly>=5.0.0",
+    "polars==1.38.1",
+    "pyarrow>=23.0.1",
+    "pyqt6==6.10.2",
+    "string-grouper>=0.7.1",
+    "textual",
+]
+
+[project.scripts]
+tm = "tagminder.app.tm:main"
+tm-cli = "tagminder.app.tm_cli:main"
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tagminder*"]

@@ -1,0 +1,56 @@
+# harvest_master_data.toml
+#
+# Canonical configuration for master-data harvesting and contributor emission.
+#
+# Resolution contract used by harvest_mb_artists.py, harvest_wikimedia.py,
+# and emit_contributors.py:
+# 1) Look for this file in the current working directory.
+# 2) If not found, look in the script directory.
+# 3) If still not found, fail with FileNotFoundError.
+
+[musicbrainz]
+# Required for harvest_mb_artists.py
+# Path to MusicBrainz dump archive.
+dump_archive = "/mnt/usbc1/MUSIC_MASTER_METADATA/mbdump.tar.bz2"
+
+# DB where musicbrainz_artists is written and where emit_contributors.py writes
+# contributors_unified by default.
+contributors_db = "/tmp/amg/master-data.db"
+
+[wikimedia]
+# Required for harvest_wikimedia.py
+# Path to Wikidata latest-all entity JSON dump (.gz or .bz2).
+all_json_gz = "/mnt/usbc1/MUSIC_MASTER_METADATA/latest-all.json.bz2"
+
+# Output DB used by harvest_wikimedia.py.
+wikimedia_db = "/tmp/amg/wikimedia_scrape.db"
+
+# Optional table override for harvest_wikimedia.py and emit_contributors.py.
+target_table = "wikidata_music_identity"
+
+# Optional extractor behavior for harvest_wikimedia.py.
+label_language = "en"
+apple_music_artist_id_property = "P2850"
+wikipedia_base_url = "https://en.wikipedia.org/"
+
+[allmusic]
+# Optional DB used by emit_contributors.py.
+# Should contain amg_artists, amg_artist_genres, amg_artist_styles.
+metadata_db = "/tmp/amg/allmusic-metadata.db"
+
+[emit_contributors]
+# Optional output table override in [musicbrainz].contributors_db.
+target_table = "contributors_unified"
+
+# Optional source table override in [musicbrainz].contributors_db.
+musicbrainz_table = "musicbrainz_artists"
+
+[emit_contributors.sqlite]
+# SQLite tuning defaults for emit_contributors.py.
+# cache_size_kib is interpreted as KiB and applied via PRAGMA cache_size = -N.
+busy_timeout_ms = 5000
+journal_mode = "WAL"
+synchronous = "NORMAL"
+temp_store = "MEMORY"
+cache_size_kib = 1048576
+run_optimize = true
